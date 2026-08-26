@@ -10,6 +10,7 @@ import com.sdncustom.common.model.enums.PointQuality;
 import com.sdncustom.common.model.enums.ProtocolType;
 import com.sdncustom.protocol.ProtocolAdapter;
 import com.sdncustom.protocol.ProtocolRegistry;
+import com.sdncustom.protocol.modbus.ModbusTcpAdapter;
 import com.sdncustom.protocol.tcp.CustomTcpAdapter;
 import com.sdncustom.server.repository.ChannelRepository;
 import com.sdncustom.server.repository.MeasurementPointRepository;
@@ -159,6 +160,9 @@ public class ChannelService {
         ProtocolType type = channel.getProtocolType();
         if (type == ProtocolType.CUSTOM_TCP) {
             return CustomTcpAdapter.getInstance(channel.getChannelId());
+        }
+        if (type == ProtocolType.MODBUS_TCP) {
+            return ModbusTcpAdapter.getInstance(channel.getChannelId());
         }
         return protocolRegistry.getAdapter(type);
     }
