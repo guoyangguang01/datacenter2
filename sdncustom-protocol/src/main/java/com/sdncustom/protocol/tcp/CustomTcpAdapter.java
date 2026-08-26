@@ -1,0 +1,183 @@
+package com.sdncustom.protocol.tcp;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sdncustom.common.model.Channel;
+import com.sdncustom.common.model.MeasurementPoint;
+import com.sdncustom.common.model.PointValue;
+import com.sdncustom.common.model.enums.PointQuality;
+import com.sdncustom.protocol.ProtocolAdapter;
+import lombok.extern.slf4j.Slf4j;
+
+import java.io.*;
+import java.net.Socket;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * 自定义 TCP 协议适配器
+ */
+@Slf4j
+public class CustomTcpAdapter implements ProtocolAdapter {
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    private Socket socket;
+    private DataInputStream input;
+    private DataOutputStream output;
+    private Channel channel;
+    private volatile boolean connected = false;
+
+    // 缓存每个 Channel 的适配器实例
+    private static final Map<String, CustomTcpAdapter> instances = new ConcurrentHashMap<>();
+
+    /**
+     * 获取或创建 Channel 对应的适配器实例
+     */
+    public static CustomTcpAdapter getInstance(String channelId) {
+        return instances.computeIfAbsent(channelId, k -> new CustomTcpAdapter());
+    }
+
+    @Override
+    public void connect(Channel channel) {
+        this.channel = channel;
+        try {
+            Map<String, Object> config = objectMapper.readValue(channel.getConnectionConfig(), Map.class);
+            String host = (String) config.get("host");
+            int port = (int) config.get("port");
+
+            socket = new Socket(host, port);
+            socket.setSoTimeout(5000);
+            input = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
+            output = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
+            connected = true;
+
+            log.info("Connected to TCP server: {}:{}", host, port);
+        } catch (Exception e) {
+            connected = false;
+            log.error("Failed to connect to TCP server: {}", e.getMessage());
+            throw new RuntimeException("Connection failed", e);
+        }
+    }
+
+    @Override
+    public void disconnect() {
+        connected = false;
+        try {
+            if (socket != null && !socket.isClosed()) {
+                socket.close();
+            }
+        } catch (IOException e) {
+            log.error("Error closing socket", e);
+        } finally {
+            socket = null;
+            input = null;
+            output = null;
+            if (channel != null) {
+                instances.remove(channel.getChannelId());
+            }
+        }
+    }
+
+    @Override
+    public PointValue readPoint(MeasurementPoint point) {
+        return readPoints(List.of(point)).stream().findFirst().orElse(null);
+    }
+
+    @Override
+    public void writePoint(MeasurementPoint point, Object value) {
+        if (!connected) {
+            throw new RuntimeException("Not connected");
+        }
+        try {
+            Map<String, Object> body = new HashMap<>();
+            body.put("pointId", point.getPointId());
+            body.put("value", value);
+
+            TcpMessage request = new TcpMessage(TcpCommand.WRITE_REQUEST, objectMapper.writeValueAsString(body));
+            send(request);
+
+            TcpMessage response = receive();
+            if (response.getCommand() != TcpCommand.WRITE_RESPONSE) {
+                throw new RuntimeException("Unexpected response command: " + response.getCommand());
+            }
+        } catch (Exception e) {
+            log.error("Failed to write point: {}", point.getPointId(), e);
+            throw new RuntimeException("Write failed", e);
+        }
+    }
+
+    @Override
+    public List<PointValue> readPoints(List<MeasurementPoint> points) {
+        if (!connected) {
+            throw new RuntimeException("Not connected");
+        }
+        try {
+            List<String> pointIds = points.stream().map(MeasurementPoint::getPointId).toList();
+            Map<String, Object> body = new HashMap<>();
+            body.put("pointIds", pointIds);
+
+            TcpMessage request = new TcpMessage(TcpCommand.READ_REQUEST, objectMapper.writeValueAsString(body));
+            send(request);
+
+            TcpMessage response = receive();
+            if (response.getCommand() != TcpCommand.READ_RESPONSE) {
+                throw new RuntimeException("Unexpected response command: " + response.getCommand());
+            }
+
+            Map<String, Object> responseBody = objectMapper.readValue(response.getBody(), Map.class);
+            List<Map<String, Object>> values = (List<Map<String, Object>>) responseBody.get("values");
+
+            List<PointValue> result = new ArrayList<>();
+            if (values != null) {
+                for (Map<String, Object> v : values) {
+                    PointValue pv = new PointValue();
+                    pv.setPointId((String) v.get("pointId"));
+                    pv.setValue(v.get("value"));
+                    pv.setQuality(PointQuality.valueOf((String) v.getOrDefault("quality", "GOOD")));
+                    pv.setTimestamp(((Number) v.getOrDefault("timestamp", System.currentTimeMillis())).longValue());
+                    pv.setSourceChannelId(channel != null ? channel.getChannelId() : null);
+                    result.add(pv);
+                }
+            }
+            return result;
+        } catch (Exception e) {
+            log.error("Failed to read points", e);
+            throw new RuntimeException("Read failed", e);
+        }
+    }
+
+    @Override
+    public boolean isConnected() {
+        return connected && socket != null && !socket.isClosed();
+    }
+
+    private void send(TcpMessage message) throws IOException {
+        byte[] data = message.encode();
+        output.write(data);
+        output.flush();
+    }
+
+    private TcpMessage receive() throws IOException {
+        // 读取长度 (4 bytes)
+        byte[] lengthBytes = input.readNBytes(4);
+        if (lengthBytes.length < 4) {
+            throw new IOException("Connection closed");
+        }
+        int length = ((lengthBytes[0] & 0xFF) << 24) |
+                     ((lengthBytes[1] & 0xFF) << 16) |
+                     ((lengthBytes[2] & 0xFF) << 8) |
+                     (lengthBytes[3] & 0xFF);
+
+        // 读取 command + body
+        byte[] data = input.readNBytes(length);
+        if (data.length < length) {
+            throw new IOException("Incomplete message");
+        }
+
+        byte command = data[0];
+        String body = length > 1 ? new String(data, 1, length - 1) : "";
+
+        return new TcpMessage(command, body);
+    }
+}
