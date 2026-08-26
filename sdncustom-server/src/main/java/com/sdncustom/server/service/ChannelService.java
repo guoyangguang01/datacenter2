@@ -11,6 +11,7 @@ import com.sdncustom.common.model.enums.ProtocolType;
 import com.sdncustom.protocol.ProtocolAdapter;
 import com.sdncustom.protocol.ProtocolRegistry;
 import com.sdncustom.protocol.modbus.ModbusTcpAdapter;
+import com.sdncustom.protocol.mqtt.MqttAdapter;
 import com.sdncustom.protocol.opcua.OpcUaAdapter;
 import com.sdncustom.protocol.tcp.CustomTcpAdapter;
 import com.sdncustom.server.repository.ChannelRepository;
@@ -164,6 +165,9 @@ public class ChannelService {
         }
         if (type == ProtocolType.MODBUS_TCP) {
             return ModbusTcpAdapter.getInstance(channel.getChannelId());
+        }
+        if (type == ProtocolType.MQTT) {
+            return MqttAdapter.getInstance(channel.getChannelId());
         }
         if (type == ProtocolType.OPCUA) {
             return OpcUaAdapter.getInstance(channel.getChannelId());

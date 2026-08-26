@@ -32,6 +32,11 @@
             <groupId>org.eclipse.milo</groupId>
             <artifactId>sdk-client</artifactId>
         </dependency>
+        <!-- Eclipse Paho MQTT Client -->
+        <dependency>
+            <groupId>org.eclipse.paho</groupId>
+            <artifactId>org.eclipse.paho.mqttv5.client</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
