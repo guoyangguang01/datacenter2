@@ -12,7 +12,7 @@ services:
     restart: unless-stopped
 
   tdengine:
-    image: tdengine/tdengine:3.3
+    image: tdengine/tdengine:latest
     container_name: sdncustom-tdengine
     ports:
       - "6030:6030"

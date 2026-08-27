@@ -35,15 +35,6 @@ public class MeasurementPoint {
     @Column(name = "unit", length = 32)
     private String unit;
 
-    @Column(name = "scale_factor")
-    private double scaleFactor = 1.0;
-
-    @Column(name = "offset_value")
-    private double offset = 0.0;
-
-    @Column(name = "dead_band")
-    private double deadBand = 0.0;
-
     @Column(name = "writable")
     private boolean writable = false;
 

@@ -136,7 +136,10 @@ public class ChannelService {
         try {
             ProtocolAdapter adapter = getOrCreateAdapter(channel);
             adapter.disconnect();
-
+        } catch (Exception e) {
+            log.warn("Error during adapter disconnect for channel: {}, forcing cleanup", channelId, e);
+        } finally {
+            // 无论适配器是否成功断开，都强制重置状态
             // 标记所有测点为 COMM_LOST
             List<MeasurementPoint> points = pointRepository.findByChannelId(channelId);
             for (MeasurementPoint point : points) {
@@ -148,10 +151,6 @@ public class ChannelService {
             channel.setStatus(ChannelStatus.DISCONNECTED);
             channelRepository.save(channel);
             log.info("Channel disconnected: {}", channelId);
-        } catch (Exception e) {
-            log.error("Failed to disconnect channel: {}", channelId, e);
-            channel.setStatus(ChannelStatus.ERROR);
-            channelRepository.save(channel);
         }
     }
 

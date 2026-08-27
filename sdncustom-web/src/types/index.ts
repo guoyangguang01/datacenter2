@@ -27,9 +27,6 @@ export interface MeasurementPoint {
   address: string;
   dataType: PointDataType;
   unit: string;
-  scaleFactor: number;
-  offset: number;
-  deadBand: number;
   writable: boolean;
   createTime: string;
   updateTime: string;

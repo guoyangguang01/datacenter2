@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 >nul
 REM 重启服务
 
 echo Restarting SDNCustom services...

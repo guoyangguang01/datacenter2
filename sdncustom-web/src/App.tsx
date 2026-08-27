@@ -4,13 +4,14 @@ import { DashboardOutlined, NodeIndexOutlined, SettingOutlined } from '@ant-desi
 import ChannelPage from './pages/ChannelPage';
 import PointPage from './pages/PointPage';
 import DashboardPage from './pages/DashboardPage';
+import MonitorPage from './pages/MonitorPage';
 
 const { Header, Content, Sider } = Layout;
 
 const menuItems = [
-  { key: '/dashboard', icon: <DashboardOutlined />, label: <Link to="/dashboard">Dashboard</Link> },
-  { key: '/channels', icon: <NodeIndexOutlined />, label: <Link to="/channels">Channels</Link> },
-  { key: '/points', icon: <SettingOutlined />, label: <Link to="/points">Points</Link> },
+  { key: '/dashboard', icon: <DashboardOutlined />, label: <Link to="/dashboard">仪表盘</Link> },
+  { key: '/channels', icon: <NodeIndexOutlined />, label: <Link to="/channels">通道</Link> },
+  { key: '/points', icon: <SettingOutlined />, label: <Link to="/points">测点</Link> },
 ];
 
 function AppLayout() {
@@ -31,13 +32,14 @@ function AppLayout() {
       </Sider>
       <Layout>
         <Header style={{ padding: '0 16px', background: '#fff', display: 'flex', alignItems: 'center' }}>
-          <h1 style={{ margin: 0, fontSize: 18 }}>IoT Data Hub</h1>
+          <h1 style={{ margin: 0, fontSize: 18 }}>物联网数据中心</h1>
         </Header>
         <Content style={{ margin: 16, padding: 24, background: '#fff', borderRadius: 8 }}>
           <Routes>
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/channels" element={<ChannelPage />} />
             <Route path="/points" element={<PointPage />} />
+            <Route path="/monitor" element={<MonitorPage />} />
             <Route path="*" element={<DashboardPage />} />
           </Routes>
         </Content>

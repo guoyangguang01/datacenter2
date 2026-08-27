@@ -140,12 +140,12 @@ public class ModbusTcpAdapter implements ProtocolAdapter {
         switch (addr.type) {
             case HOLDING_REGISTER: {
                 int[] regs = client.readHoldingRegisters(addr.registerAddress, 1);
-                value = applyScaleAndOffset(regs[0], point.getScaleFactor(), point.getOffset());
+                value = regs[0];
                 break;
             }
             case INPUT_REGISTER: {
                 int[] regs = client.readInputRegisters(addr.registerAddress, 1);
-                value = applyScaleAndOffset(regs[0], point.getScaleFactor(), point.getOffset());
+                value = regs[0];
                 break;
             }
             case COIL: {
@@ -194,10 +194,6 @@ public class ModbusTcpAdapter implements ProtocolAdapter {
             // 直接地址，假设为保持寄存器
             return new ModbusAddress(AddressType.HOLDING_REGISTER, addr);
         }
-    }
-
-    private double applyScaleAndOffset(int rawValue, double scale, double offset) {
-        return rawValue * scale + offset;
     }
 
     private Object convertValue(Object value, PointDataType dataType) {

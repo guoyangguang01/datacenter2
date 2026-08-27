@@ -13,6 +13,8 @@ interface PointStore {
   fetchValue: (pointId: string) => Promise<void>;
   fetchAllValues: () => Promise<void>;
   updateValue: (value: PointValue) => void;
+  exportPoints: () => Promise<void>;
+  importPoints: (data: Partial<MeasurementPoint>[]) => Promise<number>;
 }
 
 export const usePointStore = create<PointStore>((set, get) => ({
@@ -72,5 +74,22 @@ export const usePointStore = create<PointStore>((set, get) => ({
     const values = new Map(get().pointValues);
     values.set(value.pointId, value);
     set({ pointValues: values });
+  },
+
+  exportPoints: async () => {
+    const res = await pointApi.exportPoints();
+    const blob = new Blob([res.data as BlobPart], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `points_export_${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+
+  importPoints: async (data) => {
+    const res = await pointApi.importPoints(data);
+    await get().fetchPoints();
+    return res.data.data?.length ?? 0;
   },
 }));

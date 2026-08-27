@@ -1,20 +1,20 @@
 import { useEffect, useState } from 'react';
 import { Table, Button, Modal, Form, Input, Select, Switch, Space, Tag, message } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, LinkOutlined, DisconnectOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, LinkOutlined, DisconnectOutlined, EyeOutlined } from '@ant-design/icons';
 import { useChannelStore } from '../stores/channelStore';
 import type { Channel, ProtocolType, ChannelDirection } from '../types';
 
 const protocolOptions = [
-  { label: 'Custom TCP', value: 'CUSTOM_TCP' },
+  { label: '自定义TCP', value: 'CUSTOM_TCP' },
   { label: 'Modbus TCP', value: 'MODBUS_TCP' },
   { label: 'MQTT', value: 'MQTT' },
   { label: 'OPC-UA', value: 'OPCUA' },
 ];
 
 const directionOptions = [
-  { label: 'Read Only', value: 'READ_ONLY' },
-  { label: 'Write Only', value: 'WRITE_ONLY' },
-  { label: 'Read/Write', value: 'READ_WRITE' },
+  { label: '只读', value: 'READ_ONLY' },
+  { label: '只写', value: 'WRITE_ONLY' },
+  { label: '读/写', value: 'READ_WRITE' },
 ];
 
 const statusColors = {
@@ -47,38 +47,38 @@ export default function ChannelPage() {
 
   const handleDelete = async (id: string) => {
     await deleteChannel(id);
-    message.success('Deleted');
+    message.success('已删除');
   };
 
   const handleConnect = async (id: string) => {
     await connectChannel(id);
-    message.success('Connected');
+    message.success('已连接');
   };
 
   const handleDisconnect = async (id: string) => {
     await disconnectChannel(id);
-    message.success('Disconnected');
+    message.success('已断开');
   };
 
   const handleSubmit = async () => {
     const values = await form.validateFields();
     if (editing) {
       await updateChannel(editing.channelId, values);
-      message.success('Updated');
+      message.success('已更新');
     } else {
       await createChannel(values);
-      message.success('Created');
+      message.success('已创建');
     }
     setModalOpen(false);
   };
 
   const columns = [
     { title: 'ID', dataIndex: 'channelId', key: 'channelId' },
-    { title: 'Name', dataIndex: 'channelName', key: 'channelName' },
-    { title: 'Protocol', dataIndex: 'protocolType', key: 'protocolType' },
-    { title: 'Direction', dataIndex: 'direction', key: 'direction' },
+    { title: '名称', dataIndex: 'channelName', key: 'channelName' },
+    { title: '协议', dataIndex: 'protocolType', key: 'protocolType' },
+    { title: '方向', dataIndex: 'direction', key: 'direction' },
     {
-      title: 'Status',
+      title: '状态',
       dataIndex: 'status',
       key: 'status',
       render: (status: string) => (
@@ -86,7 +86,7 @@ export default function ChannelPage() {
       ),
     },
     {
-      title: 'Actions',
+      title: '操作',
       key: 'actions',
       render: (_: unknown, record: Channel) => (
         <Space>
@@ -94,12 +94,23 @@ export default function ChannelPage() {
           <Button size="small" icon={<DeleteOutlined />} danger onClick={() => handleDelete(record.channelId)} />
           {record.status === 'DISCONNECTED' ? (
             <Button size="small" type="primary" icon={<LinkOutlined />} onClick={() => handleConnect(record.channelId)}>
-              Connect
+              连接
             </Button>
           ) : (
-            <Button size="small" icon={<DisconnectOutlined />} onClick={() => handleDisconnect(record.channelId)}>
-              Disconnect
-            </Button>
+            <>
+              <Button size="small" icon={<DisconnectOutlined />} onClick={() => handleDisconnect(record.channelId)}>
+                断开
+              </Button>
+              <Button
+                size="small"
+                type="primary"
+                ghost
+                icon={<EyeOutlined />}
+                onClick={() => window.open(`/monitor?channelId=${record.channelId}`, '_blank')}
+              >
+                监控
+              </Button>
+            </>
           )}
         </Space>
       ),
@@ -109,36 +120,36 @@ export default function ChannelPage() {
   return (
     <div>
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
-        <h2>Channel Management</h2>
+        <h2>通道管理</h2>
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
-          Add Channel
+          添加通道
         </Button>
       </div>
       <Table columns={columns} dataSource={channels} rowKey="channelId" loading={loading} />
 
       <Modal
-        title={editing ? 'Edit Channel' : 'Add Channel'}
+        title={editing ? '编辑通道' : '添加通道'}
         open={modalOpen}
         onOk={handleSubmit}
         onCancel={() => setModalOpen(false)}
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="channelId" label="Channel ID" rules={[{ required: true }]}>
+          <Form.Item name="channelId" label="通道ID" rules={[{ required: true }]}>
             <Input disabled={!!editing} />
           </Form.Item>
-          <Form.Item name="channelName" label="Name" rules={[{ required: true }]}>
+          <Form.Item name="channelName" label="名称" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="protocolType" label="Protocol" rules={[{ required: true }]}>
+          <Form.Item name="protocolType" label="协议" rules={[{ required: true }]}>
             <Select options={protocolOptions} />
           </Form.Item>
-          <Form.Item name="direction" label="Direction" rules={[{ required: true }]}>
+          <Form.Item name="direction" label="方向" rules={[{ required: true }]}>
             <Select options={directionOptions} />
           </Form.Item>
-          <Form.Item name="connectionConfig" label="Connection Config (JSON)">
+          <Form.Item name="connectionConfig" label="连接配置 (JSON)">
             <Input.TextArea rows={4} placeholder='{"host":"192.168.1.1","port":502}' />
           </Form.Item>
-          <Form.Item name="autoConnect" label="Auto Connect" valuePropName="checked">
+          <Form.Item name="autoConnect" label="自动连接" valuePropName="checked">
             <Switch />
           </Form.Item>
         </Form>

@@ -9,9 +9,11 @@ import com.sdncustom.common.model.PointHistory;
 import com.sdncustom.common.model.PointValue;
 import com.sdncustom.server.service.HistoryService;
 import com.sdncustom.server.service.PointService;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.util.List;
 
@@ -71,5 +73,24 @@ public class PointController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "100") int size) {
         return ApiResponse.success(historyService.queryHistory(id, startTime, endTime, page, size));
+    }
+
+    /**
+     * 导出所有测点为 JSON 文件
+     */
+    @GetMapping("/export")
+    public void exportPoints(HttpServletResponse response) throws Exception {
+        List<MeasurementPoint> points = pointService.findAll();
+        response.setContentType("application/json");
+        response.setHeader("Content-Disposition", "attachment; filename=points_export.json");
+        new ObjectMapper().writerWithDefaultPrettyPrinter().writeValue(response.getOutputStream(), points);
+    }
+
+    /**
+     * 批量导入测点
+     */
+    @PostMapping("/import")
+    public ApiResponse<List<MeasurementPoint>> importPoints(@RequestBody List<MeasurementPointDTO> dtos) {
+        return ApiResponse.success(pointService.importPoints(dtos));
     }
 }

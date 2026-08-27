@@ -25,11 +25,5 @@ public class MeasurementPointDTO {
 
     private String unit;
 
-    private double scaleFactor = 1.0;
-
-    private double offset = 0.0;
-
-    private double deadBand = 0.0;
-
     private boolean writable = false;
 }

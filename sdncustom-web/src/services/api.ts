@@ -26,4 +26,6 @@ export const pointApi = {
   delete: (id: string) => api.delete<ApiResponse<void>>(`/points/${id}`),
   getValue: (id: string) => api.get<ApiResponse<PointValue>>(`/points/${id}/value`),
   writeValue: (id: string, value: unknown) => api.put<ApiResponse<void>>(`/points/${id}/value`, { value }),
+  exportPoints: () => api.get('/points/export', { responseType: 'blob' }),
+  importPoints: (data: Partial<MeasurementPoint>[]) => api.post<ApiResponse<MeasurementPoint[]>>('/points/import', data),
 };

@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
-import { Table, Button, Modal, Form, Input, Select, InputNumber, Switch, Space, message } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { useEffect, useState, useRef } from 'react';
+import { Table, Button, Modal, Form, Input, Select, Switch, Space, message } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, DownloadOutlined, UploadOutlined } from '@ant-design/icons';
 import { usePointStore } from '../stores/pointStore';
 import { useChannelStore } from '../stores/channelStore';
-import type { MeasurementPoint, PointDataType } from '../types';
+import type { MeasurementPoint } from '../types';
 
 const dataTypeOptions = [
   { label: 'BOOL', value: 'BOOL' },
@@ -15,12 +15,13 @@ const dataTypeOptions = [
 ];
 
 export default function PointPage() {
-  const { points, loading, fetchPoints, createPoint, updatePoint, deletePoint } = usePointStore();
+  const { points, loading, fetchPoints, createPoint, updatePoint, deletePoint, exportPoints, importPoints } = usePointStore();
   const { channels, fetchChannels } = useChannelStore();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<MeasurementPoint | null>(null);
   const [filterChannel, setFilterChannel] = useState<string | undefined>();
   const [form] = Form.useForm();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchChannels();
@@ -45,31 +46,47 @@ export default function PointPage() {
 
   const handleDelete = async (id: string) => {
     await deletePoint(id);
-    message.success('Deleted');
+    message.success('已删除');
+  };
+
+  const handleExport = async () => {
+    await exportPoints();
+    message.success('导出成功');
+  };
+
+  const handleImport = async (file: File) => {
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      const count = await importPoints(Array.isArray(data) ? data : [data]);
+      message.success(`导入成功，共导入 ${count} 个测点`);
+    } catch {
+      message.error('导入失败，请检查文件格式');
+    }
   };
 
   const handleSubmit = async () => {
     const values = await form.validateFields();
     if (editing) {
       await updatePoint(editing.pointId, values);
-      message.success('Updated');
+      message.success('已更新');
     } else {
       await createPoint(values);
-      message.success('Created');
+      message.success('已创建');
     }
     setModalOpen(false);
   };
 
   const columns = [
     { title: 'ID', dataIndex: 'pointId', key: 'pointId' },
-    { title: 'Name', dataIndex: 'pointName', key: 'pointName' },
-    { title: 'Channel', dataIndex: 'channelId', key: 'channelId' },
-    { title: 'Address', dataIndex: 'address', key: 'address' },
-    { title: 'Type', dataIndex: 'dataType', key: 'dataType' },
-    { title: 'Unit', dataIndex: 'unit', key: 'unit' },
-    { title: 'Writable', dataIndex: 'writable', key: 'writable', render: (v: boolean) => v ? 'Yes' : 'No' },
+    { title: '名称', dataIndex: 'pointName', key: 'pointName' },
+    { title: '通道', dataIndex: 'channelId', key: 'channelId' },
+    { title: '地址', dataIndex: 'address', key: 'address' },
+    { title: '类型', dataIndex: 'dataType', key: 'dataType' },
+    { title: '单位', dataIndex: 'unit', key: 'unit' },
+    { title: '可写', dataIndex: 'writable', key: 'writable', render: (v: boolean) => v ? '是' : '否' },
     {
-      title: 'Actions',
+      title: '操作',
       key: 'actions',
       render: (_: unknown, record: MeasurementPoint) => (
         <Space>
@@ -84,59 +101,69 @@ export default function PointPage() {
     <div>
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
         <Space>
-          <h2>Measurement Points</h2>
+          <h2>测点管理</h2>
           <Select
-            placeholder="Filter by Channel"
+            placeholder="按通道筛选"
             allowClear
             style={{ width: 200 }}
             onChange={(v) => setFilterChannel(v)}
             options={channels.map((c) => ({ label: c.channelName, value: c.channelId }))}
           />
         </Space>
-        <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
-          Add Point
-        </Button>
+        <Space>
+          <Button icon={<DownloadOutlined />} onClick={handleExport}>
+            导出
+          </Button>
+          <Button icon={<UploadOutlined />} onClick={() => fileInputRef.current?.click()}>
+            导入
+          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                handleImport(file);
+                e.target.value = '';
+              }
+            }}
+          />
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
+            添加测点
+          </Button>
+        </Space>
       </div>
       <Table columns={columns} dataSource={points} rowKey="pointId" loading={loading} />
 
       <Modal
-        title={editing ? 'Edit Point' : 'Add Point'}
+        title={editing ? '编辑测点' : '添加测点'}
         open={modalOpen}
         onOk={handleSubmit}
         onCancel={() => setModalOpen(false)}
         width={600}
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="pointId" label="Point ID" rules={[{ required: true }]}>
+          <Form.Item name="pointId" label="测点ID" rules={[{ required: true }]}>
             <Input disabled={!!editing} />
           </Form.Item>
-          <Form.Item name="pointName" label="Name" rules={[{ required: true }]}>
+          <Form.Item name="pointName" label="名称" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="channelId" label="Channel" rules={[{ required: true }]}>
+          <Form.Item name="channelId" label="通道" rules={[{ required: true }]}>
             <Select options={channels.map((c) => ({ label: c.channelName, value: c.channelId }))} />
           </Form.Item>
-          <Form.Item name="address" label="Address" rules={[{ required: true }]}>
-            <Input placeholder="e.g. 40001 or sensors/temp01" />
+          <Form.Item name="address" label="地址" rules={[{ required: true }]}>
+            <Input placeholder="例如 40001 或 sensors/temp01" />
           </Form.Item>
-          <Form.Item name="dataType" label="Data Type" rules={[{ required: true }]}>
+          <Form.Item name="dataType" label="数据类型" rules={[{ required: true }]}>
             <Select options={dataTypeOptions} />
           </Form.Item>
-          <Form.Item name="unit" label="Unit">
-            <Input placeholder="e.g. °C, Pa, %" />
+          <Form.Item name="unit" label="单位">
+            <Input placeholder="例如 °C, Pa, %" />
           </Form.Item>
-          <Space>
-            <Form.Item name="scaleFactor" label="Scale Factor" initialValue={1.0}>
-              <InputNumber />
-            </Form.Item>
-            <Form.Item name="offset" label="Offset" initialValue={0.0}>
-              <InputNumber />
-            </Form.Item>
-            <Form.Item name="deadBand" label="Dead Band" initialValue={0.0}>
-              <InputNumber />
-            </Form.Item>
-          </Space>
-          <Form.Item name="writable" label="Writable" valuePropName="checked">
+          <Form.Item name="writable" label="可写" valuePropName="checked">
             <Switch />
           </Form.Item>
         </Form>

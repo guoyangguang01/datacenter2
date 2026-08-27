@@ -1,5 +1,9 @@
 @echo off
+chcp 65001 >nul
 REM 启动服务
+
+REM 切换到项目根目录
+cd /d %~dp0..
 
 echo =========================================
 echo   Starting SDNCustom Services
@@ -7,7 +11,8 @@ echo =========================================
 
 REM 设置 Java 环境
 set JAVA_HOME=C:\Users\guoya\.jdks\openjdk-23.0.2
-set PATH=%JAVA_HOME%\bin;%PATH%
+set M2_HOME=D:\dev\software\apache-maven-3.9.9
+set PATH=%JAVA_HOME%\bin;%M2_HOME%\bin;%PATH%
 
 REM 创建日志目录
 if not exist logs mkdir logs

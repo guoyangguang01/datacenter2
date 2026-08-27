@@ -64,9 +64,6 @@ public class PointService {
         point.setAddress(dto.getAddress());
         point.setDataType(dto.getDataType());
         point.setUnit(dto.getUnit());
-        point.setScaleFactor(dto.getScaleFactor());
-        point.setOffset(dto.getOffset());
-        point.setDeadBand(dto.getDeadBand());
         point.setWritable(dto.isWritable());
         return pointRepository.save(point);
     }
@@ -82,9 +79,6 @@ public class PointService {
         point.setAddress(dto.getAddress());
         point.setDataType(dto.getDataType());
         point.setUnit(dto.getUnit());
-        point.setScaleFactor(dto.getScaleFactor());
-        point.setOffset(dto.getOffset());
-        point.setDeadBand(dto.getDeadBand());
         point.setWritable(dto.isWritable());
         return pointRepository.save(point);
     }
@@ -145,22 +139,29 @@ public class PointService {
      * 更新测点值（由采集引擎调用）
      */
     public void updateValue(PointValue pointValue) {
-        MeasurementPoint point = findById(pointValue.getPointId());
+        pointValueCache.save(pointValue);
+    }
 
-        // 死区判断
-        PointValue oldValue = getValue(point.getPointId());
-        if (oldValue != null && oldValue.getValue() != null && pointValue.getValue() != null) {
-            try {
-                double oldNum = Double.parseDouble(String.valueOf(oldValue.getValue()));
-                double newNum = Double.parseDouble(String.valueOf(pointValue.getValue()));
-                if (Math.abs(newNum - oldNum) < point.getDeadBand()) {
-                    return; // 变化量小于死区，不更新
-                }
-            } catch (NumberFormatException e) {
-                // 非数值类型，直接更新
+    /**
+     * 批量导入测点（upsert：存在则更新，不存在则创建）
+     */
+    @Transactional
+    public List<MeasurementPoint> importPoints(List<MeasurementPointDTO> dtos) {
+        List<MeasurementPoint> result = new java.util.ArrayList<>();
+        for (MeasurementPointDTO dto : dtos) {
+            MeasurementPoint existing = pointRepository.findById(dto.getPointId()).orElse(null);
+            if (existing != null) {
+                existing.setPointName(dto.getPointName());
+                existing.setChannelId(dto.getChannelId());
+                existing.setAddress(dto.getAddress());
+                existing.setDataType(dto.getDataType());
+                existing.setUnit(dto.getUnit());
+                existing.setWritable(dto.isWritable());
+                result.add(pointRepository.save(existing));
+            } else {
+                result.add(create(dto));
             }
         }
-
-        pointValueCache.save(pointValue);
+        return result;
     }
 }

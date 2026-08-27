@@ -65,18 +65,18 @@ export default function DashboardPage() {
     if (selectedChannels.length > 0) {
       wsService.refresh(selectedChannels);
       fetchAllValues();
-      message.success('Refreshed');
+      message.success('已刷新');
     }
   };
 
   const columns = [
-    { title: 'Point ID', dataIndex: 'pointId', key: 'pointId' },
-    { title: 'Name', dataIndex: 'pointName', key: 'pointName' },
-    { title: 'Address', dataIndex: 'address', key: 'address' },
-    { title: 'Type', dataIndex: 'dataType', key: 'dataType' },
-    { title: 'Unit', dataIndex: 'unit', key: 'unit' },
+    { title: '测点ID', dataIndex: 'pointId', key: 'pointId' },
+    { title: '名称', dataIndex: 'pointName', key: 'pointName' },
+    { title: '地址', dataIndex: 'address', key: 'address' },
+    { title: '类型', dataIndex: 'dataType', key: 'dataType' },
+    { title: '单位', dataIndex: 'unit', key: 'unit' },
     {
-      title: 'Value',
+      title: '值',
       key: 'value',
       render: (_: unknown, record: { pointId: string }) => {
         const pv = pointValues.get(record.pointId);
@@ -84,7 +84,7 @@ export default function DashboardPage() {
       },
     },
     {
-      title: 'Quality',
+      title: '质量',
       key: 'quality',
       render: (_: unknown, record: { pointId: string }) => {
         const pv = pointValues.get(record.pointId);
@@ -93,7 +93,7 @@ export default function DashboardPage() {
       },
     },
     {
-      title: 'Timestamp',
+      title: '时间戳',
       key: 'timestamp',
       render: (_: unknown, record: { pointId: string }) => {
         const pv = pointValues.get(record.pointId);
@@ -106,10 +106,10 @@ export default function DashboardPage() {
     <div>
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
         <Space>
-          <h2>Real-time Dashboard</h2>
+          <h2>实时仪表盘</h2>
           <Select
             mode="multiple"
-            placeholder="Select Channels"
+            placeholder="选择通道"
             style={{ width: 300 }}
             value={selectedChannels}
             onChange={setSelectedChannels}
@@ -117,7 +117,7 @@ export default function DashboardPage() {
           />
         </Space>
         <Button icon={<ReloadOutlined />} onClick={handleRefresh}>
-          Refresh
+          刷新
         </Button>
       </div>
       <Table columns={columns} dataSource={points} rowKey="pointId" />
