@@ -27,6 +27,7 @@ public class CustomTcpAdapter implements ProtocolAdapter {
     private DataOutputStream output;
     private Channel channel;
     private volatile boolean connected = false;
+    private String channelId; // 独立保存 channelId，确保 disconnect 时能正确移除实例
 
     // 缓存每个 Channel 的适配器实例
     private static final Map<String, CustomTcpAdapter> instances = new ConcurrentHashMap<>();
@@ -41,6 +42,7 @@ public class CustomTcpAdapter implements ProtocolAdapter {
     @Override
     public void connect(Channel channel) {
         this.channel = channel;
+        this.channelId = channel.getChannelId();
         try {
             Map<String, Object> config = objectMapper.readValue(channel.getConnectionConfig(), Map.class);
             String host = (String) config.get("host");
@@ -48,6 +50,12 @@ public class CustomTcpAdapter implements ProtocolAdapter {
 
             socket = new Socket(host, port);
             socket.setSoTimeout(5000);
+
+            // 验证 socket 是否真正建立连接
+            if (socket.isClosed() || !socket.isConnected()) {
+                throw new IOException("Socket created but not connected");
+            }
+
             input = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
             output = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
             connected = true;
@@ -55,6 +63,20 @@ public class CustomTcpAdapter implements ProtocolAdapter {
             log.info("Connected to TCP server: {}:{}", host, port);
         } catch (Exception e) {
             connected = false;
+            // 清理可能已创建的 socket 资源，防止泄漏
+            try {
+                if (socket != null && !socket.isClosed()) {
+                    socket.close();
+                }
+            } catch (IOException ignored) {
+            }
+            socket = null;
+            input = null;
+            output = null;
+            // 从实例缓存中移除，下次连接时创建新实例
+            if (channelId != null) {
+                instances.remove(channelId);
+            }
             log.error("Failed to connect to TCP server: {}", e.getMessage());
             throw new RuntimeException("Connection failed", e);
         }
@@ -65,16 +87,30 @@ public class CustomTcpAdapter implements ProtocolAdapter {
         connected = false;
         try {
             if (socket != null && !socket.isClosed()) {
+                // 先 shutdownInput/Output 中断阻塞的读写操作，再 close 释放资源
+                // 这样可以确保正在 readNBytes() 阻塞的线程被中断
+                try {
+                    socket.shutdownInput();
+                } catch (IOException ignored) {
+                    // socket 可能已经关闭，忽略
+                }
+                try {
+                    socket.shutdownOutput();
+                } catch (IOException ignored) {
+                    // socket 可能已经关闭，忽略
+                }
                 socket.close();
+                log.info("TCP socket closed for channel: {}", channelId);
             }
         } catch (IOException e) {
-            log.error("Error closing socket", e);
+            log.error("Error closing socket for channel: {}", channelId, e);
         } finally {
             socket = null;
             input = null;
             output = null;
-            if (channel != null) {
-                instances.remove(channel.getChannelId());
+            // 使用独立保存的 channelId 移除实例，避免 channel 为 null 时无法移除
+            if (channelId != null) {
+                instances.remove(channelId);
             }
         }
     }

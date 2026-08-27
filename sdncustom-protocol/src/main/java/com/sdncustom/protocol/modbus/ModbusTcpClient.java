@@ -28,11 +28,17 @@ public class ModbusTcpClient {
      * 连接到 Modbus TCP 服务器
      */
     public void connect(String host, int port) throws IOException {
-        socket = new Socket(host, port > 0 ? port : MODBUS_TCP_PORT);
-        socket.setSoTimeout(DEFAULT_TIMEOUT);
-        input = new DataInputStream(socket.getInputStream());
-        output = new DataOutputStream(socket.getOutputStream());
-        log.info("Connected to Modbus TCP server: {}:{}", host, port);
+        try {
+            socket = new Socket(host, port > 0 ? port : MODBUS_TCP_PORT);
+            socket.setSoTimeout(DEFAULT_TIMEOUT);
+            input = new DataInputStream(socket.getInputStream());
+            output = new DataOutputStream(socket.getOutputStream());
+            log.info("Connected to Modbus TCP server: {}:{}", host, port);
+        } catch (IOException e) {
+            // 连接失败时清理已创建的 socket 资源
+            disconnect();
+            throw e;
+        }
     }
 
     /**
@@ -41,7 +47,16 @@ public class ModbusTcpClient {
     public void disconnect() {
         try {
             if (socket != null && !socket.isClosed()) {
+                try {
+                    socket.shutdownInput();
+                } catch (IOException ignored) {
+                }
+                try {
+                    socket.shutdownOutput();
+                } catch (IOException ignored) {
+                }
                 socket.close();
+                log.info("Modbus TCP connection closed");
             }
         } catch (IOException e) {
             log.error("Error closing Modbus connection", e);
