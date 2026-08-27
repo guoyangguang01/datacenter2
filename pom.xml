@@ -91,6 +91,11 @@
                 <artifactId>sdk-client</artifactId>
                 <version>0.6.12</version>
             </dependency>
+            <dependency>
+                <groupId>org.eclipse.milo</groupId>
+                <artifactId>sdk-server</artifactId>
+                <version>0.6.12</version>
+            </dependency>
 
             <!-- Eclipse Paho (MQTT) -->
             <dependency>
