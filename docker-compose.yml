@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: sdncustom-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+
+  tdengine:
+    image: tdengine/tdengine:3.3
+    container_name: sdncustom-tdengine
+    ports:
+      - "6030:6030"
+      - "6041:6041"
+      - "6043:6043"
+      - "6044:6044"
+      - "6060:6060"
+    volumes:
+      - tdengine_data:/var/lib/taos
+      - tdengine_log:/var/log/taos
+    environment:
+      - TAOS_FQDN=tdengine
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  tdengine_data:
+  tdengine_log:
