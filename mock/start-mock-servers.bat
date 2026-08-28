@@ -9,11 +9,10 @@ echo ========================================
 echo.
 
 REM Set Java path (requires Java 17+)
-set JAVA_CMD=C:\Users\guoya\.jdks\openjdk-23.0.2\bin\java
-REM set JAVA_CMD=java  # Use this if system default Java >= 17
+set "JAVA_CMD=C:\Users\guoya\.jdks\openjdk-23.0.2\bin\java"
 
 REM Set JAR path (fat JAR with all dependencies)
-set JAR_PATH=..\sdncustom-protocol\target\sdncustom-protocol-1.0.0-SNAPSHOT-jar-with-dependencies.jar
+set "JAR_PATH=%~dp0..\sdncustom-protocol\target\sdncustom-protocol-1.0.0-SNAPSHOT-jar-with-dependencies.jar"
 
 REM Check if JAR exists
 if not exist "%JAR_PATH%" (
@@ -24,20 +23,20 @@ if not exist "%JAR_PATH%" (
 )
 
 echo [1/4] Starting Custom TCP Mock Server (port 9001)...
-start "Mock TCP Server" %JAVA_CMD% -cp "%JAR_PATH%" com.sdncustom.protocol.mock.MockTcpServer 9001
+start "Mock TCP Server" "%JAVA_CMD%" -cp "%JAR_PATH%" com.sdncustom.protocol.mock.MockTcpServer 9001
 timeout /t 2 /nobreak >nul
 
 echo [2/4] Starting Modbus TCP Mock Server (port 5020)...
-start "Mock Modbus Server" %JAVA_CMD% -cp "%JAR_PATH%" com.sdncustom.protocol.mock.MockModbusTcpServer 5020
+start "Mock Modbus Server" "%JAVA_CMD%" -cp "%JAR_PATH%" com.sdncustom.protocol.mock.MockModbusTcpServer 5020
 timeout /t 2 /nobreak >nul
 
 echo [3/4] Starting MQTT Mock Client (connect tcp://localhost:1883)...
 echo       Using Mosquitto MQTT Broker (anonymous)
-start "Mock MQTT Client" %JAVA_CMD% -cp "%JAR_PATH%" com.sdncustom.protocol.mock.MockMqttClient tcp://localhost:1883
+start "Mock MQTT Client" "%JAVA_CMD%" -cp "%JAR_PATH%" com.sdncustom.protocol.mock.MockMqttClient tcp://localhost:1883
 timeout /t 2 /nobreak >nul
 
 echo [4/4] Starting OPC-UA Mock Server (port 4840)...
-start "Mock OPC-UA Server" %JAVA_CMD% -cp "%JAR_PATH%" com.sdncustom.protocol.mock.MockOpcUaServer 4840
+start "Mock OPC-UA Server" "%JAVA_CMD%" -cp "%JAR_PATH%" com.sdncustom.protocol.mock.MockOpcUaServer 4840
 timeout /t 2 /nobreak >nul
 
 echo.

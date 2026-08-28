@@ -1,27 +1,27 @@
 @echo off
-REM 构建并启动模拟服务器
-REM 使用方法: build-and-start.bat
+chcp 65001 >nul 2>&1
+REM Build and start mock servers
+REM Usage: build-and-start.bat
 
 echo ========================================
-echo   构建并启动模拟服务器
+echo   Build and Start Mock Servers
 echo ========================================
 echo.
 
-REM 设置 Java 路径
-set JAVA_CMD=java
-REM set JAVA_CMD=C:\Users\guoya\.jdks\openjdk-23.0.2\bin\java
+REM Set Java path (requires Java 17+)
+set "JAVA_CMD=C:\Users\guoya\.jdks\openjdk-23.0.2\bin\java"
 
-echo [1/2] 构建 JAR 包...
-cd ..
+echo [1/2] Building JAR package...
+cd /d "%~dp0.."
 call mvn package -pl sdncustom-common,sdncustom-protocol -DskipTests -q
 if %ERRORLEVEL% neq 0 (
-    echo 构建失败！
+    echo Build failed!
     pause
     exit /b 1
 )
-cd mock
-echo 构建完成！
+cd /d "%~dp0"
+echo Build completed!
 
 echo.
-echo [2/2] 启动模拟服务器...
+echo [2/2] Starting mock servers...
 call start-mock-servers.bat
