@@ -30,7 +30,7 @@ public class ModbusTcpAdapter implements ProtocolAdapter {
     private final ModbusTcpClient client = new ModbusTcpClient();
     private Channel channel;
     private String channelId;
-    private boolean connected = false;
+    private volatile boolean connected = false;
 
     private static final Map<String, ModbusTcpAdapter> instances = new ConcurrentHashMap<>();
 
@@ -76,7 +76,13 @@ public class ModbusTcpAdapter implements ProtocolAdapter {
 
     @Override
     public PointValue readPoint(MeasurementPoint point) {
-        return readPoints(List.of(point)).stream().findFirst().orElse(null);
+        try {
+            List<PointValue> result = readPoints(List.of(point));
+            return result.isEmpty() ? commLostValue(point) : result.get(0);
+        } catch (Exception e) {
+            log.error("Failed to read Modbus point: {}", point.getPointId(), e);
+            return commLostValue(point);
+        }
     }
 
     @Override
@@ -132,6 +138,16 @@ public class ModbusTcpAdapter implements ProtocolAdapter {
         return connected && client.isConnected();
     }
 
+    private PointValue commLostValue(MeasurementPoint point) {
+        PointValue pv = new PointValue();
+        pv.setPointId(point.getPointId());
+        pv.setValue(null);
+        pv.setQuality(PointQuality.COMM_LOST);
+        pv.setTimestamp(System.currentTimeMillis());
+        pv.setSourceChannelId(channel != null ? channel.getChannelId() : null);
+        return pv;
+    }
+
     private PointValue readSinglePoint(MeasurementPoint point) throws Exception {
         ModbusAddress addr = parseAddress(point.getAddress());
         Object value;
@@ -153,8 +169,15 @@ public class ModbusTcpAdapter implements ProtocolAdapter {
                 value = coils[0];
                 break;
             }
+            case DISCRETE_INPUT: {
+                boolean[] discreteInputs = client.readDiscreteInputs(addr.registerAddress, 1);
+                value = discreteInputs[0];
+                break;
+            }
             default:
-                throw new RuntimeException("Unsupported address type: " + addr.type);
+                log.warn("Unsupported Modbus address type: {}", addr.type);
+                value = null;
+                quality = PointQuality.BAD;
         }
 
         // 转换数据类型

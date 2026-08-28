@@ -4,6 +4,8 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 
+import java.nio.charset.StandardCharsets;
+
 /**
  * TCP 协议消息
  */
@@ -20,7 +22,7 @@ public class TcpMessage {
      * 格式: [Length(4B)] [Command(1B)] [JSON Body]
      */
     public byte[] encode() {
-        byte[] bodyBytes = body != null ? body.getBytes() : new byte[0];
+        byte[] bodyBytes = body != null ? body.getBytes(StandardCharsets.UTF_8) : new byte[0];
         int length = 1 + bodyBytes.length; // command + body
 
         byte[] result = new byte[4 + length];
@@ -55,7 +57,7 @@ public class TcpMessage {
         }
 
         byte command = data[4];
-        String body = length > 1 ? new String(data, 5, length - 1) : "";
+        String body = length > 1 ? new String(data, 5, length - 1, StandardCharsets.UTF_8) : "";
 
         return new TcpMessage(command, body);
     }

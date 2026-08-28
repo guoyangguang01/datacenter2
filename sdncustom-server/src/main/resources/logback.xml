@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- 采集引擎日志 -->
+    <logger name="com.sdncustom.server.service.AcquisitionEngine" level="DEBUG"/>
+
+    <!-- 协议适配器日志 -->
+    <logger name="com.sdncustom.protocol" level="DEBUG"/>
+
+    <!-- 通道服务日志 -->
+    <logger name="com.sdncustom.server.service.ChannelService" level="DEBUG"/>
+
+    <!-- TDengine 数据源日志 -->
+    <logger name="com.zaxxer.hikari" level="INFO"/>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+</configuration>

@@ -112,18 +112,26 @@ public class PointService {
      */
     public void writeValue(String pointId, Object value) {
         MeasurementPoint point = findById(pointId);
+
+        // 不可写测点禁止写入
+        if (!point.isWritable()) {
+            throw new IllegalArgumentException("Point is not writable: " + pointId);
+        }
+
         Channel channel = channelService.findById(point.getChannelId());
 
         if (channel.getStatus() != ChannelStatus.CONNECTED) {
             throw new RuntimeException("Channel not connected: " + point.getChannelId());
         }
 
-        // 写入外部系统
-        if (channel.getDirection() == ChannelDirection.WRITE_ONLY ||
-            channel.getDirection() == ChannelDirection.READ_WRITE) {
-            ProtocolAdapter adapter = channelService.getOrCreateAdapter(channel);
-            adapter.writePoint(point, value);
+        // 只读通道禁止写入，避免伪造设备值
+        if (channel.getDirection() == ChannelDirection.READ_ONLY) {
+            throw new IllegalArgumentException("Channel is read-only: " + channel.getChannelId());
         }
+
+        // 写入外部系统
+        ProtocolAdapter adapter = channelService.getOrCreateAdapter(channel);
+        adapter.writePoint(point, value);
 
         // 更新缓存
         PointValue pv = new PointValue();

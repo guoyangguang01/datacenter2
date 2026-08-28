@@ -112,7 +112,7 @@ class PointServiceTest {
     @Test
     @DisplayName("创建测点")
     void create() {
-        when(channelService.findById("ch_001")).thenReturn(any());
+        when(channelService.findById("ch_001")).thenReturn(null);
         when(pointRepository.save(any(MeasurementPoint.class))).thenReturn(testPoint);
 
         MeasurementPoint result = pointService.create(testDto);
@@ -196,7 +196,7 @@ class PointServiceTest {
         List<MeasurementPointDTO> dtos = Arrays.asList(testDto);
 
         when(pointRepository.findById("test_point_001")).thenReturn(Optional.empty());
-        when(channelService.findById("ch_001")).thenReturn(any());
+        when(channelService.findById("ch_001")).thenReturn(null);
         when(pointRepository.save(any(MeasurementPoint.class))).thenReturn(testPoint);
 
         List<MeasurementPoint> result = pointService.importPoints(dtos);

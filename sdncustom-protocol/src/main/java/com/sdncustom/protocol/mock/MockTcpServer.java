@@ -26,6 +26,9 @@ public class MockTcpServer {
     private final Map<String, Object> pointValues = new ConcurrentHashMap<>();
     private final Random random = new Random();
 
+    // 已接受的客户端连接，用于 stop() 时统一关闭，避免线程/连接泄漏
+    private final Set<Socket> clientSockets = ConcurrentHashMap.newKeySet();
+
     public MockTcpServer(int port) {
         this.port = port;
         initMockData();
@@ -139,6 +142,17 @@ public class MockTcpServer {
     public void stop() {
         running = false;
         scheduler.shutdown();
+        // 关闭所有已接受的客户端连接，释放连接线程
+        for (Socket client : clientSockets) {
+            try {
+                if (!client.isClosed()) {
+                    client.close();
+                }
+            } catch (IOException e) {
+                log.debug("Error closing client socket", e);
+            }
+        }
+        clientSockets.clear();
         try {
             if (serverSocket != null && !serverSocket.isClosed()) {
                 serverSocket.close();
@@ -153,6 +167,7 @@ public class MockTcpServer {
      * 处理客户端连接
      */
     private void handleClient(Socket client) {
+        clientSockets.add(client);
         try (DataInputStream input = new DataInputStream(new BufferedInputStream(client.getInputStream()));
              DataOutputStream output = new DataOutputStream(new BufferedOutputStream(client.getOutputStream()))) {
 
@@ -194,6 +209,7 @@ public class MockTcpServer {
         } catch (IOException e) {
             log.error("Error handling client", e);
         } finally {
+            clientSockets.remove(client);
             try {
                 client.close();
             } catch (IOException ignored) {
@@ -331,7 +347,7 @@ public class MockTcpServer {
     }
 
     public static void main(String[] args) {
-        int port = args.length > 0 ? Integer.parseInt(args[0]) : 9001;
+        int port = args.length > 0 ? Integer.parseInt(args[0]) : 9002;
         MockTcpServer server = new MockTcpServer(port);
         server.start();
 

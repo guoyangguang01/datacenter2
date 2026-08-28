@@ -11,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.io.*;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -22,11 +23,14 @@ public class CustomTcpAdapter implements ProtocolAdapter {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    private Socket socket;
-    private DataInputStream input;
-    private DataOutputStream output;
+    private volatile Socket socket;
+    private volatile DataInputStream input;
+    private volatile DataOutputStream output;
     private Channel channel;
     private volatile boolean connected = false;
+
+    // 串行化请求/响应交换，防止并发读写帧交错
+    private final Object lock = new Object();
     private String channelId; // 独立保存 channelId，确保 disconnect 时能正确移除实例
 
     // 缓存每个 Channel 的适配器实例
@@ -117,7 +121,13 @@ public class CustomTcpAdapter implements ProtocolAdapter {
 
     @Override
     public PointValue readPoint(MeasurementPoint point) {
-        return readPoints(List.of(point)).stream().findFirst().orElse(null);
+        try {
+            List<PointValue> result = readPoints(List.of(point));
+            return result.isEmpty() ? commLostValue(point) : result.get(0);
+        } catch (Exception e) {
+            log.error("Failed to read point: {}", point.getPointId(), e);
+            return commLostValue(point);
+        }
     }
 
     @Override
@@ -125,21 +135,23 @@ public class CustomTcpAdapter implements ProtocolAdapter {
         if (!connected) {
             throw new RuntimeException("Not connected");
         }
-        try {
-            Map<String, Object> body = new HashMap<>();
-            body.put("pointId", point.getPointId());
-            body.put("value", value);
+        synchronized (lock) {
+            try {
+                Map<String, Object> body = new HashMap<>();
+                body.put("pointId", point.getPointId());
+                body.put("value", value);
 
-            TcpMessage request = new TcpMessage(TcpCommand.WRITE_REQUEST, objectMapper.writeValueAsString(body));
-            send(request);
+                TcpMessage request = new TcpMessage(TcpCommand.WRITE_REQUEST, objectMapper.writeValueAsString(body));
+                send(request);
 
-            TcpMessage response = receive();
-            if (response.getCommand() != TcpCommand.WRITE_RESPONSE) {
-                throw new RuntimeException("Unexpected response command: " + response.getCommand());
+                TcpMessage response = receive();
+                if (response.getCommand() != TcpCommand.WRITE_RESPONSE) {
+                    throw new RuntimeException("Unexpected response command: " + response.getCommand());
+                }
+            } catch (Exception e) {
+                log.error("Failed to write point: {}", point.getPointId(), e);
+                throw new RuntimeException("Write failed", e);
             }
-        } catch (Exception e) {
-            log.error("Failed to write point: {}", point.getPointId(), e);
-            throw new RuntimeException("Write failed", e);
         }
     }
 
@@ -148,39 +160,58 @@ public class CustomTcpAdapter implements ProtocolAdapter {
         if (!connected) {
             throw new RuntimeException("Not connected");
         }
-        try {
-            List<String> pointIds = points.stream().map(MeasurementPoint::getPointId).toList();
-            Map<String, Object> body = new HashMap<>();
-            body.put("pointIds", pointIds);
+        synchronized (lock) {
+            try {
+                List<String> pointIds = points.stream().map(MeasurementPoint::getPointId).toList();
+                Map<String, Object> body = new HashMap<>();
+                body.put("pointIds", pointIds);
 
-            TcpMessage request = new TcpMessage(TcpCommand.READ_REQUEST, objectMapper.writeValueAsString(body));
-            send(request);
+                TcpMessage request = new TcpMessage(TcpCommand.READ_REQUEST, objectMapper.writeValueAsString(body));
+                send(request);
 
-            TcpMessage response = receive();
-            if (response.getCommand() != TcpCommand.READ_RESPONSE) {
-                throw new RuntimeException("Unexpected response command: " + response.getCommand());
-            }
-
-            Map<String, Object> responseBody = objectMapper.readValue(response.getBody(), Map.class);
-            List<Map<String, Object>> values = (List<Map<String, Object>>) responseBody.get("values");
-
-            List<PointValue> result = new ArrayList<>();
-            if (values != null) {
-                for (Map<String, Object> v : values) {
-                    PointValue pv = new PointValue();
-                    pv.setPointId((String) v.get("pointId"));
-                    pv.setValue(v.get("value"));
-                    pv.setQuality(PointQuality.valueOf((String) v.getOrDefault("quality", "GOOD")));
-                    pv.setTimestamp(((Number) v.getOrDefault("timestamp", System.currentTimeMillis())).longValue());
-                    pv.setSourceChannelId(channel != null ? channel.getChannelId() : null);
-                    result.add(pv);
+                TcpMessage response = receive();
+                if (response.getCommand() != TcpCommand.READ_RESPONSE) {
+                    throw new RuntimeException("Unexpected response command: " + response.getCommand());
                 }
+
+                Map<String, Object> responseBody = objectMapper.readValue(response.getBody(), Map.class);
+                List<Map<String, Object>> values = (List<Map<String, Object>>) responseBody.get("values");
+
+                List<PointValue> result = new ArrayList<>();
+                if (values != null) {
+                    for (Map<String, Object> v : values) {
+                        PointValue pv = new PointValue();
+                        pv.setPointId((String) v.get("pointId"));
+                        pv.setValue(v.get("value"));
+                        pv.setQuality(PointQuality.valueOf((String) v.getOrDefault("quality", "GOOD")));
+                        pv.setTimestamp(parseTimestamp(v.getOrDefault("timestamp", System.currentTimeMillis())));
+                        pv.setSourceChannelId(channel != null ? channel.getChannelId() : null);
+                        result.add(pv);
+                    }
+                }
+                return result;
+            } catch (Exception e) {
+                log.error("Failed to read points", e);
+                throw new RuntimeException("Read failed", e);
             }
-            return result;
-        } catch (Exception e) {
-            log.error("Failed to read points", e);
-            throw new RuntimeException("Read failed", e);
         }
+    }
+
+    /**
+     * 解析设备返回的 timestamp，兼容 Number 与 String 类型
+     */
+    private long parseTimestamp(Object ts) {
+        if (ts instanceof Number) {
+            return ((Number) ts).longValue();
+        }
+        if (ts instanceof String) {
+            try {
+                return Long.parseLong((String) ts);
+            } catch (NumberFormatException e) {
+                log.warn("Failed to parse timestamp string: {}", ts);
+            }
+        }
+        return System.currentTimeMillis();
     }
 
     @Override
@@ -205,6 +236,18 @@ public class CustomTcpAdapter implements ProtocolAdapter {
                      ((lengthBytes[2] & 0xFF) << 8) |
                      (lengthBytes[3] & 0xFF);
 
+        // 校验帧长度，防止非法长度导致崩溃或阻塞（readNBytes(负数) / data[0] on empty）
+        if (length <= 0) {
+            log.error("Invalid TCP frame length: {} (<= 0)", length);
+            closeConnection();
+            throw new IOException("Invalid frame length: " + length);
+        }
+        if (length > 65535) {
+            log.error("Invalid TCP frame length: {} (> 65535)", length);
+            closeConnection();
+            throw new IOException("Invalid frame length: " + length);
+        }
+
         // 读取 command + body
         byte[] data = input.readNBytes(length);
         if (data.length < length) {
@@ -212,8 +255,44 @@ public class CustomTcpAdapter implements ProtocolAdapter {
         }
 
         byte command = data[0];
-        String body = length > 1 ? new String(data, 1, length - 1) : "";
+        String body = length > 1 ? new String(data, 1, length - 1, StandardCharsets.UTF_8) : "";
 
         return new TcpMessage(command, body);
+    }
+
+    /**
+     * 关闭底层连接并清理状态，用于协议错误等场景
+     */
+    private void closeConnection() {
+        try {
+            if (socket != null && !socket.isClosed()) {
+                try {
+                    socket.shutdownInput();
+                } catch (IOException ignored) {
+                }
+                try {
+                    socket.shutdownOutput();
+                } catch (IOException ignored) {
+                }
+                socket.close();
+            }
+        } catch (IOException e) {
+            log.debug("Error closing socket", e);
+        } finally {
+            socket = null;
+            input = null;
+            output = null;
+            connected = false;
+        }
+    }
+
+    private PointValue commLostValue(MeasurementPoint point) {
+        PointValue pv = new PointValue();
+        pv.setPointId(point.getPointId());
+        pv.setValue(null);
+        pv.setQuality(PointQuality.COMM_LOST);
+        pv.setTimestamp(System.currentTimeMillis());
+        pv.setSourceChannelId(channel != null ? channel.getChannelId() : null);
+        return pv;
     }
 }

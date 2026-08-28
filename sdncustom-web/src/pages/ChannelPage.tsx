@@ -36,7 +36,7 @@ function parseConnectionConfig(config: string | undefined): Record<string, unkno
 }
 
 export default function ChannelPage() {
-  const { channels, loading, fetchChannels, createChannel, updateChannel, deleteChannel, connectChannel, disconnectChannel } = useChannelStore();
+  const { channels, loading, error, fetchChannels, createChannel, updateChannel, deleteChannel, connectChannel, disconnectChannel } = useChannelStore();
   const { fetchPoints } = usePointStore();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Channel | null>(null);
@@ -47,6 +47,11 @@ export default function ChannelPage() {
   useEffect(() => {
     fetchChannels();
   }, [fetchChannels]);
+
+  // 展示 store 中的错误信息
+  useEffect(() => {
+    if (error) message.error(error);
+  }, [error]);
 
   const handleAdd = () => {
     setEditing(null);
@@ -66,7 +71,7 @@ export default function ChannelPage() {
       autoConnect: record.autoConnect,
       // TCP / Modbus
       host: config.host || 'localhost',
-      port: config.port || (record.protocolType === 'MODBUS_TCP' ? 502 : 9001),
+      port: config.port || (record.protocolType === 'MODBUS_TCP' ? 502 : 9002),
       unitId: config.unitId || 1,
       // MQTT
       broker: config.broker || 'tcp://localhost:1883',
@@ -81,15 +86,19 @@ export default function ChannelPage() {
   };
 
   const handleDelete = async (id: string) => {
-    await deleteChannel(id);
-    message.success('已删除');
+    try {
+      await deleteChannel(id);
+      message.success('已删除');
+    } catch {
+      // 错误信息已通过 store.error 展示
+    }
   };
 
   // 导出全部（通道+测点）
   const handleExportAll = async () => {
     try {
       const res = await channelApi.exportAll();
-      const blob = new Blob([JSON.stringify(res.data, null, 2)], { type: 'application/json' });
+      const blob = new Blob([res.data as BlobPart], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -148,18 +157,28 @@ export default function ChannelPage() {
         message.error('不支持的文件格式');
       }
     } catch {
-      message.error('导入失败，请检查文件格式');
+      if (!useChannelStore.getState().error) {
+        message.error('导入失败，请检查文件格式');
+      }
     }
   };
 
   const handleConnect = async (id: string) => {
-    await connectChannel(id);
-    message.success('已连接');
+    try {
+      await connectChannel(id);
+      message.success('已连接');
+    } catch {
+      // 错误信息已通过 store.error 展示
+    }
   };
 
   const handleDisconnect = async (id: string) => {
-    await disconnectChannel(id);
-    message.success('已断开');
+    try {
+      await disconnectChannel(id);
+      message.success('已断开');
+    } catch {
+      // 错误信息已通过 store.error 展示
+    }
   };
 
   const handleSubmit = async () => {
@@ -171,7 +190,7 @@ export default function ChannelPage() {
       case 'CUSTOM_TCP':
         connectionConfig = JSON.stringify({
           host: values.host || 'localhost',
-          port: values.port || 9001,
+          port: values.port || 9002,
         });
         break;
       case 'MODBUS_TCP':
@@ -205,14 +224,18 @@ export default function ChannelPage() {
       connectionConfig,
     };
 
-    if (editing) {
-      await updateChannel(editing.channelId, submitData);
-      message.success('已更新');
-    } else {
-      await createChannel(submitData);
-      message.success('已创建');
+    try {
+      if (editing) {
+        await updateChannel(editing.channelId, submitData);
+        message.success('已更新');
+      } else {
+        await createChannel(submitData);
+        message.success('已创建');
+      }
+      setModalOpen(false);
+    } catch {
+      // 错误信息已通过 store.error 展示；保持弹窗打开
     }
-    setModalOpen(false);
   };
 
   const columns = [
@@ -328,7 +351,7 @@ export default function ChannelPage() {
                   style={{ width: '100%' }}
                   min={1}
                   max={65535}
-                  placeholder={protocolType === 'MODBUS_TCP' ? '502' : '9001'}
+                  placeholder={protocolType === 'MODBUS_TCP' ? '502' : '9002'}
                 />
               </Form.Item>
               {protocolType === 'MODBUS_TCP' && (

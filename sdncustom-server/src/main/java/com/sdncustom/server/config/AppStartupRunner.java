@@ -22,15 +22,17 @@ public class AppStartupRunner implements CommandLineRunner {
         // 初始化 TDengine
         historyService.init();
 
-        // 异步自动连接 Channel
-        new Thread(() -> {
+        // 异步自动连接 Channel（守护线程，不阻塞 JVM 关闭）
+        Thread autoConnectThread = new Thread(() -> {
             try {
                 Thread.sleep(2000); // 等待应用完全启动
                 channelService.autoConnectAll();
             } catch (Exception e) {
                 log.error("Auto-connect failed", e);
             }
-        }).start();
+        }, "auto-connect");
+        autoConnectThread.setDaemon(true);
+        autoConnectThread.start();
 
         log.info("SDNCustom application initialized");
     }

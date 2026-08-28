@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sdncustom.common.model.MeasurementPoint;
 import com.sdncustom.common.model.PointValue;
 import com.sdncustom.server.repository.MeasurementPointRepository;
+import com.sdncustom.server.repository.PointValueCacheRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -21,32 +22,25 @@ public class DataWebSocketHandler extends TextWebSocketHandler {
 
     private final ObjectMapper objectMapper;
     private final MeasurementPointRepository pointRepository;
+    private final PointValueCacheRepository pointValueCache;
 
     // sessionId -> subscribed channelIds
     private final Map<String, Set<String>> subscriptions = new ConcurrentHashMap<>();
     // channelId -> sessionIds
     private final Map<String, Set<String>> channelSubscribers = new ConcurrentHashMap<>();
+    // sessionId -> session
+    private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
         subscriptions.put(session.getId(), ConcurrentHashMap.newKeySet());
+        sessions.put(session.getId(), session);
         log.info("WebSocket connected: {}", session.getId());
     }
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
-        Set<String> channels = subscriptions.remove(session.getId());
-        if (channels != null) {
-            for (String channelId : channels) {
-                Set<String> subscribers = channelSubscribers.get(channelId);
-                if (subscribers != null) {
-                    subscribers.remove(session.getId());
-                    if (subscribers.isEmpty()) {
-                        channelSubscribers.remove(channelId);
-                    }
-                }
-            }
-        }
+        removeSession(session.getId());
         log.info("WebSocket disconnected: {}", session.getId());
     }
 
@@ -55,6 +49,10 @@ public class DataWebSocketHandler extends TextWebSocketHandler {
         try {
             Map<String, Object> msg = objectMapper.readValue(message.getPayload(), Map.class);
             String action = (String) msg.get("action");
+            if (action == null) {
+                log.warn("WebSocket message missing 'action' field, ignoring");
+                return;
+            }
 
             switch (action) {
                 case "subscribe" -> handleSubscribe(session, msg);
@@ -109,11 +107,27 @@ public class DataWebSocketHandler extends TextWebSocketHandler {
         List<String> channelIds = (List<String>) msg.get("channelIds");
         if (channelIds == null) return;
 
-        // 获取所有测点值并推送
-        for (String channelId : channelIds) {
-            List<MeasurementPoint> points = pointRepository.findByChannelId(channelId);
-            // 这里需要从缓存获取值，简化处理
-            log.info("Refresh requested for channel: {}", channelId);
+        try {
+            List<PointValue> values = new ArrayList<>();
+            for (String channelId : channelIds) {
+                List<MeasurementPoint> points = pointRepository.findByChannelId(channelId);
+                for (MeasurementPoint p : points) {
+                    pointValueCache.findByPointId(p.getPointId()).ifPresent(values::add);
+                }
+            }
+            if (values.isEmpty()) return;
+
+            Map<String, Object> data = new HashMap<>();
+            data.put("type", "data");
+            data.put("values", values);
+            String json = objectMapper.writeValueAsString(data);
+            synchronized (session) {
+                if (session.isOpen()) {
+                    session.sendMessage(new TextMessage(json));
+                }
+            }
+        } catch (Exception e) {
+            log.error("Failed to handle refresh", e);
         }
     }
 
@@ -121,10 +135,13 @@ public class DataWebSocketHandler extends TextWebSocketHandler {
      * 推送测点值到订阅的客户端
      */
     public void pushPointValue(PointValue pointValue) {
-        MeasurementPoint point = pointRepository.findById(pointValue.getPointId()).orElse(null);
-        if (point == null) return;
+        String channelId = pointValue.getSourceChannelId();
+        if (channelId == null) {
+            MeasurementPoint point = pointRepository.findById(pointValue.getPointId()).orElse(null);
+            if (point == null) return;
+            channelId = point.getChannelId();
+        }
 
-        String channelId = point.getChannelId();
         Set<String> subscribers = channelSubscribers.get(channelId);
         if (subscribers == null || subscribers.isEmpty()) return;
 
@@ -136,8 +153,17 @@ public class DataWebSocketHandler extends TextWebSocketHandler {
 
             TextMessage textMessage = new TextMessage(json);
             for (String sessionId : subscribers) {
-                // 需要获取 session 并发送
-                // 这里简化处理，实际需要维护 session 引用
+                WebSocketSession session = sessions.get(sessionId);
+                if (session != null && session.isOpen()) {
+                    try {
+                        synchronized (session) {
+                            session.sendMessage(textMessage);
+                        }
+                    } catch (IOException e) {
+                        log.warn("Failed to send to session {}, removing it", sessionId, e);
+                        removeSession(sessionId);
+                    }
+                }
             }
         } catch (Exception e) {
             log.error("Failed to push point value", e);
@@ -160,10 +186,39 @@ public class DataWebSocketHandler extends TextWebSocketHandler {
 
             TextMessage textMessage = new TextMessage(json);
             for (String sessionId : subscribers) {
-                // 需要获取 session 并发送
+                WebSocketSession session = sessions.get(sessionId);
+                if (session != null && session.isOpen()) {
+                    try {
+                        synchronized (session) {
+                            session.sendMessage(textMessage);
+                        }
+                    } catch (IOException e) {
+                        log.warn("Failed to send to session {}, removing it", sessionId, e);
+                        removeSession(sessionId);
+                    }
+                }
             }
         } catch (Exception e) {
             log.error("Failed to push channel status", e);
+        }
+    }
+
+    /**
+     * 移除会话及其订阅关系
+     */
+    private void removeSession(String sessionId) {
+        Set<String> channels = subscriptions.remove(sessionId);
+        sessions.remove(sessionId);
+        if (channels != null) {
+            for (String channelId : channels) {
+                Set<String> subscribers = channelSubscribers.get(channelId);
+                if (subscribers != null) {
+                    subscribers.remove(sessionId);
+                    if (subscribers.isEmpty()) {
+                        channelSubscribers.remove(channelId);
+                    }
+                }
+            }
         }
     }
 }

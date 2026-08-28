@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.eclipse.paho.mqttv5.client.MqttClient;
 import org.eclipse.paho.mqttv5.client.MqttConnectionOptions;
+import org.eclipse.paho.mqttv5.client.persist.MemoryPersistence;
 import org.eclipse.paho.mqttv5.common.MqttMessage;
 
 import java.nio.charset.StandardCharsets;
@@ -159,7 +160,8 @@ public class MockMqttClient {
      */
     public void start() {
         try {
-            client = new MqttClient(broker, clientId);
+            // 使用内存持久化，避免创建 .lck 文件
+            client = new MqttClient(broker, clientId, new MemoryPersistence());
             MqttConnectionOptions options = new MqttConnectionOptions();
             options.setCleanStart(true);
             options.setAutomaticReconnect(true);
@@ -316,8 +318,9 @@ public class MockMqttClient {
         pointValues.put("devices/fan01/status", fan1Running ? "running" : "stopped");
         pointValues.put("devices/fan01/speed", fan1Running ? 2800 + random.nextInt(400) - 200 : 0);
 
-        pointValues.put("devices/fan02/status", random.nextDouble() > 0.6 ? "running" : "stopped");
-        pointValues.put("devices/fan02/speed", (double) pointValues.get("devices/fan02/speed"));
+        boolean fan2Running = random.nextDouble() > 0.6;
+        pointValues.put("devices/fan02/status", fan2Running ? "running" : "stopped");
+        pointValues.put("devices/fan02/speed", fan2Running ? 2200 + random.nextInt(300) - 150 : 0);
 
         // 电表数据 (3组)
         double v1m = round(220.0 + (random.nextDouble() - 0.5) * 10, 1);

@@ -35,10 +35,13 @@ public class MqttAdapter implements ProtocolAdapter {
     private final ObjectMapper objectMapper = new ObjectMapper();
     private MqttClient client;
     private Channel channel;
-    private boolean connected = false;
+    private volatile boolean connected = false;
 
     // 缓存最新的测点值 (topic -> value)
     private final Map<String, PointValue> valueCache = new ConcurrentHashMap<>();
+
+    // 已订阅的 MQTT topic，用于自动重连后恢复订阅
+    private final Set<String> subscribedTopics = ConcurrentHashMap.newKeySet();
 
     private static final Map<String, MqttAdapter> instances = new ConcurrentHashMap<>();
 
@@ -60,7 +63,7 @@ public class MqttAdapter implements ProtocolAdapter {
 
             MqttConnectionOptions options = new MqttConnectionOptions();
             options.setCleanStart(true);
-            options.setAutomaticReconnect(false);
+            options.setAutomaticReconnect(true);
             if (username != null) {
                 options.setUserName(username);
             }
@@ -91,7 +94,20 @@ public class MqttAdapter implements ProtocolAdapter {
 
                 @Override
                 public void connectComplete(boolean reconnect, String serverURI) {
+                    connected = true;
                     log.info("MQTT connected to: {}", serverURI);
+                    // 自动重连后恢复所有已订阅的 topic
+                    if (client == null) {
+                        return;
+                    }
+                    for (String topic : subscribedTopics) {
+                        try {
+                            client.subscribe(topic, 1);
+                            log.info("Re-subscribed to MQTT topic after reconnect: {}", topic);
+                        } catch (MqttException e) {
+                            log.error("Failed to re-subscribe to MQTT topic after reconnect: {}", topic, e);
+                        }
+                    }
                 }
 
                 @Override
@@ -121,6 +137,7 @@ public class MqttAdapter implements ProtocolAdapter {
         } finally {
             client = null;
             valueCache.clear();
+            subscribedTopics.clear();
             if (channel != null) {
                 instances.remove(channel.getChannelId());
             }
@@ -129,7 +146,19 @@ public class MqttAdapter implements ProtocolAdapter {
 
     @Override
     public PointValue readPoint(MeasurementPoint point) {
-        return valueCache.get(point.getAddress());
+        PointValue cached = valueCache.get(point.getAddress());
+        if (cached != null) {
+            // 缓存中 pointId 是 MQTT topic，需返回配置的 pointId 副本
+            return copyWithPointId(cached, point);
+        }
+        // 未找到缓存值时返回 COMM_LOST，而不是 null
+        PointValue pv = new PointValue();
+        pv.setPointId(point.getPointId());
+        pv.setValue(null);
+        pv.setQuality(PointQuality.COMM_LOST);
+        pv.setTimestamp(System.currentTimeMillis());
+        pv.setSourceChannelId(channel != null ? channel.getChannelId() : null);
+        return pv;
     }
 
     @Override
@@ -162,6 +191,9 @@ public class MqttAdapter implements ProtocolAdapter {
                 pv.setQuality(PointQuality.COMM_LOST);
                 pv.setTimestamp(System.currentTimeMillis());
                 pv.setSourceChannelId(channel != null ? channel.getChannelId() : null);
+            } else {
+                // 缓存中 pointId 是 MQTT topic，需返回配置的 pointId 副本
+                pv = copyWithPointId(pv, point);
             }
             results.add(pv);
         }
@@ -181,9 +213,11 @@ public class MqttAdapter implements ProtocolAdapter {
             throw new RuntimeException("Not connected");
         }
         try {
+            subscribedTopics.add(topic);
             client.subscribe(topic, 1);
             log.info("Subscribed to MQTT topic: {}", topic);
         } catch (MqttException e) {
+            subscribedTopics.remove(topic);
             log.error("Failed to subscribe to topic: {}", topic, e);
             throw new RuntimeException("MQTT subscribe failed", e);
         }
@@ -196,6 +230,19 @@ public class MqttAdapter implements ProtocolAdapter {
         for (String topic : topics) {
             subscribe(topic);
         }
+    }
+
+    /**
+     * 复制缓存中的 PointValue，并将 pointId 替换为测点配置的 pointId
+     */
+    private PointValue copyWithPointId(PointValue source, MeasurementPoint point) {
+        PointValue pv = new PointValue();
+        pv.setPointId(point.getPointId());
+        pv.setValue(source.getValue());
+        pv.setQuality(source.getQuality());
+        pv.setTimestamp(source.getTimestamp());
+        pv.setSourceChannelId(source.getSourceChannelId());
+        return pv;
     }
 
     private void handleMessage(String topic, MqttMessage message) {

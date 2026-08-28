@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 /**
  * OPC-UA 协议适配器
@@ -30,9 +31,9 @@ import java.util.concurrent.ConcurrentHashMap;
 public class OpcUaAdapter implements ProtocolAdapter {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private OpcUaClient client;
+    private volatile OpcUaClient client;
     private Channel channel;
-    private boolean connected = false;
+    private volatile boolean connected = false;
 
     private static final Map<String, OpcUaAdapter> instances = new ConcurrentHashMap<>();
 
@@ -49,7 +50,7 @@ public class OpcUaAdapter implements ProtocolAdapter {
             // endpoint 格式: "opc.tcp://localhost:4840"
 
             client = OpcUaClient.create(endpoint);
-            client.connect().get();
+            client.connect().get(5, TimeUnit.SECONDS);
             connected = true;
             log.info("Connected to OPC-UA server: {}", endpoint);
         } catch (Exception e) {
@@ -64,7 +65,7 @@ public class OpcUaAdapter implements ProtocolAdapter {
         connected = false;
         try {
             if (client != null) {
-                client.disconnect().get();
+                client.disconnect().get(5, TimeUnit.SECONDS);
             }
         } catch (Exception e) {
             log.error("Error disconnecting OPC-UA client", e);
@@ -78,7 +79,13 @@ public class OpcUaAdapter implements ProtocolAdapter {
 
     @Override
     public PointValue readPoint(MeasurementPoint point) {
-        return readPoints(List.of(point)).stream().findFirst().orElse(null);
+        try {
+            List<PointValue> result = readPoints(List.of(point));
+            return result.isEmpty() ? badValue(point) : result.get(0);
+        } catch (Exception e) {
+            log.error("Failed to read OPC-UA point: {}", point.getPointId(), e);
+            return badValue(point);
+        }
     }
 
     @Override
@@ -90,7 +97,7 @@ public class OpcUaAdapter implements ProtocolAdapter {
             NodeId nodeId = parseNodeId(point.getAddress());
             Variant variant = convertToVariant(value, point.getDataType());
 
-            StatusCode statusCode = client.writeValue(nodeId, new DataValue(variant, StatusCode.GOOD)).get();
+            StatusCode statusCode = client.writeValue(nodeId, new DataValue(variant, StatusCode.GOOD)).get(5, TimeUnit.SECONDS);
             if (statusCode.isBad()) {
                 throw new RuntimeException("OPC-UA write failed: " + statusCode);
             }
@@ -126,7 +133,25 @@ public class OpcUaAdapter implements ProtocolAdapter {
 
     @Override
     public boolean isConnected() {
-        return connected && client != null;
+        if (!connected || client == null) {
+            return false;
+        }
+        // 进一步验证 OPC-UA 会话确实已建立（getNow(null) 在无活动会话时返回 null）
+        try {
+            return client.getSession().getNow(null) != null;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private PointValue badValue(MeasurementPoint point) {
+        PointValue pv = new PointValue();
+        pv.setPointId(point.getPointId());
+        pv.setValue(null);
+        pv.setQuality(PointQuality.BAD);
+        pv.setTimestamp(System.currentTimeMillis());
+        pv.setSourceChannelId(channel != null ? channel.getChannelId() : null);
+        return pv;
     }
 
     private PointValue readSinglePoint(MeasurementPoint point) throws Exception {
@@ -136,7 +161,7 @@ public class OpcUaAdapter implements ProtocolAdapter {
                 0.0,
                 TimestampsToReturn.Both,
                 nodeId
-        ).get();
+        ).get(5, TimeUnit.SECONDS);
 
         PointValue pv = new PointValue();
         pv.setPointId(point.getPointId());

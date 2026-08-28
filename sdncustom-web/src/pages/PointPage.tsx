@@ -16,7 +16,7 @@ const dataTypeOptions = [
 ];
 
 export default function PointPage() {
-  const { points, loading, fetchPoints, createPoint, updatePoint, deletePoint, importPoints } = usePointStore();
+  const { points, loading, error, fetchPoints, createPoint, updatePoint, deletePoint, importPoints } = usePointStore();
   const { channels, fetchChannels } = useChannelStore();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<MeasurementPoint | null>(null);
@@ -26,12 +26,17 @@ export default function PointPage() {
 
   useEffect(() => {
     fetchChannels();
-    fetchPoints();
-  }, [fetchChannels, fetchPoints]);
+  }, [fetchChannels]);
 
+  // 挂载时按当前筛选（默认全部）加载测点；筛选变化时重新加载
   useEffect(() => {
     fetchPoints(filterChannel);
   }, [filterChannel, fetchPoints]);
+
+  // 展示 store 中的错误信息
+  useEffect(() => {
+    if (error) message.error(error);
+  }, [error]);
 
   const handleAdd = () => {
     setEditing(null);
@@ -46,8 +51,12 @@ export default function PointPage() {
   };
 
   const handleDelete = async (id: string) => {
-    await deletePoint(id);
-    message.success('已删除');
+    try {
+      await deletePoint(id);
+      message.success('已删除');
+    } catch {
+      // 错误信息已通过 store.error 展示
+    }
   };
 
   const handleExport = async () => {
@@ -73,20 +82,26 @@ export default function PointPage() {
       const count = await importPoints(Array.isArray(data) ? data : [data]);
       message.success(`导入成功，共导入 ${count} 个测点`);
     } catch {
-      message.error('导入失败，请检查文件格式');
+      if (!usePointStore.getState().error) {
+        message.error('导入失败，请检查文件格式');
+      }
     }
   };
 
   const handleSubmit = async () => {
     const values = await form.validateFields();
-    if (editing) {
-      await updatePoint(editing.pointId, values);
-      message.success('已更新');
-    } else {
-      await createPoint(values);
-      message.success('已创建');
+    try {
+      if (editing) {
+        await updatePoint(editing.pointId, values);
+        message.success('已更新');
+      } else {
+        await createPoint(values);
+        message.success('已创建');
+      }
+      setModalOpen(false);
+    } catch {
+      // 错误信息已通过 store.error 展示；保持弹窗打开
     }
-    setModalOpen(false);
   };
 
   const columns = [

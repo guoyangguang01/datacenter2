@@ -3,8 +3,12 @@ package com.sdncustom.server.controller;
 import com.sdncustom.common.dto.ApiResponse;
 import com.sdncustom.common.dto.ChannelDTO;
 import com.sdncustom.common.dto.MeasurementPointDTO;
+import com.sdncustom.common.exception.BusinessException;
 import com.sdncustom.common.model.Channel;
 import com.sdncustom.common.model.MeasurementPoint;
+import com.sdncustom.common.model.enums.ChannelDirection;
+import com.sdncustom.common.model.enums.PointDataType;
+import com.sdncustom.common.model.enums.ProtocolType;
 import com.sdncustom.server.service.ChannelService;
 import com.sdncustom.server.service.PointService;
 import jakarta.validation.Valid;
@@ -85,15 +89,22 @@ public class ChannelController {
 
         // 导入通道
         if (data.containsKey("channels")) {
-            List<Map<String, Object>> channels = (List<Map<String, Object>>) data.get("channels");
+            Object channelsObj = data.get("channels");
+            if (!(channelsObj instanceof List)) {
+                throw new BusinessException(400, "'channels' 必须是数组");
+            }
+            List<Map<String, Object>> channels = (List<Map<String, Object>>) channelsObj;
             for (Map<String, Object> ch : channels) {
+                if (!(ch instanceof Map)) {
+                    throw new BusinessException(400, "通道项必须是对象");
+                }
                 ChannelDTO dto = new ChannelDTO();
-                dto.setChannelId((String) ch.get("channelId"));
-                dto.setChannelName((String) ch.get("channelName"));
-                dto.setProtocolType(com.sdncustom.common.model.enums.ProtocolType.valueOf((String) ch.get("protocolType")));
-                dto.setDirection(com.sdncustom.common.model.enums.ChannelDirection.valueOf((String) ch.get("direction")));
-                dto.setConnectionConfig((String) ch.get("connectionConfig"));
-                dto.setAutoConnect(ch.containsKey("autoConnect") ? (Boolean) ch.get("autoConnect") : false);
+                dto.setChannelId(requireString(ch, "channelId"));
+                dto.setChannelName(requireString(ch, "channelName"));
+                dto.setProtocolType(parseEnum(ProtocolType.class, ch.get("protocolType"), "protocolType"));
+                dto.setDirection(parseEnum(ChannelDirection.class, ch.get("direction"), "direction"));
+                dto.setConnectionConfig(optionalString(ch, "connectionConfig"));
+                dto.setAutoConnect(optionalBoolean(ch, "autoConnect", false));
 
                 Channel existing = channelService.findByIdOrNull(dto.getChannelId());
                 if (existing != null) {
@@ -107,17 +118,30 @@ public class ChannelController {
 
         // 导入测点
         if (data.containsKey("points")) {
-            List<Map<String, Object>> points = (List<Map<String, Object>>) data.get("points");
+            Object pointsObj = data.get("points");
+            if (!(pointsObj instanceof List)) {
+                throw new BusinessException(400, "'points' 必须是数组");
+            }
+            List<Map<String, Object>> points = (List<Map<String, Object>>) pointsObj;
             List<MeasurementPointDTO> dtos = new java.util.ArrayList<>();
             for (Map<String, Object> pt : points) {
+                if (!(pt instanceof Map)) {
+                    throw new BusinessException(400, "测点项必须是对象");
+                }
                 MeasurementPointDTO dto = new MeasurementPointDTO();
-                dto.setPointId((String) pt.get("pointId"));
-                dto.setPointName((String) pt.get("pointName"));
-                dto.setChannelId((String) pt.get("channelId"));
-                dto.setAddress((String) pt.get("address"));
-                dto.setDataType(com.sdncustom.common.model.enums.PointDataType.valueOf((String) pt.get("dataType")));
-                dto.setUnit((String) pt.get("unit"));
-                dto.setWritable(pt.containsKey("writable") ? (Boolean) pt.get("writable") : false);
+                dto.setPointId(requireString(pt, "pointId"));
+                dto.setPointName(requireString(pt, "pointName"));
+                String channelId = requireString(pt, "channelId");
+                dto.setChannelId(channelId);
+                dto.setAddress(requireString(pt, "address"));
+                dto.setDataType(parseEnum(PointDataType.class, pt.get("dataType"), "dataType"));
+                dto.setUnit(optionalString(pt, "unit"));
+                dto.setWritable(optionalBoolean(pt, "writable", false));
+
+                // 校验通道存在，避免导入的测点挂在不存在通道下
+                if (channelService.findByIdOrNull(channelId) == null) {
+                    throw new BusinessException(400, "通道不存在: " + channelId);
+                }
                 dtos.add(dto);
             }
             pointService.importPoints(dtos);
@@ -128,5 +152,40 @@ public class ChannelController {
         result.put("channelCount", channelCount);
         result.put("pointCount", pointCount);
         return result;
+    }
+
+    private String requireString(Map<String, Object> map, String key) {
+        Object value = map.get(key);
+        if (value == null) {
+            throw new BusinessException(400, "缺少必填字段: " + key);
+        }
+        return String.valueOf(value);
+    }
+
+    private String optionalString(Map<String, Object> map, String key) {
+        Object value = map.get(key);
+        return value == null ? null : String.valueOf(value);
+    }
+
+    private boolean optionalBoolean(Map<String, Object> map, String key, boolean defaultValue) {
+        Object value = map.get(key);
+        if (value == null) {
+            return defaultValue;
+        }
+        if (value instanceof Boolean b) {
+            return b;
+        }
+        return Boolean.parseBoolean(String.valueOf(value));
+    }
+
+    private <E extends Enum<E>> E parseEnum(Class<E> enumType, Object value, String field) {
+        if (value == null) {
+            throw new BusinessException(400, "缺少必填字段: " + field);
+        }
+        try {
+            return Enum.valueOf(enumType, String.valueOf(value));
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException(400, "非法的 " + field + ": " + value);
+        }
     }
 }

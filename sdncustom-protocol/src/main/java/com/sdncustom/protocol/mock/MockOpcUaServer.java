@@ -15,7 +15,6 @@ import org.eclipse.milo.opcua.sdk.server.nodes.UaFolderNode;
 import org.eclipse.milo.opcua.sdk.server.nodes.UaNodeContext;
 import org.eclipse.milo.opcua.sdk.server.nodes.UaVariableNode;
 import org.eclipse.milo.opcua.stack.core.Identifiers;
-import org.eclipse.milo.opcua.stack.core.StatusCodes;
 import org.eclipse.milo.opcua.stack.core.types.builtin.*;
 import org.eclipse.milo.opcua.stack.core.types.builtin.unsigned.UByte;
 import org.eclipse.milo.opcua.stack.core.types.builtin.unsigned.UShort;
@@ -190,11 +189,21 @@ public class MockOpcUaServer {
     public void stop() {
         running = false;
         scheduler.shutdown();
+        if (namespace != null) {
+            try {
+                namespace.shutdown();
+            } catch (Exception e) {
+                log.error("Error shutting down Mock OPC-UA namespace", e);
+            }
+            namespace = null;
+        }
         if (server != null) {
             try {
-                server.shutdown().get();
+                server.shutdown().get(5, TimeUnit.SECONDS);
             } catch (Exception e) {
                 log.error("Error stopping Mock OPC-UA Server", e);
+            } finally {
+                server = null;
             }
         }
         log.info("Mock OPC-UA Server stopped");
@@ -408,26 +417,26 @@ public class MockOpcUaServer {
 
         @Override
         public void read(ReadContext context, Double maxAge, TimestampsToReturn timestamps, List<ReadValueId> readValueIds) {
-            // 默认读取实现
-            context.failure(StatusCodes.Bad_NotImplemented);
+            // 委托给父类实现，由 UaNodeManager 提供节点读取
+            super.read(context, maxAge, timestamps, readValueIds);
         }
 
         @Override
         public void write(WriteContext context, List<WriteValue> writeValues) {
-            // 默认写入实现
-            context.failure(StatusCodes.Bad_NotImplemented);
+            // 委托给父类实现，由 UaNodeManager 提供节点写入
+            super.write(context, writeValues);
         }
 
         @Override
         public void browse(BrowseContext context, ViewDescription viewDescription, NodeId nodeId) {
-            // 默认浏览实现
-            context.failure(StatusCodes.Bad_NotImplemented);
+            // 委托给父类实现，由 UaNodeManager 提供引用浏览
+            super.browse(context, viewDescription, nodeId);
         }
 
         @Override
         public void getReferences(BrowseContext context, ViewDescription viewDescription, NodeId nodeId) {
-            // 默认获取引用实现
-            context.failure(StatusCodes.Bad_NotImplemented);
+            // 委托给父类实现，由 UaNodeManager 提供引用获取
+            super.getReferences(context, viewDescription, nodeId);
         }
 
         /**

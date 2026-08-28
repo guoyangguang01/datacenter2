@@ -29,6 +29,7 @@ public class PointController {
     private final PointService pointService;
     private final ChannelService channelService;
     private final HistoryService historyService;
+    private final ObjectMapper objectMapper;
 
     @GetMapping
     public ApiResponse<List<MeasurementPoint>> findAll(@RequestParam(required = false) String channelId) {
@@ -88,7 +89,7 @@ public class PointController {
         List<MeasurementPoint> points = pointService.findAll();
         response.setContentType("application/json");
         response.setHeader("Content-Disposition", "attachment; filename=points_export.json");
-        new ObjectMapper().writerWithDefaultPrettyPrinter().writeValue(response.getOutputStream(), points);
+        objectMapper.writerWithDefaultPrettyPrinter().writeValue(response.getOutputStream(), points);
     }
 
     /**

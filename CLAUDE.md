@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # SDNCustom - IoT Data Hub
 
 通用物联网数据集中分发平台，以**测点**为核心，平台作为数据中枢统一管理所有测点数据。
@@ -6,7 +10,7 @@
 
 | 层级 | 技术 |
 |------|------|
-| 后端 | Java 17 / Spring Boot 3.2.5 / Spring Data JPA |
+| 后端 | Java 23 / Spring Boot 3.2.5 / Spring Data JPA |
 | 前端 | React 18 / TypeScript / Ant Design 5 / Zustand |
 | 配置存储 | H2 (嵌入式) |
 | 实时缓存 | Redis |
@@ -29,13 +33,30 @@ SDNCustom/
 - **管道 (Channel)**：与外部设备/系统的连接通道，负责数据采集和写入
 - **数据中枢**：平台是测点数据的唯一权威源，所有客户端通过平台读写数据
 
+## 环境要求
+
+- **JDK 23**：项目使用 OpenJDK 23
+  - 安装路径：`C:\Users\guoya\.jdks\openjdk-23.0.2`
+  - 环境变量：`JAVA_HOME=C:\Users\guoya\.jdks\openjdk-23.0.2`
+  - 脚本中已配置：`scripts/build.bat` 和 `scripts/start.bat` 会自动设置 JAVA_HOME
+- **Maven 3.9+**：`D:\dev\software\apache-maven-3.9.9`
+- **Node.js 18+**
+- **Docker**：用于运行 Redis、TDengine、Mosquitto
+
 ## 构建与运行
 
 ### 后端 (Maven)
 
 ```bash
+# 确保 JAVA_HOME 指向 JDK 23
+export JAVA_HOME=C:/Users/guoya/.jdks/openjdk-23.0.2  # Linux/Mac
+# set JAVA_HOME=C:\Users\guoya\.jdks\openjdk-23.0.2   # Windows
+
 mvn clean compile                    # 编译
 cd sdncustom-server && mvn spring-boot:run  # 启动 (端口 8080)
+mvn test                             # 运行所有测试
+mvn test -Dtest=ChannelServiceTest   # 运行单个测试类
+mvn test -Dtest=ChannelServiceTest#testMethod  # 运行单个测试方法
 ```
 
 ### 前端 (Vite)
@@ -44,22 +65,28 @@ cd sdncustom-server && mvn spring-boot:run  # 启动 (端口 8080)
 cd sdncustom-web
 npm install
 npm run dev                          # 启动开发服务器 (端口 3000)
+npm run build                        # 构建生产版本
 ```
 
 ### Docker 依赖
 
 ```bash
-docker-compose up -d                 # 启动 Redis + TDengine
+docker-compose up -d                 # 启动 Redis + TDengine + Mosquitto
 ```
+
+> 注意：Mosquitto 使用 1883（MQTT）和 9001（MQTT over WebSocket）。如果本机已占用 1883
+> （例如 Windows 服务方式安装的 RabbitMQ），需先停止该服务再 `docker-compose up`。
 
 ### 脚本
 
 ```bash
-scripts/build.bat                    # 全量构建
-scripts/start.bat                    # 启动服务
-scripts/stop.bat                     # 停止服务
-scripts/restart.bat                  # 重启服务
+scripts/build.bat                    # 构建后端（mvn clean install -DskipTests）
+scripts/start.bat                    # 启动服务（后端+前端独立窗口，关闭窗口即停止）
+scripts/start-backend.bat            # 单独启动后端（需先执行 build.bat）
+scripts/start-frontend.bat           # 单独启动前端
 ```
+
+> 注意：`scripts/start.bat` 依赖已构建的 jar，首次运行请先执行 `scripts/build.bat`。
 
 ## 协议适配器
 
@@ -87,6 +114,25 @@ scripts/restart.bat                  # 重启服务
 - **PointService**：测点值更新（含死区判断）、缓存管理
 - **HistoryService**：TDengine 历史数据存储
 - **DistributionService**：WebSocket 实时数据推送
+
+## 数据流
+
+```
+外部系统 ──→ Channel ──→ AcquisitionEngine ──→ Redis(实时) + TDengine(历史)
+                                ↓
+                          DistributionService ──→ WebSocket ──→ 前端
+
+前端 ──→ REST API ──→ PointService ──→ Redis + Channel ──→ 外部系统
+```
+
+## 前端路由
+
+| 路径 | 页面 | 功能 |
+|------|------|------|
+| `/dashboard` | DashboardPage | 仪表盘，系统概览 |
+| `/channels` | ChannelPage | Channel 管理（CRUD + 连接/断开） |
+| `/points` | PointPage | 测点管理（CRUD + 按 Channel 过滤） |
+| `/monitor` | MonitorPage | 实时监控看板 |
 
 ## API 端点
 
@@ -143,6 +189,24 @@ GET    /api/points/{id}/history        # 查询历史
 - WebSocket：`services/websocket.ts` 封装，支持事件监听
 - UI 组件：Ant Design 5
 
+## Mock 服务器
+
+项目包含模拟服务器用于测试：
+
+```bash
+cd mock
+./build-and-start.bat              # 构建并启动所有 Mock 服务器
+```
+
+| Mock 服务器 | 端口 | 说明 |
+|-------------|------|------|
+| MockTcpServer | 9002 | 模拟自定义 TCP 协议设备 |
+| MockModbusTcpServer | 5020 | 模拟 Modbus TCP 设备 |
+| MockMqttClient | 1883 | 模拟 MQTT 传感器（需 MQTT Broker） |
+| MockOpcUaServer | 4840 | 模拟 OPC-UA 服务器 |
+
+> 注意：自定义 TCP 模拟服务器使用 **9002** 端口（9001 已被 Mosquitto 的 MQTT WebSocket 占用）。
+
 ## 端口
 
 | 服务 | 端口 |
@@ -151,3 +215,4 @@ GET    /api/points/{id}/history        # 查询历史
 | 前端 Dev | 3000 |
 | Redis | 6379 |
 | TDengine | 6041 |
+| Mosquitto | 1883 |

@@ -1,6 +1,5 @@
 package com.sdncustom.server.repository;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sdncustom.common.model.PointValue;
 import lombok.RequiredArgsConstructor;
@@ -25,48 +24,58 @@ public class PointValueCacheRepository {
         try {
             String json = objectMapper.writeValueAsString(pointValue);
             redisTemplate.opsForValue().set(key, json);
-        } catch (JsonProcessingException e) {
-            log.error("Failed to serialize PointValue: {}", pointValue.getPointId(), e);
+        } catch (Exception e) {
+            // Redis 故障时降级，不中断采集循环
+            log.warn("Failed to save PointValue to cache: {}", pointValue.getPointId(), e);
         }
     }
 
     public Optional<PointValue> findByPointId(String pointId) {
         String key = KEY_PREFIX + pointId;
-        String json = redisTemplate.opsForValue().get(key);
-        if (json == null) {
-            return Optional.empty();
-        }
         try {
+            String json = redisTemplate.opsForValue().get(key);
+            if (json == null) {
+                return Optional.empty();
+            }
             return Optional.of(objectMapper.readValue(json, PointValue.class));
-        } catch (JsonProcessingException e) {
-            log.error("Failed to deserialize PointValue: {}", pointId, e);
+        } catch (Exception e) {
+            log.warn("Failed to read PointValue from cache: {}", pointId, e);
             return Optional.empty();
         }
     }
 
     public List<PointValue> findByPointIds(Collection<String> pointIds) {
-        List<String> keys = pointIds.stream()
-                .map(id -> KEY_PREFIX + id)
-                .toList();
-        List<String> jsonList = redisTemplate.opsForValue().multiGet(keys);
-        if (jsonList == null) {
-            return Collections.emptyList();
-        }
-        List<PointValue> result = new ArrayList<>();
-        for (String json : jsonList) {
-            if (json != null) {
-                try {
-                    result.add(objectMapper.readValue(json, PointValue.class));
-                } catch (JsonProcessingException e) {
-                    log.error("Failed to deserialize PointValue", e);
+        try {
+            List<String> keys = pointIds.stream()
+                    .map(id -> KEY_PREFIX + id)
+                    .toList();
+            List<String> jsonList = redisTemplate.opsForValue().multiGet(keys);
+            if (jsonList == null) {
+                return Collections.emptyList();
+            }
+            List<PointValue> result = new ArrayList<>();
+            for (String json : jsonList) {
+                if (json != null) {
+                    try {
+                        result.add(objectMapper.readValue(json, PointValue.class));
+                    } catch (Exception e) {
+                        log.warn("Failed to deserialize PointValue", e);
+                    }
                 }
             }
+            return result;
+        } catch (Exception e) {
+            log.warn("Failed to read PointValues from cache", e);
+            return Collections.emptyList();
         }
-        return result;
     }
 
     public void delete(String pointId) {
-        String key = KEY_PREFIX + pointId;
-        redisTemplate.delete(key);
+        try {
+            String key = KEY_PREFIX + pointId;
+            redisTemplate.delete(key);
+        } catch (Exception e) {
+            log.warn("Failed to delete PointValue from cache: {}", pointId, e);
+        }
     }
 }

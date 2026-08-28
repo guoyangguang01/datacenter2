@@ -23,6 +23,9 @@ public class MockModbusTcpServer {
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
     private final Random random = new Random();
 
+    // 已接受的客户端连接，用于 stop() 时统一关闭，避免线程/连接泄漏
+    private final Set<Socket> clientSockets = ConcurrentHashMap.newKeySet();
+
     // 保持寄存器 (40001-40100)
     private final int[] holdingRegisters = new int[100];
     // 输入寄存器 (30001-30100)
@@ -150,6 +153,17 @@ public class MockModbusTcpServer {
     public void stop() {
         running = false;
         scheduler.shutdown();
+        // 关闭所有已接受的客户端连接，释放连接线程
+        for (Socket client : clientSockets) {
+            try {
+                if (!client.isClosed()) {
+                    client.close();
+                }
+            } catch (IOException e) {
+                log.debug("Error closing Modbus client socket", e);
+            }
+        }
+        clientSockets.clear();
         try {
             if (serverSocket != null && !serverSocket.isClosed()) {
                 serverSocket.close();
@@ -164,6 +178,7 @@ public class MockModbusTcpServer {
      * 处理客户端连接
      */
     private void handleClient(Socket client) {
+        clientSockets.add(client);
         try (DataInputStream input = new DataInputStream(new BufferedInputStream(client.getInputStream()));
              DataOutputStream output = new DataOutputStream(new BufferedOutputStream(client.getOutputStream()))) {
 
@@ -211,6 +226,7 @@ public class MockModbusTcpServer {
         } catch (IOException e) {
             log.error("Error handling Modbus client", e);
         } finally {
+            clientSockets.remove(client);
             try {
                 client.close();
             } catch (IOException ignored) {
@@ -229,13 +245,13 @@ public class MockModbusTcpServer {
             case ModbusFunction.READ_HOLDING_REGISTERS: {
                 int startAddress = ((pdu[1] & 0xFF) << 8) | (pdu[2] & 0xFF);
                 int quantity = ((pdu[3] & 0xFF) << 8) | (pdu[4] & 0xFF);
-                return buildReadRegisterResponse(holdingRegisters, startAddress, quantity);
+                return buildReadRegisterResponse(holdingRegisters, startAddress, quantity, ModbusFunction.READ_HOLDING_REGISTERS);
             }
 
             case ModbusFunction.READ_INPUT_REGISTERS: {
                 int startAddress = ((pdu[1] & 0xFF) << 8) | (pdu[2] & 0xFF);
                 int quantity = ((pdu[3] & 0xFF) << 8) | (pdu[4] & 0xFF);
-                return buildReadRegisterResponse(inputRegisters, startAddress, quantity);
+                return buildReadRegisterResponse(inputRegisters, startAddress, quantity, ModbusFunction.READ_INPUT_REGISTERS);
             }
 
             case ModbusFunction.READ_COILS: {
@@ -273,10 +289,10 @@ public class MockModbusTcpServer {
     /**
      * 构建读寄存器响应
      */
-    private byte[] buildReadRegisterResponse(int[] registers, int startAddress, int quantity) {
+    private byte[] buildReadRegisterResponse(int[] registers, int startAddress, int quantity, byte functionCode) {
         int byteCount = quantity * 2;
         byte[] response = new byte[2 + byteCount];
-        response[0] = ModbusFunction.READ_HOLDING_REGISTERS; // 功能码
+        response[0] = functionCode; // 使用请求对应的功能码
         response[1] = (byte) byteCount;
 
         for (int i = 0; i < quantity; i++) {

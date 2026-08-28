@@ -6,7 +6,7 @@
 
 | 服务器 | 端口 | 协议 | 说明 |
 |--------|------|------|------|
-| MockTcpServer | 9001 | 自定义 TCP | 模拟自定义二进制协议设备 |
+| MockTcpServer | 9002 | 自定义 TCP | 模拟自定义二进制协议设备 |
 | MockModbusTcpServer | 5020 | Modbus TCP | 模拟 Modbus 设备（寄存器/线圈） |
 | MockMqttClient | 1883 | MQTT | 模拟 MQTT 传感器数据发布 |
 | MockOpcUaServer | 4840 | OPC-UA | 模拟 OPC-UA 服务器节点 |

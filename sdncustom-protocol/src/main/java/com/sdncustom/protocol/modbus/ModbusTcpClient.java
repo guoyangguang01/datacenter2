@@ -24,6 +24,9 @@ public class ModbusTcpClient {
     private final AtomicInteger transactionId = new AtomicInteger(0);
     private int unitId = 1;
 
+    // 串行化请求/响应交换，防止并发调用帧交错
+    private final Object lock = new Object();
+
     /**
      * 连接到 Modbus TCP 服务器
      */
@@ -125,6 +128,15 @@ public class ModbusTcpClient {
     }
 
     /**
+     * 读离散输入
+     */
+    public boolean[] readDiscreteInputs(int startAddress, int quantity) throws IOException {
+        byte[] request = buildReadRequest(ModbusFunction.READ_DISCRETE_INPUTS, startAddress, quantity);
+        byte[] response = sendRequest(request);
+        return parseCoilResponse(response, quantity);
+    }
+
+    /**
      * 写单个线圈
      */
     public void writeSingleCoil(int address, boolean value) throws IOException {
@@ -174,28 +186,49 @@ public class ModbusTcpClient {
     }
 
     private byte[] sendRequest(byte[] request) throws IOException {
-        output.write(request);
-        output.flush();
+        synchronized (lock) {
+            int expectedTid = ((request[0] & 0xFF) << 8) | (request[1] & 0xFF);
 
-        // 读取 MBAP Header
-        byte[] header = input.readNBytes(MBAP_HEADER_SIZE);
-        if (header.length < MBAP_HEADER_SIZE) {
-            throw new IOException("Incomplete MBAP header");
+            output.write(request);
+            output.flush();
+
+            // 读取 MBAP Header
+            byte[] header = input.readNBytes(MBAP_HEADER_SIZE);
+            if (header.length < MBAP_HEADER_SIZE) {
+                throw new IOException("Incomplete MBAP header");
+            }
+
+            int transactionId = ((header[0] & 0xFF) << 8) | (header[1] & 0xFF);
+            int protocolId = ((header[2] & 0xFF) << 8) | (header[3] & 0xFF);
+            int length = ((header[4] & 0xFF) << 8) | (header[5] & 0xFF);
+
+            // 校验 Protocol ID 必须为 0
+            if (protocolId != 0) {
+                throw new IOException("Invalid Modbus protocol ID: " + protocolId);
+            }
+            // 校验 Transaction ID 与请求一致，避免接受陈旧/跨线程的响应
+            if (transactionId != expectedTid) {
+                log.error("Modbus transaction ID mismatch: expected={}, got={}", expectedTid, transactionId);
+                throw new IOException("Modbus transaction ID mismatch: expected=" + expectedTid + ", got=" + transactionId);
+            }
+            // 校验 MBAP 长度（unit id + PDU），防止 readNBytes(负数)
+            if (length < 2) {
+                throw new IOException("Invalid Modbus MBAP length: " + length);
+            }
+
+            byte[] pdu = input.readNBytes(length - 1); // -1 for unit ID already in header
+            if (pdu.length < length - 1) {
+                throw new IOException("Incomplete PDU");
+            }
+
+            // 检查错误响应
+            if ((pdu[0] & 0x80) != 0) {
+                throw new IOException("Modbus error response: function=" + Integer.toHexString(pdu[0] & 0xFF) +
+                        ", exception=" + (pdu.length > 1 ? pdu[1] : "unknown"));
+            }
+
+            return pdu;
         }
-
-        int length = ((header[4] & 0xFF) << 8) | (header[5] & 0xFF);
-        byte[] pdu = input.readNBytes(length - 1); // -1 for unit ID already in header
-        if (pdu.length < length - 1) {
-            throw new IOException("Incomplete PDU");
-        }
-
-        // 检查错误响应
-        if ((pdu[0] & 0x80) != 0) {
-            throw new IOException("Modbus error response: function=" + Integer.toHexString(pdu[0] & 0xFF) +
-                    ", exception=" + (pdu.length > 1 ? pdu[1] : "unknown"));
-        }
-
-        return pdu;
     }
 
     private int[] parseReadResponse(byte[] response, int quantity) {

@@ -92,8 +92,8 @@ public class ChannelService {
     @Transactional
     public void delete(String channelId) {
         Channel channel = findById(channelId);
-        // 先断开连接
-        if (channel.getStatus() == ChannelStatus.CONNECTED) {
+        // 先断开连接（覆盖 CONNECTED / ERROR 等非 DISCONNECTED 状态）
+        if (channel.getStatus() != ChannelStatus.DISCONNECTED) {
             disconnect(channelId);
         }
         // 删除关联的测点值缓存
@@ -111,14 +111,25 @@ public class ChannelService {
      */
     public void connect(String channelId) {
         Channel channel = findById(channelId);
-        if (channel.getStatus() == ChannelStatus.CONNECTED) {
+        ProtocolAdapter adapter = getOrCreateAdapter(channel);
+        // 以适配器真实状态为准，避免 DB 状态为 CONNECTED 但适配器已断开时无法重连（假连接）
+        if (adapter.isConnected()) {
             log.warn("Channel already connected: {}", channelId);
             return;
         }
 
         try {
-            ProtocolAdapter adapter = getOrCreateAdapter(channel);
             adapter.connect(channel);
+
+            // MQTT 协议连接成功后需订阅测点 Topic，否则收不到任何数据
+            if (adapter instanceof MqttAdapter mqttAdapter) {
+                List<String> topics = pointRepository.findByChannelId(channelId)
+                        .stream()
+                        .map(MeasurementPoint::getAddress)
+                        .toList();
+                mqttAdapter.subscribeAll(topics);
+            }
+
             channel.setStatus(ChannelStatus.CONNECTED);
             channelRepository.save(channel);
             log.info("Channel connected: {}", channelId);
@@ -147,12 +158,20 @@ public class ChannelService {
             log.warn("Error during adapter disconnect for channel: {}, forcing cleanup", channelId, e);
         } finally {
             // 无论适配器是否成功断开，都强制重置状态
-            // 标记所有测点为 COMM_LOST
-            List<MeasurementPoint> points = pointRepository.findByChannelId(channelId);
-            for (MeasurementPoint point : points) {
-                PointValue pv = PointValue.commLost(point.getPointId());
-                pv.setSourceChannelId(channelId);
-                pointValueCache.save(pv);
+            try {
+                // 标记所有测点为 COMM_LOST
+                List<MeasurementPoint> points = pointRepository.findByChannelId(channelId);
+                for (MeasurementPoint point : points) {
+                    PointValue pv = PointValue.commLost(point.getPointId());
+                    pv.setSourceChannelId(channelId);
+                    try {
+                        pointValueCache.save(pv);
+                    } catch (Throwable e) {
+                        log.warn("Failed to update point cache for point: {}", point.getPointId(), e);
+                    }
+                }
+            } catch (Throwable e) {
+                log.warn("Failed to mark points as COMM_LOST for channel: {}", channelId, e);
             }
 
             channel.setStatus(ChannelStatus.DISCONNECTED);
@@ -182,16 +201,16 @@ public class ChannelService {
     }
 
     /**
-     * 自动连接所有 autoConnect=true 的 Channel
+     * 自动连接所有 autoConnect=true 的 Channel（并行连接，避免单个通道连接挂住阻塞其它通道）
      */
     public void autoConnectAll() {
         List<Channel> channels = channelRepository.findByAutoConnect(true);
-        for (Channel channel : channels) {
+        channels.parallelStream().forEach(channel -> {
             try {
                 connect(channel.getChannelId());
             } catch (Exception e) {
                 log.error("Auto-connect failed for channel: {}", channel.getChannelId(), e);
             }
-        }
+        });
     }
 }

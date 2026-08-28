@@ -9,7 +9,9 @@ echo ========================================
 echo.
 
 REM Set Java path (requires Java 17+)
-set "JAVA_CMD=C:\Users\guoya\.jdks\openjdk-23.0.2\bin\java"
+set "JAVA_HOME=C:\Users\guoya\.jdks\openjdk-23.0.2"
+set "JAVA_CMD=%JAVA_HOME%\bin\java"
+set "PATH=%JAVA_HOME%\bin;%PATH%"
 
 REM Set JAR path (fat JAR with all dependencies)
 set "JAR_PATH=%~dp0..\sdncustom-protocol\target\sdncustom-protocol-1.0.0-SNAPSHOT-jar-with-dependencies.jar"
@@ -22,8 +24,8 @@ if not exist "%JAR_PATH%" (
     exit /b 1
 )
 
-echo [1/4] Starting Custom TCP Mock Server (port 9001)...
-start "Mock TCP Server" "%JAVA_CMD%" -cp "%JAR_PATH%" com.sdncustom.protocol.mock.MockTcpServer 9001
+echo [1/4] Starting Custom TCP Mock Server (port 9002)...
+start "Mock TCP Server" "%JAVA_CMD%" -cp "%JAR_PATH%" com.sdncustom.protocol.mock.MockTcpServer 9002
 timeout /t 2 /nobreak >nul
 
 echo [2/4] Starting Modbus TCP Mock Server (port 5020)...
@@ -44,7 +46,7 @@ echo ========================================
 echo   All Mock Servers Started
 echo ========================================
 echo.
-echo Custom TCP Server: localhost:9001
+echo Custom TCP Server: localhost:9002
 echo Modbus TCP Server:  localhost:5020
 echo MQTT Client:        tcp://localhost:1883
 echo OPC-UA Server:      opc.tcp://localhost:4840

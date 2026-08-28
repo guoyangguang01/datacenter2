@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { Table, Select, Space, Tag, Button, Switch, Badge, Card, Empty, Tooltip } from 'antd';
+import { Table, Select, Space, Tag, Button, Switch, Badge, Card, Empty, Tooltip, message } from 'antd';
 import {
   PauseCircleOutlined,
   PlayCircleOutlined,
@@ -11,7 +11,7 @@ import {
 import { useChannelStore } from '../stores/channelStore';
 import { usePointStore } from '../stores/pointStore';
 import { wsService } from '../services/websocket';
-import type { PointValue, PointQuality } from '../types';
+import type { PointValue, PointQuality, ChannelStatus } from '../types';
 
 const qualityColors: Record<PointQuality, string> = {
   GOOD: 'green',
@@ -30,14 +30,13 @@ interface LogEntry {
 }
 
 export default function MonitorPage() {
-  const { channels, fetchChannels } = useChannelStore();
-  const { points, pointValues, fetchPoints, fetchAllValues, updateValue } = usePointStore();
+  const { channels, fetchChannels, updateStatus } = useChannelStore();
+  const { points, pointValues, fetchPointsForChannels, fetchAllValues, updateValue, error } = usePointStore();
 
-  // 从 URL 读取 channelId 参数
-  const urlChannelId = new URLSearchParams(window.location.search).get('channelId');
-  const [selectedChannels, setSelectedChannels] = useState<string[]>(
-    urlChannelId ? [urlChannelId] : []
-  );
+  // 从 URL 读取 channelId 参数（仅在通道列表存在该通道时才自动选中）
+  const [urlChannelId] = useState(() => new URLSearchParams(window.location.search).get('channelId'));
+  const appliedUrlRef = useRef(false);
+  const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
 
   const [paused, setPaused] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
@@ -46,21 +45,37 @@ export default function MonitorPage() {
   const logRef = useRef<HTMLDivElement>(null);
   const logIdRef = useRef(0);
   const pausedRef = useRef(false);
+  const selectedChannelsRef = useRef<string[]>(selectedChannels);
 
   useEffect(() => {
     pausedRef.current = paused;
   }, [paused]);
 
   useEffect(() => {
+    selectedChannelsRef.current = selectedChannels;
+  }, [selectedChannels]);
+
+  useEffect(() => {
     fetchChannels();
   }, [fetchChannels]);
 
-  // 选中通道变化时获取测点
+  // URL 注入的 channelId：仅在通道列表中存在时才自动选中，否则忽略
+  useEffect(() => {
+    if (appliedUrlRef.current || !urlChannelId) return;
+    if (channels.some((c) => c.channelId === urlChannelId)) {
+      appliedUrlRef.current = true;
+      setSelectedChannels([urlChannelId]);
+    } else if (channels.length > 0) {
+      appliedUrlRef.current = true; // 列表已加载但 URL 中的通道不存在 → 忽略
+    }
+  }, [channels, urlChannelId]);
+
+  // 选中通道变化时获取测点（合并，保留其它通道已加载的测点）
   useEffect(() => {
     if (selectedChannels.length > 0) {
-      selectedChannels.forEach((cid) => fetchPoints(cid));
+      fetchPointsForChannels(selectedChannels);
     }
-  }, [selectedChannels, fetchPoints]);
+  }, [selectedChannels, fetchPointsForChannels]);
 
   useEffect(() => {
     if (points.length > 0) {
@@ -68,7 +83,12 @@ export default function MonitorPage() {
     }
   }, [points, fetchAllValues]);
 
-  // WebSocket 连接与数据监听
+  // 展示 store 中的错误信息
+  useEffect(() => {
+    if (error) message.error(error);
+  }, [error]);
+
+  // WebSocket 连接与数据监听：仅在挂载时连接一次，卸载时断开
   useEffect(() => {
     const handleData = (data: unknown) => {
       const msg = data as { values?: PointValue[] };
@@ -78,8 +98,9 @@ export default function MonitorPage() {
 
       if (pausedRef.current) return;
 
+      const sel = selectedChannelsRef.current;
       const newEntries: LogEntry[] = msg.values
-        .filter((v) => selectedChannels.length === 0 || selectedChannels.includes(v.sourceChannelId))
+        .filter((v) => sel.length === 0 || sel.includes(v.sourceChannelId))
         .map((v) => ({
           id: ++logIdRef.current,
           time: (() => {
@@ -102,25 +123,39 @@ export default function MonitorPage() {
 
     const handleConnected = () => setWsConnected(true);
     const handleDisconnected = () => setWsConnected(false);
+    const handleChannelStatus = (data: unknown) => {
+      const msg = data as { channelId?: string; status?: ChannelStatus };
+      if (msg.channelId && msg.status) {
+        updateStatus(msg.channelId, msg.status);
+      }
+    };
 
     wsService.connect();
     wsService.on('data', handleData);
     wsService.on('connected', handleConnected);
     wsService.on('disconnected', handleDisconnected);
+    wsService.on('channel_status', handleChannelStatus);
 
     return () => {
       wsService.off('data', handleData);
       wsService.off('connected', handleConnected);
       wsService.off('disconnected', handleDisconnected);
+      wsService.off('channel_status', handleChannelStatus);
+      wsService.disconnect();
     };
-  }, [updateValue, selectedChannels]);
+  }, [updateValue, updateStatus]);
 
-  // 订阅通道
+  // 订阅/取消订阅通道；断线重连后自动重新订阅
   useEffect(() => {
-    if (selectedChannels.length > 0) {
-      wsService.subscribe(selectedChannels);
-    }
+    const doSubscribe = () => {
+      if (selectedChannels.length > 0) {
+        wsService.subscribe(selectedChannels);
+      }
+    };
+    doSubscribe();
+    wsService.on('connected', doSubscribe);
     return () => {
+      wsService.off('connected', doSubscribe);
       if (selectedChannels.length > 0) {
         wsService.unsubscribe(selectedChannels);
       }
@@ -158,6 +193,8 @@ export default function MonitorPage() {
       fetchAllValues();
     }
   }, [selectedChannels, fetchAllValues]);
+
+  const urlChannelExists = urlChannelId ? channels.some((c) => c.channelId === urlChannelId) : false;
 
   const columns = [
     { title: '测点ID', dataIndex: 'pointId', key: 'pointId', width: 150 },
@@ -210,7 +247,7 @@ export default function MonitorPage() {
         <Space size="middle">
           <h2 style={{ margin: 0 }}>
             数据监控
-            {urlChannelId && (
+            {urlChannelExists && (
               <Tag color="blue" style={{ marginLeft: 8 }}>
                 {channels.find((c) => c.channelId === urlChannelId)?.channelName ?? urlChannelId}
               </Tag>

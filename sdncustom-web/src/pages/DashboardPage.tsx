@@ -15,18 +15,19 @@ const qualityColors: Record<PointQuality, string> = {
 
 export default function DashboardPage() {
   const { channels, fetchChannels } = useChannelStore();
-  const { points, pointValues, fetchPoints, fetchAllValues, updateValue } = usePointStore();
+  const { points, pointValues, fetchPointsForChannels, fetchAllValues, updateValue, error } = usePointStore();
   const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
 
   useEffect(() => {
     fetchChannels();
   }, [fetchChannels]);
 
+  // 获取所有选中通道的测点并合并（复用 store 的合并逻辑）
   useEffect(() => {
     if (selectedChannels.length > 0) {
-      fetchPoints(selectedChannels[0]);
+      fetchPointsForChannels(selectedChannels);
     }
-  }, [selectedChannels, fetchPoints]);
+  }, [selectedChannels, fetchPointsForChannels]);
 
   useEffect(() => {
     if (points.length > 0) {
@@ -34,6 +35,11 @@ export default function DashboardPage() {
     }
   }, [points, fetchAllValues]);
 
+  useEffect(() => {
+    if (error) message.error(error);
+  }, [error]);
+
+  // WebSocket：仅在挂载时连接一次，卸载时断开
   useEffect(() => {
     const handleData = (data: unknown) => {
       const msg = data as { values?: PointValue[] };
@@ -47,14 +53,21 @@ export default function DashboardPage() {
 
     return () => {
       wsService.off('data', handleData);
+      wsService.disconnect();
     };
   }, [updateValue]);
 
+  // 订阅/取消订阅通道；断线重连后自动重新订阅
   useEffect(() => {
-    if (selectedChannels.length > 0) {
-      wsService.subscribe(selectedChannels);
-    }
+    const doSubscribe = () => {
+      if (selectedChannels.length > 0) {
+        wsService.subscribe(selectedChannels);
+      }
+    };
+    doSubscribe();
+    wsService.on('connected', doSubscribe);
     return () => {
+      wsService.off('connected', doSubscribe);
       if (selectedChannels.length > 0) {
         wsService.unsubscribe(selectedChannels);
       }
@@ -120,7 +133,13 @@ export default function DashboardPage() {
           刷新
         </Button>
       </div>
-      <Table columns={columns} dataSource={points} rowKey="pointId" />
+      <Table
+        columns={columns}
+        dataSource={points.filter(
+          (p) => selectedChannels.length === 0 || selectedChannels.includes(p.channelId)
+        )}
+        rowKey="pointId"
+      />
     </div>
   );
 }

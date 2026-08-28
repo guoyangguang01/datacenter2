@@ -151,22 +151,19 @@ class ChannelServiceTest {
         doNothing().when(pointRepository).deleteByChannelId("ch_001");
         doNothing().when(channelRepository).deleteById("ch_001");
 
-        // 需要 mock disconnect 方法
-        // channelService.delete("ch_001");
+        channelService.delete("ch_001");
 
-        // verify(channelRepository).deleteById("ch_001");
+        verify(channelRepository).deleteById("ch_001");
     }
 
     @Test
-    @DisplayName("连接通道")
+    @DisplayName("连接通道 - 服务器不可达时进入 ERROR 状态")
     void connect() {
         when(channelRepository.findById("ch_001")).thenReturn(Optional.of(testChannel));
         when(channelRepository.save(any(Channel.class))).thenReturn(testChannel);
 
-        // 需要 mock getOrCreateAdapter
-        // channelService.connect("ch_001");
-
-        // verify(channelRepository).save(any(Channel.class));
+        assertThrows(RuntimeException.class, () -> channelService.connect("ch_001"));
+        verify(channelRepository, atLeastOnce()).save(any(Channel.class));
     }
 
     @Test
@@ -177,21 +174,19 @@ class ChannelServiceTest {
         when(pointRepository.findByChannelId("ch_001")).thenReturn(Arrays.asList());
         when(channelRepository.save(any(Channel.class))).thenReturn(testChannel);
 
-        // 需要 mock getOrCreateAdapter
-        // channelService.disconnect("ch_001");
+        channelService.disconnect("ch_001");
 
-        // verify(channelRepository).save(any(Channel.class));
+        verify(channelRepository).save(any(Channel.class));
     }
 
     @Test
-    @DisplayName("查询自动连接通道")
+    @DisplayName("自动连接通道")
     void autoConnectAll() {
         testChannel.setAutoConnect(true);
         when(channelRepository.findByAutoConnect(true)).thenReturn(Arrays.asList(testChannel));
 
-        // 需要 mock connect 方法
-        // channelService.autoConnectAll();
+        channelService.autoConnectAll();
 
-        // verify(channelRepository).findByAutoConnect(true);
+        verify(channelRepository).findByAutoConnect(true);
     }
 }

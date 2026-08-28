@@ -1,9 +1,6 @@
 @echo off
 chcp 65001 >nul
-REM 启动服务
-
-REM 切换到项目根目录
-cd /d %~dp0..
+REM 启动服务 - 各服务在独立窗口运行，关闭窗口即可停止
 
 echo =========================================
 echo   Starting SDNCustom Services
@@ -14,40 +11,17 @@ set JAVA_HOME=C:\Users\guoya\.jdks\openjdk-23.0.2
 set M2_HOME=D:\dev\software\apache-maven-3.9.9
 set PATH=%JAVA_HOME%\bin;%M2_HOME%\bin;%PATH%
 
-REM 创建日志目录
-if not exist logs mkdir logs
-
-REM 启动 Docker 服务
+REM 启动后端 (独立窗口)
 echo.
-echo [1/3] Starting Docker services...
-docker-compose up -d
-if %ERRORLEVEL% NEQ 0 (
-    echo Warning: Docker services failed to start
-)
-
-REM 等待服务启动
-echo Waiting for services to start...
-timeout /t 3 /nobreak > nul
-
-REM 启动后端
-echo.
-echo [2/3] Starting backend server...
-cd sdncustom-server
-start /B mvn spring-boot:run -q > ..\logs\backend.log 2>&1
+echo [1/2] Starting backend server...
+start "SDNCustom-Backend" cmd /k "%~dp0start-backend.bat"
 echo Backend started!
-cd ..
 
-REM 等待后端启动
-echo Waiting for backend to start...
-timeout /t 10 /nobreak > nul
-
-REM 启动前端
+REM 启动前端 (独立窗口)
 echo.
-echo [3/3] Starting frontend dev server...
-cd sdncustom-web
-start /B npm run dev > ..\logs\frontend.log 2>&1
+echo [2/2] Starting frontend dev server...
+start "SDNCustom-Frontend" cmd /k "%~dp0start-frontend.bat"
 echo Frontend started!
-cd ..
 
 echo.
 echo =========================================
@@ -58,9 +32,5 @@ echo   Backend:  http://localhost:8080
 echo   Frontend: http://localhost:3000
 echo   H2 Console: http://localhost:8080/h2-console
 echo.
-echo   Logs:
-echo     Backend:  logs\backend.log
-echo     Frontend: logs\frontend.log
-echo.
-echo   Stop: stop.bat
+echo   关闭对应的命令行窗口即可停止服务
 echo =========================================

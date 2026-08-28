@@ -9,7 +9,9 @@ echo ========================================
 echo.
 
 REM Set Java path (requires Java 17+)
-set "JAVA_CMD=C:\Users\guoya\.jdks\openjdk-23.0.2\bin\java"
+set "JAVA_HOME=C:\Users\guoya\.jdks\openjdk-23.0.2"
+set "JAVA_CMD=%JAVA_HOME%\bin\java"
+set "PATH=%JAVA_HOME%\bin;%PATH%"
 
 echo [1/2] Building JAR package...
 cd /d "%~dp0.."

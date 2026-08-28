@@ -40,8 +40,8 @@ cleanup() {
 # 注册信号处理
 trap cleanup SIGINT SIGTERM
 
-echo "[1/4] 启动自定义 TCP 模拟服务器 (端口 9001)..."
-$JAVA_CMD -cp "$JAR_PATH" com.sdncustom.protocol.mock.MockTcpServer 9001 &
+echo "[1/4] 启动自定义 TCP 模拟服务器 (端口 9002)..."
+$JAVA_CMD -cp "$JAR_PATH" com.sdncustom.protocol.mock.MockTcpServer 9002 &
 PIDS+=($!)
 sleep 2
 
@@ -66,7 +66,7 @@ echo "========================================"
 echo "  所有模拟服务器已启动"
 echo "========================================"
 echo ""
-echo "自定义 TCP Server: localhost:9001"
+echo "自定义 TCP Server: localhost:9002"
 echo "Modbus TCP Server:  localhost:5020"
 echo "MQTT Client:        tcp://localhost:1883"
 echo "OPC-UA Server:      opc.tcp://localhost:4840"

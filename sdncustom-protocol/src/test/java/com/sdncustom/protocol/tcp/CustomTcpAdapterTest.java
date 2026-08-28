@@ -74,9 +74,12 @@ class CustomTcpAdapterTest {
     }
 
     @Test
-    @DisplayName("读取测点 - 未连接")
+    @DisplayName("读取测点 - 未连接返回 COMM_LOST")
     void readPointNotConnected() {
-        assertThrows(RuntimeException.class, () -> adapter.readPoint(testPoint));
+        PointValue pv = adapter.readPoint(testPoint);
+        assertNotNull(pv);
+        assertEquals(PointQuality.COMM_LOST, pv.getQuality());
+        assertEquals("point_001", pv.getPointId());
     }
 
     @Test
