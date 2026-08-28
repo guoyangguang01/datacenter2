@@ -3,6 +3,7 @@ import { Table, Button, Modal, Form, Input, Select, Switch, Space, message } fro
 import { PlusOutlined, EditOutlined, DeleteOutlined, DownloadOutlined, UploadOutlined } from '@ant-design/icons';
 import { usePointStore } from '../stores/pointStore';
 import { useChannelStore } from '../stores/channelStore';
+import { pointApi } from '../services/api';
 import type { MeasurementPoint } from '../types';
 
 const dataTypeOptions = [
@@ -15,7 +16,7 @@ const dataTypeOptions = [
 ];
 
 export default function PointPage() {
-  const { points, loading, fetchPoints, createPoint, updatePoint, deletePoint, exportPoints, importPoints } = usePointStore();
+  const { points, loading, fetchPoints, createPoint, updatePoint, deletePoint, importPoints } = usePointStore();
   const { channels, fetchChannels } = useChannelStore();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<MeasurementPoint | null>(null);
@@ -50,8 +51,19 @@ export default function PointPage() {
   };
 
   const handleExport = async () => {
-    await exportPoints();
-    message.success('导出成功');
+    try {
+      const res = await pointApi.exportPoints();
+      const blob = new Blob([res.data as BlobPart], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `points_export_${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      message.success('导出成功');
+    } catch {
+      message.error('导出失败');
+    }
   };
 
   const handleImport = async (file: File) => {

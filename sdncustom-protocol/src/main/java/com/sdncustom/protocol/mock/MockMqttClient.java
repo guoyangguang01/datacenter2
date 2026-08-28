@@ -20,6 +20,8 @@ public class MockMqttClient {
     private static final ObjectMapper objectMapper = new ObjectMapper();
     private final String broker;
     private final String clientId;
+    private final String username;
+    private final String password;
     private MqttClient client;
     private volatile boolean running = false;
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
@@ -29,8 +31,14 @@ public class MockMqttClient {
     private final Map<String, Object> pointValues = new LinkedHashMap<>();
 
     public MockMqttClient(String broker, String clientId) {
+        this(broker, clientId, null, null);
+    }
+
+    public MockMqttClient(String broker, String clientId, String username, String password) {
         this.broker = broker;
         this.clientId = clientId;
+        this.username = username;
+        this.password = password;
         initMockData();
     }
 
@@ -155,6 +163,14 @@ public class MockMqttClient {
             MqttConnectionOptions options = new MqttConnectionOptions();
             options.setCleanStart(true);
             options.setAutomaticReconnect(true);
+
+            // 设置认证信息
+            if (username != null && !username.isEmpty()) {
+                options.setUserName(username);
+                if (password != null) {
+                    options.setPassword(password.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                }
+            }
 
             client.connect(options);
             running = true;
@@ -359,8 +375,11 @@ public class MockMqttClient {
 
     public static void main(String[] args) {
         String broker = args.length > 0 ? args[0] : "tcp://localhost:1883";
+        String username = args.length > 1 ? args[1] : null;
+        String password = args.length > 2 ? args[2] : null;
         String clientId = "sdncustom_mock_" + System.currentTimeMillis();
-        MockMqttClient mockClient = new MockMqttClient(broker, clientId);
+
+        MockMqttClient mockClient = new MockMqttClient(broker, clientId, username, password);
         mockClient.start();
 
         Runtime.getRuntime().addShutdownHook(new Thread(mockClient::stop));

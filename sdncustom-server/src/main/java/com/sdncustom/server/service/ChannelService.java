@@ -50,6 +50,13 @@ public class ChannelService {
     }
 
     /**
+     * 根据 ID 查询 Channel（不存在返回 null）
+     */
+    public Channel findByIdOrNull(String channelId) {
+        return channelRepository.findById(channelId).orElse(null);
+    }
+
+    /**
      * 创建 Channel
      */
     @Transactional

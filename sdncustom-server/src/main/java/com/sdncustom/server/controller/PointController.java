@@ -1,12 +1,15 @@
 package com.sdncustom.server.controller;
 
 import com.sdncustom.common.dto.ApiResponse;
+import com.sdncustom.common.dto.ChannelDTO;
 import com.sdncustom.common.dto.MeasurementPointDTO;
 import com.sdncustom.common.dto.PointValueDTO;
 import com.sdncustom.common.dto.WriteValueRequest;
+import com.sdncustom.common.model.Channel;
 import com.sdncustom.common.model.MeasurementPoint;
 import com.sdncustom.common.model.PointHistory;
 import com.sdncustom.common.model.PointValue;
+import com.sdncustom.server.service.ChannelService;
 import com.sdncustom.server.service.HistoryService;
 import com.sdncustom.server.service.PointService;
 import jakarta.servlet.http.HttpServletResponse;
@@ -16,6 +19,7 @@ import org.springframework.web.bind.annotation.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/points")
@@ -23,6 +27,7 @@ import java.util.List;
 public class PointController {
 
     private final PointService pointService;
+    private final ChannelService channelService;
     private final HistoryService historyService;
 
     @GetMapping

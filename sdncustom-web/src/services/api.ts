@@ -15,6 +15,9 @@ export const channelApi = {
   delete: (id: string) => api.delete<ApiResponse<void>>(`/channels/${id}`),
   connect: (id: string) => api.post<ApiResponse<void>>(`/channels/${id}/connect`),
   disconnect: (id: string) => api.post<ApiResponse<void>>(`/channels/${id}/disconnect`),
+  exportAll: () => api.get('/channels/export', { responseType: 'blob' }),
+  importAll: (data: { channels?: Partial<Channel>[]; points?: Partial<MeasurementPoint>[] }) =>
+    api.post<{ channelCount: number; pointCount: number }>('/channels/import', data),
 };
 
 // MeasurementPoint API

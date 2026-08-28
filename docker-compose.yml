@@ -27,7 +27,21 @@ services:
       - TAOS_FQDN=tdengine
     restart: unless-stopped
 
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: sdncustom-mosquitto
+    ports:
+      - "1883:1883"      # MQTT
+      - "9001:9001"      # MQTT over WebSocket
+    volumes:
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
+    restart: unless-stopped
+
 volumes:
   redis_data:
   tdengine_data:
   tdengine_log:
+  mosquitto_data:
+  mosquitto_log:
