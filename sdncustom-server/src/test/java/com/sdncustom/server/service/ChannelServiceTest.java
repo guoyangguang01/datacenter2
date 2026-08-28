@@ -4,6 +4,7 @@ import com.sdncustom.common.dto.ChannelDTO;
 import com.sdncustom.common.exception.ResourceNotFoundException;
 import com.sdncustom.common.model.Channel;
 import com.sdncustom.common.model.MeasurementPoint;
+import com.sdncustom.common.model.enums.ChannelDirection;
 import com.sdncustom.common.model.enums.ChannelStatus;
 import com.sdncustom.common.model.enums.ProtocolType;
 import com.sdncustom.protocol.ProtocolAdapter;
@@ -57,7 +58,7 @@ class ChannelServiceTest {
         testChannel.setChannelId("ch_001");
         testChannel.setChannelName("测试通道");
         testChannel.setProtocolType(ProtocolType.CUSTOM_TCP);
-        testChannel.setDirection("READ_WRITE");
+        testChannel.setDirection(ChannelDirection.READ_WRITE);
         testChannel.setConnectionConfig("{\"host\":\"localhost\",\"port\":9001}");
         testChannel.setAutoConnect(false);
         testChannel.setStatus(ChannelStatus.DISCONNECTED);
@@ -66,7 +67,7 @@ class ChannelServiceTest {
         testDto.setChannelId("ch_001");
         testDto.setChannelName("测试通道");
         testDto.setProtocolType(ProtocolType.CUSTOM_TCP);
-        testDto.setDirection("READ_WRITE");
+        testDto.setDirection(ChannelDirection.READ_WRITE);
         testDto.setConnectionConfig("{\"host\":\"localhost\",\"port\":9001}");
         testDto.setAutoConnect(false);
     }

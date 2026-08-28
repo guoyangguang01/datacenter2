@@ -183,7 +183,7 @@ class PointServiceTest {
         newValue.setValue(30.5);
         newValue.setQuality(PointQuality.GOOD);
 
-        when(pointValueCache.save(any(PointValue.class))).thenReturn(newValue);
+        doNothing().when(pointValueCache).save(any(PointValue.class));
 
         pointService.updateValue(newValue);
 
