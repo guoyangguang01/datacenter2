@@ -35,6 +35,8 @@ public class ChannelService {
 
     private final ChannelRepository channelRepository;
     private final MeasurementPointRepository pointRepository;
+    private final PointSourceService pointSourceService;
+    private final PointBindingRegistry pointBindingRegistry;
     private final PointValueCacheRepository pointValueCache;
     private final ProtocolRegistry protocolRegistry;
     private final ChangeGate changeGate;
@@ -126,13 +128,22 @@ public class ChannelService {
         disconnect(channelId);
         lifecycleLocks.remove(channelId);
 
+        // 该通道涉及的所有测点（主绑定 + 附加来源）：清合并基线，避免陈旧权威值滞留
+        List<MeasurementPoint> boundPoints = pointSourceService.findPointsForChannel(channelId);
+        changeGate.removePoints(boundPoints.stream().map(MeasurementPoint::getPointId).distinct().toList());
+
+        // 本通道作为其它测点的附加来源：删除这些来源行
+        pointSourceService.deleteByChannelId(channelId);
+
+        // 删除主绑定在本通道的测点（连带其附加来源行与缓存）
         List<MeasurementPoint> points = pointRepository.findByChannelId(channelId);
         for (MeasurementPoint point : points) {
             pointValueCache.delete(point.getPointId());
+            pointSourceService.deleteByPointId(point.getPointId());
         }
-        changeGate.removePoints(points.stream().map(MeasurementPoint::getPointId).toList());
         pointRepository.deleteByChannelId(channelId);
         channelRepository.deleteById(channelId);
+        pointBindingRegistry.invalidateChannel(channelId);
     }
 
     /**
@@ -157,8 +168,8 @@ public class ChannelService {
 
             try {
                 adapter.connect(channel);
-                // 统一连接后钩子：订阅型协议（MQTT）在此建立测点订阅
-                adapter.onConnected(pointRepository.findByChannelId(channelId));
+                // 统一连接后钩子：订阅型协议（MQTT）在此建立测点订阅（主绑定 + 附加来源）
+                adapter.onConnected(pointSourceService.findPointsForChannel(channelId));
                 channel.setStatus(ChannelStatus.CONNECTED);
                 channelRepository.save(channel);
                 log.info("Channel connected: {}", channelId);
@@ -234,10 +245,17 @@ public class ChannelService {
 
     private void markPointsCommLost(String channelId) {
         try {
-            for (MeasurementPoint point : pointRepository.findByChannelId(channelId)) {
-                PointValue pv = PointValue.commLost(point.getPointId());
-                pv.setSourceChannelId(channelId);
-                pointValueCache.save(pv);
+            List<MeasurementPoint> boundPoints = pointSourceService.findPointsForChannel(channelId);
+            List<String> pointIds = boundPoints.stream().map(MeasurementPoint::getPointId).distinct().toList();
+            // 清掉该通道来源的合并基线，让其余来源自然接管
+            changeGate.removePoints(pointIds);
+            for (String pointId : pointIds) {
+                // 仅当该通道是唯一绑定时才标记 COMM_LOST；多来源点由其余 GOOD 来源继续供给
+                if (pointSourceService.bindingChannelIds(pointId).size() <= 1) {
+                    PointValue pv = PointValue.commLost(pointId);
+                    pv.setSourceChannelId(channelId);
+                    pointValueCache.save(pv);
+                }
             }
         } catch (Throwable e) {
             log.warn("Failed to mark points as COMM_LOST for channel: {}", channelId, e);

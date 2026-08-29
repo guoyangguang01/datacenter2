@@ -36,6 +36,7 @@ public class AcquisitionEngine {
 
     private final ChannelRepository channelRepository;
     private final MeasurementPointRepository pointRepository;
+    private final PointSourceService pointSourceService;
     private final ChannelService channelService;
     private final PointService pointService;
     private final HistoryService historyService;
@@ -114,7 +115,7 @@ public class AcquisitionEngine {
      * 采集单个 Channel 的数据，返回通过变更检测的值
      */
     private List<PointValue> acquireChannel(Channel channel) {
-        List<MeasurementPoint> points = pointRepository.findByChannelId(channel.getChannelId());
+        List<MeasurementPoint> points = pointSourceService.findPointsForChannel(channel.getChannelId());
 
         if (points.isEmpty()) {
             log.debug("No points configured for channel: {}", channel.getChannelId());

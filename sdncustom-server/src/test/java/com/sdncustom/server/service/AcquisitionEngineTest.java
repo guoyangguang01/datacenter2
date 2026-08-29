@@ -41,6 +41,9 @@ class AcquisitionEngineTest {
     private ChannelService channelService;
 
     @Mock
+    private PointSourceService pointSourceService;
+
+    @Mock
     private PointService pointService;
 
     @Mock
@@ -102,7 +105,7 @@ class AcquisitionEngineTest {
     @DisplayName("通过变更检测的值被批量写入三处下游")
     void changedValuesFlushedInBatch() {
         when(channelRepository.findByStatus(ChannelStatus.CONNECTED)).thenReturn(List.of(channel));
-        when(pointRepository.findByChannelId("ch_001")).thenReturn(List.of(point));
+        when(pointSourceService.findPointsForChannel("ch_001")).thenReturn(List.of(point));
         ProtocolAdapter adapter = mock(ProtocolAdapter.class);
         when(protocolRegistry.getOrCreate(channel)).thenReturn(adapter);
         when(adapter.isConnected()).thenReturn(true);
@@ -123,7 +126,7 @@ class AcquisitionEngineTest {
     @DisplayName("无有效变化时零写入")
     void noChangesMeansNoWrites() {
         when(channelRepository.findByStatus(ChannelStatus.CONNECTED)).thenReturn(List.of(channel));
-        when(pointRepository.findByChannelId("ch_001")).thenReturn(List.of(point));
+        when(pointSourceService.findPointsForChannel("ch_001")).thenReturn(List.of(point));
         ProtocolAdapter adapter = mock(ProtocolAdapter.class);
         when(protocolRegistry.getOrCreate(channel)).thenReturn(adapter);
         when(adapter.isConnected()).thenReturn(true);
@@ -141,7 +144,7 @@ class AcquisitionEngineTest {
     @DisplayName("适配器断开时修正通道状态（非 MQTT）")
     void disconnectedAdapterTriggersChannelDisconnect() {
         when(channelRepository.findByStatus(ChannelStatus.CONNECTED)).thenReturn(List.of(channel));
-        when(pointRepository.findByChannelId("ch_001")).thenReturn(List.of(point));
+        when(pointSourceService.findPointsForChannel("ch_001")).thenReturn(List.of(point));
         ProtocolAdapter adapter = mock(ProtocolAdapter.class);
         when(protocolRegistry.getOrCreate(channel)).thenReturn(adapter);
         when(adapter.isConnected()).thenReturn(false);

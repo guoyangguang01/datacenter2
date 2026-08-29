@@ -3,6 +3,7 @@ package com.sdncustom.server.controller;
 import com.sdncustom.common.dto.ApiResponse;
 import com.sdncustom.common.dto.ChannelDTO;
 import com.sdncustom.common.dto.MeasurementPointDTO;
+import com.sdncustom.common.dto.PointSourceDTO;
 import com.sdncustom.common.exception.BusinessException;
 import com.sdncustom.common.model.Channel;
 import com.sdncustom.common.model.MeasurementPoint;
@@ -156,6 +157,7 @@ public class ChannelController {
                 dto.setUnit(optionalString(pt, "unit"));
                 dto.setWritable(optionalBoolean(pt, "writable", false));
                 dto.setDeadband(optionalDouble(pt, "deadband", null));
+                dto.setAdditionalSources(parseAdditionalSources(pt.get("additionalSources")));
 
                 // 校验通道存在，避免导入的测点挂在不存在通道下
                 if (channelService.findByIdOrNull(channelId) == null) {
@@ -221,5 +223,30 @@ public class ChannelController {
         } catch (IllegalArgumentException e) {
             throw new BusinessException(400, "非法的 " + field + ": " + value);
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<PointSourceDTO> parseAdditionalSources(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (!(value instanceof List)) {
+            throw new BusinessException(400, "'additionalSources' 必须是数组");
+        }
+        List<PointSourceDTO> sources = new java.util.ArrayList<>();
+        for (Object item : (List<Object>) value) {
+            if (!(item instanceof Map)) {
+                throw new BusinessException(400, "附加来源项必须是对象");
+            }
+            Map<String, Object> src = (Map<String, Object>) item;
+            PointSourceDTO dto = new PointSourceDTO();
+            dto.setChannelId(requireString(src, "channelId"));
+            dto.setAddress(requireString(src, "address"));
+            if (channelService.findByIdOrNull(dto.getChannelId()) == null) {
+                throw new BusinessException(400, "附加来源通道不存在: " + dto.getChannelId());
+            }
+            sources.add(dto);
+        }
+        return sources;
     }
 }

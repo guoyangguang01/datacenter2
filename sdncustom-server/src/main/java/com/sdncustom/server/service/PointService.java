@@ -1,9 +1,11 @@
 package com.sdncustom.server.service;
 
 import com.sdncustom.common.dto.MeasurementPointDTO;
+import com.sdncustom.common.dto.PointSourceDTO;
 import com.sdncustom.common.exception.ResourceNotFoundException;
 import com.sdncustom.common.model.Channel;
 import com.sdncustom.common.model.MeasurementPoint;
+import com.sdncustom.common.model.PointSource;
 import com.sdncustom.common.model.PointValue;
 import com.sdncustom.common.model.enums.ChannelDirection;
 import com.sdncustom.common.model.enums.ChannelStatus;
@@ -11,6 +13,7 @@ import com.sdncustom.common.model.enums.PointQuality;
 import com.sdncustom.protocol.ProtocolAdapter;
 import com.sdncustom.protocol.ProtocolRegistry;
 import com.sdncustom.server.repository.MeasurementPointRepository;
+import com.sdncustom.server.repository.PointSourceRepository;
 import com.sdncustom.server.repository.PointValueCacheRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +21,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -26,39 +31,50 @@ public class PointService {
 
     private final MeasurementPointRepository pointRepository;
     private final PointValueCacheRepository pointValueCache;
+    private final PointSourceRepository pointSourceRepository;
     private final ChannelService channelService;
     private final ChangeGate changeGate;
     private final ProtocolRegistry protocolRegistry;
+    private final PointSourceService pointSourceService;
+    private final PointBindingRegistry pointBindingRegistry;
+    private final DistributionService distributionService;
 
     /**
      * 查询所有测点
      */
     public List<MeasurementPoint> findAll() {
-        return pointRepository.findAll();
+        List<MeasurementPoint> points = pointRepository.findAll();
+        attachSources(points);
+        return points;
     }
 
     /**
-     * 根据 Channel ID 查询测点
+     * 根据 Channel ID 查询主绑定在该通道的测点
      */
     public List<MeasurementPoint> findByChannelId(String channelId) {
-        return pointRepository.findByChannelId(channelId);
+        List<MeasurementPoint> points = pointRepository.findByChannelId(channelId);
+        attachSources(points);
+        return points;
     }
 
     /**
      * 根据 ID 查询测点
      */
     public MeasurementPoint findById(String pointId) {
-        return pointRepository.findById(pointId)
+        MeasurementPoint point = pointRepository.findById(pointId)
                 .orElseThrow(() -> new ResourceNotFoundException("MeasurementPoint", pointId));
+        point.setAdditionalSources(pointSourceRepository.findByPointId(pointId));
+        return point;
     }
 
     /**
-     * 创建测点
+     * 创建测点（可带附加来源）
      */
     @Transactional
     public MeasurementPoint create(MeasurementPointDTO dto) {
         // 验证 Channel 存在
-        Channel channel = channelService.findById(dto.getChannelId());
+        channelService.findById(dto.getChannelId());
+        pointSourceService.validateSources(dto.getAdditionalSources(), dto.getChannelId());
 
         MeasurementPoint point = new MeasurementPoint();
         point.setPointId(dto.getPointId());
@@ -70,27 +86,24 @@ public class PointService {
         point.setWritable(dto.isWritable());
         point.setDeadband(dto.getDeadband());
         MeasurementPoint saved = pointRepository.save(point);
+        pointSourceService.replaceSources(dto.getPointId(), dto.getAdditionalSources());
 
-        // 通道已连接时为订阅型协议增量建立订阅；失败不影响测点保存（重连时会全量订阅）
-        if (channel.getStatus() == ChannelStatus.CONNECTED) {
-            protocolRegistry.get(dto.getChannelId()).ifPresent(adapter -> {
-                try {
-                    adapter.onConnected(List.of(saved));
-                } catch (Exception e) {
-                    log.warn("Failed to subscribe new point {} on connected channel {}",
-                            saved.getPointId(), dto.getChannelId(), e);
-                }
-            });
-        }
+        // 已连接通道为订阅型协议增量订阅（主通道 + 各附加来源通道）；失败不影响测点保存
+        subscribeConnectedBindings(saved, dto.getAdditionalSources());
+
+        pointBindingRegistry.invalidate(saved.getPointId());
         return saved;
     }
 
     /**
-     * 更新测点
+     * 更新测点。
+     * additionalSources：null=保留现有来源；空列表=清空；非空=整体替换。
      */
     @Transactional
     public MeasurementPoint update(String pointId, MeasurementPointDTO dto) {
         MeasurementPoint point = findById(pointId);
+        pointSourceService.validateSources(dto.getAdditionalSources(), dto.getChannelId());
+
         point.setPointName(dto.getPointName());
         point.setChannelId(dto.getChannelId());
         point.setAddress(dto.getAddress());
@@ -98,7 +111,21 @@ public class PointService {
         point.setUnit(dto.getUnit());
         point.setWritable(dto.isWritable());
         point.setDeadband(dto.getDeadband());
-        return pointRepository.save(point);
+        MeasurementPoint saved = pointRepository.save(point);
+
+        List<PointSourceDTO> effectiveSources = dto.getAdditionalSources();
+        if (effectiveSources != null) {
+            pointSourceService.replaceSources(pointId, effectiveSources);
+        } else {
+            effectiveSources = pointSourceRepository.findByPointId(pointId).stream()
+                    .map(PointService::toSourceDTO)
+                    .collect(Collectors.toList());
+        }
+        subscribeConnectedBindings(saved, effectiveSources);
+
+        pointBindingRegistry.invalidate(pointId);
+        changeGate.syncPointBindings(pointId, pointSourceService.bindingChannelIds(pointId));
+        return saved;
     }
 
     /**
@@ -109,6 +136,8 @@ public class PointService {
         pointRepository.deleteById(pointId);
         pointValueCache.delete(pointId);
         changeGate.removePoints(List.of(pointId));
+        pointSourceService.deleteByPointId(pointId);
+        pointBindingRegistry.invalidate(pointId);
     }
 
     /**
@@ -127,7 +156,8 @@ public class PointService {
     }
 
     /**
-     * 写入测点值
+     * 写入测点值：广播到所有绑定通道（各通道用各自 address），
+     * 跳过未连接/只读通道，单个来源失败不中断，全部失败才抛异常。
      */
     public void writeValue(String pointId, Object value) {
         MeasurementPoint point = findById(pointId);
@@ -137,30 +167,49 @@ public class PointService {
             throw new IllegalArgumentException("Point is not writable: " + pointId);
         }
 
-        Channel channel = channelService.findById(point.getChannelId());
-
-        if (channel.getStatus() != ChannelStatus.CONNECTED) {
-            throw new RuntimeException("Channel not connected: " + point.getChannelId());
+        List<MeasurementPoint> bindings = pointSourceService.allBindingViews(point);
+        int success = 0;
+        String writtenChannel = null;
+        for (MeasurementPoint view : bindings) {
+            Channel channel = channelService.findByIdOrNull(view.getChannelId());
+            if (channel == null) {
+                log.warn("Write skipped: channel not found {} for point {}", view.getChannelId(), pointId);
+                continue;
+            }
+            if (channel.getStatus() != ChannelStatus.CONNECTED) {
+                log.warn("Write skipped: channel not connected {} for point {}", channel.getChannelId(), pointId);
+                continue;
+            }
+            if (channel.getDirection() == ChannelDirection.READ_ONLY) {
+                log.warn("Write skipped: channel read-only {} for point {}", channel.getChannelId(), pointId);
+                continue;
+            }
+            try {
+                ProtocolAdapter adapter = protocolRegistry.getOrCreate(channel);
+                adapter.writePoint(view, value);
+                success++;
+                if (writtenChannel == null) {
+                    writtenChannel = channel.getChannelId();
+                }
+            } catch (Exception e) {
+                log.error("Write failed to channel {} for point {}: {}",
+                        channel.getChannelId(), pointId, e.getMessage());
+            }
+        }
+        if (success == 0) {
+            throw new RuntimeException("No writable connected channel for point " + pointId);
         }
 
-        // 只读通道禁止写入，避免伪造设备值
-        if (channel.getDirection() == ChannelDirection.READ_ONLY) {
-            throw new IllegalArgumentException("Channel is read-only: " + channel.getChannelId());
-        }
-
-        // 写入外部系统
-        ProtocolAdapter adapter = protocolRegistry.getOrCreate(channel);
-        adapter.writePoint(point, value);
-
-        // 更新缓存
+        // 更新缓存（来源 = 首个实际写入通道）
         PointValue pv = new PointValue();
         pv.setPointId(pointId);
         pv.setValue(value);
         pv.setQuality(PointQuality.GOOD);
-        pv.setSourceChannelId(channel.getChannelId());
+        pv.setSourceChannelId(writtenChannel != null ? writtenChannel : point.getChannelId());
         pv.setTimestamp(System.currentTimeMillis());
         pointValueCache.save(pv);
-        changeGate.recordManualWrite(pointId, value, PointQuality.GOOD, channel.getChannelId());
+        changeGate.recordManualWrite(pointId, value, PointQuality.GOOD, pv.getSourceChannelId());
+        distributionService.pushBatch(List.of(pv));
     }
 
     /**
@@ -171,26 +220,56 @@ public class PointService {
     }
 
     /**
-     * 批量导入测点（upsert：存在则更新，不存在则创建）
+     * 批量导入测点（upsert：存在则走 update 语义，不存在则创建）
      */
     @Transactional
     public List<MeasurementPoint> importPoints(List<MeasurementPointDTO> dtos) {
         List<MeasurementPoint> result = new java.util.ArrayList<>();
         for (MeasurementPointDTO dto : dtos) {
-            MeasurementPoint existing = pointRepository.findById(dto.getPointId()).orElse(null);
-            if (existing != null) {
-                existing.setPointName(dto.getPointName());
-                existing.setChannelId(dto.getChannelId());
-                existing.setAddress(dto.getAddress());
-                existing.setDataType(dto.getDataType());
-                existing.setUnit(dto.getUnit());
-                existing.setWritable(dto.isWritable());
-                existing.setDeadband(dto.getDeadband());
-                result.add(pointRepository.save(existing));
-            } else {
-                result.add(create(dto));
-            }
+            result.add(pointRepository.findById(dto.getPointId()).isPresent()
+                    ? update(dto.getPointId(), dto)
+                    : create(dto));
         }
         return result;
+    }
+
+    private void subscribeConnectedBindings(MeasurementPoint point, List<PointSourceDTO> sources) {
+        subscribeConnectedChannel(point.getChannelId(), List.of(point));
+        if (sources != null) {
+            for (PointSourceDTO source : sources) {
+                subscribeConnectedChannel(source.getChannelId(),
+                        List.of(pointSourceService.viewForBinding(point, source.getChannelId(), source.getAddress())));
+            }
+        }
+    }
+
+    private void subscribeConnectedChannel(String channelId, List<MeasurementPoint> views) {
+        protocolRegistry.get(channelId).ifPresent(adapter -> {
+            try {
+                adapter.onConnected(views);
+            } catch (Exception e) {
+                log.warn("Failed to subscribe point {} on connected channel {}",
+                        views.isEmpty() ? "?" : views.get(0).getPointId(), channelId, e);
+            }
+        });
+    }
+
+    private void attachSources(List<MeasurementPoint> points) {
+        if (points.isEmpty()) {
+            return;
+        }
+        List<String> pointIds = points.stream().map(MeasurementPoint::getPointId).toList();
+        Map<String, List<PointSource>> byPoint = pointSourceRepository.findByPointIdIn(pointIds).stream()
+                .collect(Collectors.groupingBy(PointSource::getPointId));
+        for (MeasurementPoint point : points) {
+            point.setAdditionalSources(byPoint.get(point.getPointId()));
+        }
+    }
+
+    private static PointSourceDTO toSourceDTO(PointSource source) {
+        PointSourceDTO dto = new PointSourceDTO();
+        dto.setChannelId(source.getChannelId());
+        dto.setAddress(source.getAddress());
+        return dto;
     }
 }

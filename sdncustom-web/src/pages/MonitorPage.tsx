@@ -230,6 +230,17 @@ export default function MonitorPage() {
       },
     },
     {
+      title: '来源通道',
+      key: 'sourceChannel',
+      width: 130,
+      render: (_: unknown, record: { pointId: string }) => {
+        const ch = pointValues.get(record.pointId)?.sourceChannelId;
+        if (!ch) return '-';
+        const name = channels.find((c) => c.channelId === ch)?.channelName ?? ch;
+        return <Tag color="geekblue">{name}</Tag>;
+      },
+    },
+    {
       title: '更新时间',
       key: 'timestamp',
       width: 180,
@@ -301,9 +312,12 @@ export default function MonitorPage() {
       >
         <Table
           columns={columns}
-          dataSource={points.filter(
-            (p) => selectedChannels.length === 0 || selectedChannels.includes(p.channelId)
-          )}
+          dataSource={points.filter((p) => {
+            if (selectedChannels.length === 0) return true;
+            if (selectedChannels.includes(p.channelId)) return true;
+            // 多来源测点：任一附加来源命中选中通道也展示
+            return (p.additionalSources ?? []).some((s) => selectedChannels.includes(s.channelId));
+          })}
           rowKey="pointId"
           size="small"
           pagination={false}
@@ -377,6 +391,7 @@ export default function MonitorPage() {
                 >
                   {log.quality}
                 </Tag>
+                <span style={{ color: '#4ec9b0', fontSize: 11 }}>  [{log.channelId}]</span>
               </div>
             ))
           )}

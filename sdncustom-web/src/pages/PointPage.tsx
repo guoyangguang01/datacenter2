@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
-import { Table, Button, Modal, Form, Input, InputNumber, Select, Switch, Space, message } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, DownloadOutlined, UploadOutlined } from '@ant-design/icons';
+import { Table, Button, Modal, Form, Input, InputNumber, Select, Switch, Space, Tag, message } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, DownloadOutlined, UploadOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import { usePointStore } from '../stores/pointStore';
 import { useChannelStore } from '../stores/channelStore';
 import { pointApi } from '../services/api';
@@ -23,6 +23,7 @@ export default function PointPage() {
   const [filterChannel, setFilterChannel] = useState<string | undefined>();
   const [form] = Form.useForm();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const mainChannelId = Form.useWatch('channelId', form);
 
   useEffect(() => {
     fetchChannels();
@@ -109,6 +110,18 @@ export default function PointPage() {
     { title: '名称', dataIndex: 'pointName', key: 'pointName' },
     { title: '通道', dataIndex: 'channelId', key: 'channelId' },
     { title: '地址', dataIndex: 'address', key: 'address' },
+    {
+      title: '来源',
+      key: 'sources',
+      render: (_: unknown, record: MeasurementPoint) => (
+        <Space wrap>
+          <Tag color="blue">{record.channelId}: {record.address}</Tag>
+          {(record.additionalSources ?? []).map((s, i) => (
+            <Tag key={`src-${i}`} color="green">{s.channelId}: {s.address}</Tag>
+          ))}
+        </Space>
+      ),
+    },
     { title: '类型', dataIndex: 'dataType', key: 'dataType' },
     { title: '单位', dataIndex: 'unit', key: 'unit' },
     { title: '死区', dataIndex: 'deadband', key: 'deadband', render: (v: number | null | undefined) => v != null ? v : '-' },
@@ -170,7 +183,7 @@ export default function PointPage() {
         open={modalOpen}
         onOk={handleSubmit}
         onCancel={() => setModalOpen(false)}
-        width={600}
+        width={720}
       >
         <Form form={form} layout="vertical">
           <Form.Item name="pointId" label="测点ID" rules={[{ required: true }]}>
@@ -185,6 +198,44 @@ export default function PointPage() {
           <Form.Item name="address" label="地址" rules={[{ required: true }]}>
             <Input placeholder="例如 40001 或 sensors/temp01" />
           </Form.Item>
+          <Form.List name="additionalSources">
+            {(fields, { add, remove }) => (
+              <>
+                {fields.map(({ key, name, ...restField }) => (
+                  <Space key={key} align="baseline" style={{ display: 'flex', marginBottom: 8 }}>
+                    <Form.Item
+                      {...restField}
+                      name={[name, 'channelId']}
+                      rules={[{ required: true, message: '选择来源通道' }]}
+                      style={{ marginBottom: 0 }}
+                    >
+                      <Select
+                        placeholder="来源通道"
+                        style={{ width: 190 }}
+                        options={channels
+                          .filter((c) => c.channelId !== mainChannelId)
+                          .map((c) => ({ label: c.channelName, value: c.channelId }))}
+                      />
+                    </Form.Item>
+                    <Form.Item
+                      {...restField}
+                      name={[name, 'address']}
+                      rules={[{ required: true, message: '输入来源地址' }]}
+                      style={{ marginBottom: 0 }}
+                    >
+                      <Input placeholder="来源地址" style={{ width: 220 }} />
+                    </Form.Item>
+                    <MinusCircleOutlined onClick={() => remove(name)} />
+                  </Space>
+                ))}
+                <Form.Item>
+                  <Button type="dashed" onClick={() => add({ channelId: undefined, address: '' })} block icon={<PlusOutlined />}>
+                    添加来源通道
+                  </Button>
+                </Form.Item>
+              </>
+            )}
+          </Form.List>
           <Form.Item name="dataType" label="数据类型" rules={[{ required: true }]}>
             <Select options={dataTypeOptions} />
           </Form.Item>

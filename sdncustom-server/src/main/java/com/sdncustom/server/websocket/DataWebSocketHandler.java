@@ -6,6 +6,8 @@ import com.sdncustom.common.model.PointValue;
 import com.sdncustom.server.config.WebSocketProperties;
 import com.sdncustom.server.repository.MeasurementPointRepository;
 import com.sdncustom.server.repository.PointValueCacheRepository;
+import com.sdncustom.server.service.PointBindingRegistry;
+import com.sdncustom.server.service.PointSourceService;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.annotation.PostConstruct;
@@ -34,6 +36,8 @@ public class DataWebSocketHandler extends TextWebSocketHandler {
     private final ObjectMapper objectMapper;
     private final MeasurementPointRepository pointRepository;
     private final PointValueCacheRepository pointValueCache;
+    private final PointBindingRegistry pointBindingRegistry;
+    private final PointSourceService pointSourceService;
     private final WebSocketProperties properties;
     private final MeterRegistry meterRegistry;
 
@@ -129,13 +133,14 @@ public class DataWebSocketHandler extends TextWebSocketHandler {
         if (channelIds == null) return;
 
         try {
-            List<PointValue> values = new ArrayList<>();
+            Map<String, PointValue> uniqueValues = new LinkedHashMap<>();
             for (String channelId : channelIds) {
-                List<MeasurementPoint> points = pointRepository.findByChannelId(channelId);
+                List<MeasurementPoint> points = pointSourceService.findPointsForChannel(channelId);
                 for (MeasurementPoint p : points) {
-                    pointValueCache.findByPointId(p.getPointId()).ifPresent(values::add);
+                    pointValueCache.findByPointId(p.getPointId()).ifPresent(v -> uniqueValues.putIfAbsent(v.getPointId(), v));
                 }
             }
+            List<PointValue> values = new ArrayList<>(uniqueValues.values());
             if (values.isEmpty()) return;
 
             Map<String, Object> data = new HashMap<>();
@@ -154,13 +159,11 @@ public class DataWebSocketHandler extends TextWebSocketHandler {
     public void pushBatch(List<PointValue> pointValues) {
         Map<String, List<PointValue>> byChannel = new LinkedHashMap<>();
         for (PointValue pv : pointValues) {
-            String channelId = pv.getSourceChannelId();
-            if (channelId == null) {
-                MeasurementPoint point = pointRepository.findById(pv.getPointId()).orElse(null);
-                if (point == null) continue;
-                channelId = point.getChannelId();
+            // 多来源测点 fan-out 到所有绑定通道；点不存在时回退来源通道
+            Set<String> targets = resolvePushChannels(pv);
+            for (String channelId : targets) {
+                byChannel.computeIfAbsent(channelId, k -> new ArrayList<>()).add(pv);
             }
-            byChannel.computeIfAbsent(channelId, k -> new ArrayList<>()).add(pv);
         }
 
         for (Map.Entry<String, List<PointValue>> entry : byChannel.entrySet()) {
@@ -173,20 +176,32 @@ public class DataWebSocketHandler extends TextWebSocketHandler {
     }
 
     /**
-     * 推送测点值到订阅的客户端
+     * 推送测点值到订阅的客户端（多来源 fan-out）
      */
     public void pushPointValue(PointValue pointValue) {
-        String channelId = pointValue.getSourceChannelId();
-        if (channelId == null) {
-            MeasurementPoint point = pointRepository.findById(pointValue.getPointId()).orElse(null);
-            if (point == null) return;
-            channelId = point.getChannelId();
-        }
+        Set<String> targets = resolvePushChannels(pointValue);
         try {
-            sendJsonToSubscribers(channelId, buildDataMessage(List.of(pointValue)));
+            String json = buildDataMessage(List.of(pointValue));
+            for (String channelId : targets) {
+                sendJsonToSubscribers(channelId, json);
+            }
         } catch (Exception e) {
             log.error("Failed to push point value", e);
         }
+    }
+
+    private Set<String> resolvePushChannels(PointValue pv) {
+        Set<String> targets = pointBindingRegistry.channelsOf(pv.getPointId());
+        if (!targets.isEmpty()) {
+            return targets;
+        }
+        String channelId = pv.getSourceChannelId();
+        if (channelId == null) {
+            MeasurementPoint point = pointRepository.findById(pv.getPointId()).orElse(null);
+            if (point == null) return Set.of();
+            channelId = point.getChannelId();
+        }
+        return Set.of(channelId);
     }
 
     private String buildDataMessage(List<PointValue> values) throws Exception {

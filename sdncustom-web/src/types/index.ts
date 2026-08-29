@@ -20,6 +20,11 @@ export interface Channel {
   updateTime: string;
 }
 
+export interface PointSourceDTO {
+  channelId: string;
+  address: string;
+}
+
 export interface MeasurementPoint {
   pointId: string;
   pointName: string;
@@ -29,6 +34,7 @@ export interface MeasurementPoint {
   unit: string;
   writable: boolean;
   deadband?: number;
+  additionalSources?: PointSourceDTO[];
   createTime: string;
   updateTime: string;
 }

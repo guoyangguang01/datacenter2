@@ -110,7 +110,7 @@ scripts/start-frontend.bat           # 单独启动前端
 ## 关键服务
 
 - **AcquisitionEngine**：定时采集引擎，每 200ms 扫描 CONNECTED 状态的 Channel 并读取测点值；经 ChangeGate 过滤后**仅对有效变化**做批量落库与推送（无变化则零写入）
-- **ChangeGate**：变更检测门。数值型按 |新−旧| > 测点死区(deadband) 判断，非数值按相等判断，质量变化无条件通过；手动写值会同步门状态避免重复上报
+- **ChangeGate**：变更检测门 + 多来源合并。一个测点可绑定多个通道来源（主绑定 `MeasurementPoint.channelId+address` + 附加来源表 `point_source`），权威值 = 质量优先（GOOD>UNCERTAIN>BAD>COMM_LOST）→ 时间戳最新 → 来源键稳定平局；数值型按 |新−旧| > 测点死区(deadband) 判断对权威值增量生效；手动写值会同步门状态避免重复上报。写入广播到所有绑定通道（跳过未连接/只读），WS 推送按绑定通道 fan-out
 - **ChannelService**：Channel 生命周期唯一入口（CRUD + connect/disconnect/syncDisconnected，按通道加锁串行化；DB status 是适配器运行时状态的投影）
 - **PointService**：测点 CRUD、手动写入（writeValue）、缓存批量更新
 - **HistoryService**：TDengine 历史存储（超级表初始化 + 批量写入）

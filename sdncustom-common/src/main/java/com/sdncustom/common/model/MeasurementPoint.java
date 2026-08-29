@@ -2,11 +2,14 @@ package com.sdncustom.common.model;
 
 import com.sdncustom.common.model.enums.PointDataType;
 import jakarta.persistence.*;
-import lombok.Data;
-import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.EqualsAndHashCode;
+import lombok.NoArgsConstructor;
+import lombok.ToString;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 @NoArgsConstructor
@@ -47,6 +50,12 @@ public class MeasurementPoint {
 
     @Column(name = "update_time")
     private LocalDateTime updateTime;
+
+    /** 附加来源（REST/导出回填用，非持久化字段；主绑定仍是 channelId+address） */
+    @Transient
+    @EqualsAndHashCode.Exclude
+    @ToString.Exclude
+    private List<PointSource> additionalSources;
 
     @PrePersist
     protected void onCreate() {
