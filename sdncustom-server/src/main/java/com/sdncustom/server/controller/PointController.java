@@ -15,12 +15,15 @@ import com.sdncustom.server.service.PointService;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.util.List;
 import java.util.Map;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/points")
 @RequiredArgsConstructor
@@ -66,7 +69,9 @@ public class PointController {
     }
 
     @PutMapping("/{id}/value")
-    public ApiResponse<Void> writeValue(@PathVariable String id, @Valid @RequestBody WriteValueRequest request) {
+    public ApiResponse<Void> writeValue(@PathVariable String id, @Valid @RequestBody WriteValueRequest request,
+                                        Authentication authentication) {
+        log.info("User {} writing value to point {}: {}", authentication.getName(), id, request.getValue());
         pointService.writeValue(id, request.getValue());
         return ApiResponse.success();
     }

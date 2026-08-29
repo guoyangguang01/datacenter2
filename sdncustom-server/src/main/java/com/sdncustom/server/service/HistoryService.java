@@ -17,7 +17,8 @@ public class HistoryService {
     private final PointHistoryRepository historyRepository;
 
     /**
-     * 初始化 TDengine 超级表
+     * 初始化 TDengine 超级表。
+     * 数据库本身与保留时长（KEEP）由 {@code TdengineConfig} 在连接池创建前引导完成。
      */
     public void init() {
         historyRepository.initSuperTable();

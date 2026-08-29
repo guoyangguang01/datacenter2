@@ -7,13 +7,8 @@ import com.sdncustom.common.model.MeasurementPoint;
 import com.sdncustom.common.model.PointValue;
 import com.sdncustom.common.model.enums.ChannelStatus;
 import com.sdncustom.common.model.enums.PointQuality;
-import com.sdncustom.common.model.enums.ProtocolType;
 import com.sdncustom.protocol.ProtocolAdapter;
 import com.sdncustom.protocol.ProtocolRegistry;
-import com.sdncustom.protocol.modbus.ModbusTcpAdapter;
-import com.sdncustom.protocol.mqtt.MqttAdapter;
-import com.sdncustom.protocol.opcua.OpcUaAdapter;
-import com.sdncustom.protocol.tcp.CustomTcpAdapter;
 import com.sdncustom.server.repository.ChannelRepository;
 import com.sdncustom.server.repository.MeasurementPointRepository;
 import com.sdncustom.server.repository.PointValueCacheRepository;
@@ -23,7 +18,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 
+/**
+ * Channel 生命周期管理。
+ * connect/disconnect 是状态收敛的唯一入口，按通道加锁串行化，
+ * 适配器实例统一经 {@link ProtocolRegistry} 获取/释放，
+ * DB status 是适配器运行时状态的投影。
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -33,6 +37,10 @@ public class ChannelService {
     private final MeasurementPointRepository pointRepository;
     private final PointValueCacheRepository pointValueCache;
     private final ProtocolRegistry protocolRegistry;
+    private final ChangeGate changeGate;
+
+    // per-channel 生命周期锁：串行化用户操作与采集循环的状态修正
+    private final ConcurrentHashMap<String, ReentrantLock> lifecycleLocks = new ConcurrentHashMap<>();
 
     /**
      * 查询所有 Channel
@@ -73,131 +81,119 @@ public class ChannelService {
     }
 
     /**
-     * 更新 Channel
+     * 更新 Channel。
+     * 连接参数（协议/配置）变化时销毁旧适配器实例并按需以新配置重连，
+     * 修复"改配置后仍沿用旧连接"的问题。
      */
     @Transactional
     public Channel update(String channelId, ChannelDTO dto) {
         Channel channel = findById(channelId);
+        boolean connectionChanged = channel.getProtocolType() != dto.getProtocolType()
+                || !Objects.equals(channel.getConnectionConfig(), dto.getConnectionConfig());
+        boolean wasConnected = channel.getStatus() == ChannelStatus.CONNECTED;
+
+        if (connectionChanged && channel.getStatus() != ChannelStatus.DISCONNECTED) {
+            disconnect(channelId);
+            channel.setStatus(ChannelStatus.DISCONNECTED);
+        }
+
         channel.setChannelName(dto.getChannelName());
         channel.setProtocolType(dto.getProtocolType());
         channel.setDirection(dto.getDirection());
         channel.setConnectionConfig(dto.getConnectionConfig());
         channel.setAutoConnect(dto.isAutoConnect());
-        return channelRepository.save(channel);
+        Channel saved = channelRepository.save(channel);
+
+        if (connectionChanged && wasConnected && saved.isAutoConnect()) {
+            try {
+                connect(channelId);
+            } catch (Exception e) {
+                // 新配置连不上：connect() 已将状态收敛为 ERROR，这里吞掉异常，
+                // 保证用户刚保存的配置不因回滚而丢失
+                log.warn("Auto-reconnect after config change failed for channel {}, status set to ERROR: {}",
+                        channelId, e.getMessage());
+            }
+        }
+        return saved;
     }
 
     /**
-     * 删除 Channel
+     * 删除 Channel（先释放运行态，再级联删除测点）
      */
     @Transactional
     public void delete(String channelId) {
-        Channel channel = findById(channelId);
-        // 先断开连接（覆盖 CONNECTED / ERROR 等非 DISCONNECTED 状态）
-        if (channel.getStatus() != ChannelStatus.DISCONNECTED) {
-            disconnect(channelId);
-        }
-        // 删除关联的测点值缓存
+        findById(channelId);
+        disconnect(channelId);
+        lifecycleLocks.remove(channelId);
+
         List<MeasurementPoint> points = pointRepository.findByChannelId(channelId);
         for (MeasurementPoint point : points) {
             pointValueCache.delete(point.getPointId());
         }
-        // 删除关联的测点
+        changeGate.removePoints(points.stream().map(MeasurementPoint::getPointId).toList());
         pointRepository.deleteByChannelId(channelId);
         channelRepository.deleteById(channelId);
     }
 
     /**
-     * 连接 Channel
+     * 连接 Channel：以适配器运行时状态为准，DB status 只做投影。
+     * 幂等——已连接时仅对齐状态。
      */
     public void connect(String channelId) {
-        Channel channel = findById(channelId);
-        ProtocolAdapter adapter = getOrCreateAdapter(channel);
-        // 以适配器真实状态为准，避免 DB 状态为 CONNECTED 但适配器已断开时无法重连（假连接）
-        if (adapter.isConnected()) {
-            log.warn("Channel already connected: {}", channelId);
-            return;
-        }
-
+        ReentrantLock lock = lockFor(channelId);
+        lock.lock();
         try {
-            adapter.connect(channel);
+            Channel channel = findById(channelId);
+            ProtocolAdapter adapter = protocolRegistry.getOrCreate(channel);
 
-            // MQTT 协议连接成功后需订阅测点 Topic，否则收不到任何数据
-            if (adapter instanceof MqttAdapter mqttAdapter) {
-                List<String> topics = pointRepository.findByChannelId(channelId)
-                        .stream()
-                        .map(MeasurementPoint::getAddress)
-                        .toList();
-                mqttAdapter.subscribeAll(topics);
+            if (adapter.isConnected()) {
+                if (channel.getStatus() != ChannelStatus.CONNECTED) {
+                    channel.setStatus(ChannelStatus.CONNECTED);
+                    channelRepository.save(channel);
+                }
+                log.debug("Channel already connected, state aligned: {}", channelId);
+                return;
             }
 
-            channel.setStatus(ChannelStatus.CONNECTED);
-            channelRepository.save(channel);
-            log.info("Channel connected: {}", channelId);
-        } catch (Exception e) {
-            channel.setStatus(ChannelStatus.ERROR);
-            channelRepository.save(channel);
-            log.error("Failed to connect channel: {}", channelId, e);
-            throw new RuntimeException("Connection failed", e);
+            try {
+                adapter.connect(channel);
+                // 统一连接后钩子：订阅型协议（MQTT）在此建立测点订阅
+                adapter.onConnected(pointRepository.findByChannelId(channelId));
+                channel.setStatus(ChannelStatus.CONNECTED);
+                channelRepository.save(channel);
+                log.info("Channel connected: {}", channelId);
+            } catch (Exception e) {
+                // 连接失败：销毁半成品实例，下次 connect 以新实例重试
+                protocolRegistry.remove(channelId);
+                channel.setStatus(ChannelStatus.ERROR);
+                channelRepository.save(channel);
+                log.error("Failed to connect channel: {}", channelId, e);
+                throw new RuntimeException("Connection failed", e);
+            }
+        } finally {
+            lock.unlock();
         }
     }
 
     /**
-     * 断开 Channel
+     * 断开 Channel：无条件收敛到 DISCONNECTED（释放实例 + 测点标记 COMM_LOST），幂等。
      */
     public void disconnect(String channelId) {
-        Channel channel = findById(channelId);
-        if (channel.getStatus() == ChannelStatus.DISCONNECTED) {
-            log.warn("Channel already disconnected: {}", channelId);
-            return;
-        }
-
+        ReentrantLock lock = lockFor(channelId);
+        lock.lock();
         try {
-            ProtocolAdapter adapter = getOrCreateAdapter(channel);
-            adapter.disconnect();
-        } catch (Exception e) {
-            log.warn("Error during adapter disconnect for channel: {}, forcing cleanup", channelId, e);
-        } finally {
+            Channel channel = findById(channelId);
+
             // 无论适配器是否成功断开，都强制重置状态
-            try {
-                // 标记所有测点为 COMM_LOST
-                List<MeasurementPoint> points = pointRepository.findByChannelId(channelId);
-                for (MeasurementPoint point : points) {
-                    PointValue pv = PointValue.commLost(point.getPointId());
-                    pv.setSourceChannelId(channelId);
-                    try {
-                        pointValueCache.save(pv);
-                    } catch (Throwable e) {
-                        log.warn("Failed to update point cache for point: {}", point.getPointId(), e);
-                    }
-                }
-            } catch (Throwable e) {
-                log.warn("Failed to mark points as COMM_LOST for channel: {}", channelId, e);
-            }
+            protocolRegistry.release(channelId);
+            markPointsCommLost(channelId);
 
             channel.setStatus(ChannelStatus.DISCONNECTED);
             channelRepository.save(channel);
             log.info("Channel disconnected: {}", channelId);
+        } finally {
+            lock.unlock();
         }
-    }
-
-    /**
-     * 获取或创建协议适配器
-     */
-    public ProtocolAdapter getOrCreateAdapter(Channel channel) {
-        ProtocolType type = channel.getProtocolType();
-        if (type == ProtocolType.CUSTOM_TCP) {
-            return CustomTcpAdapter.getInstance(channel.getChannelId());
-        }
-        if (type == ProtocolType.MODBUS_TCP) {
-            return ModbusTcpAdapter.getInstance(channel.getChannelId());
-        }
-        if (type == ProtocolType.MQTT) {
-            return MqttAdapter.getInstance(channel.getChannelId());
-        }
-        if (type == ProtocolType.OPCUA) {
-            return OpcUaAdapter.getInstance(channel.getChannelId());
-        }
-        return protocolRegistry.getAdapter(type);
     }
 
     /**
@@ -212,5 +208,43 @@ public class ChannelService {
                 log.error("Auto-connect failed for channel: {}", channel.getChannelId(), e);
             }
         });
+    }
+
+    /**
+     * 采集循环检测到运行时断开时调用：仅对齐 DB 状态（不重复走释放路径），
+     * 与用户 connect/disconnect 通过同一把锁互斥。
+     */
+    public void syncDisconnected(String channelId) {
+        ReentrantLock lock = lockFor(channelId);
+        lock.lock();
+        try {
+            Channel channel = findByIdOrNull(channelId);
+            if (channel == null || channel.getStatus() == ChannelStatus.DISCONNECTED) {
+                return;
+            }
+            protocolRegistry.remove(channelId);
+            markPointsCommLost(channelId);
+            channel.setStatus(ChannelStatus.DISCONNECTED);
+            channelRepository.save(channel);
+            log.info("Channel runtime lost connection, state synced: {}", channelId);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private void markPointsCommLost(String channelId) {
+        try {
+            for (MeasurementPoint point : pointRepository.findByChannelId(channelId)) {
+                PointValue pv = PointValue.commLost(point.getPointId());
+                pv.setSourceChannelId(channelId);
+                pointValueCache.save(pv);
+            }
+        } catch (Throwable e) {
+            log.warn("Failed to mark points as COMM_LOST for channel: {}", channelId, e);
+        }
+    }
+
+    private ReentrantLock lockFor(String channelId) {
+        return lifecycleLocks.computeIfAbsent(channelId, k -> new ReentrantLock());
     }
 }

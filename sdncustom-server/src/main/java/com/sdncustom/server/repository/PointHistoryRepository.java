@@ -1,6 +1,8 @@
 package com.sdncustom.server.repository;
 
 import com.sdncustom.common.model.PointHistory;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -9,15 +11,19 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 import java.sql.Types;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
 @Repository
 public class PointHistoryRepository {
 
     private final ObjectProvider<JdbcTemplate> jdbcTemplateProvider;
+    private final MeterRegistry meterRegistry;
 
     @Value("${tdengine.url:}")
     private String tdengineUrl;
@@ -27,10 +33,18 @@ public class PointHistoryRepository {
 
     // 熔断：TDengine 故障后 N 秒内不再尝试写入，避免采集循环被 5s 连接超时拖垮
     private static final long RETRY_INTERVAL_MS = 15_000;
+    // 多表 INSERT 每条语句最多包含的值数量，控制 SQL 长度
+    static final int MAX_VALUES_PER_STMT = 200;
     private volatile long nextRetryTime = 0L;
+    private final AtomicInteger circuitOpen = new AtomicInteger(0);
 
-    public PointHistoryRepository(@Qualifier("tdengineJdbcTemplate") ObjectProvider<JdbcTemplate> jdbcTemplateProvider) {
+    public PointHistoryRepository(@Qualifier("tdengineJdbcTemplate") ObjectProvider<JdbcTemplate> jdbcTemplateProvider,
+                                  MeterRegistry meterRegistry) {
         this.jdbcTemplateProvider = jdbcTemplateProvider;
+        this.meterRegistry = meterRegistry;
+        Gauge.builder("sdncustom.history.circuit.open", circuitOpen, AtomicInteger::get)
+                .description("TDengine 熔断状态（1=断开）")
+                .register(meterRegistry);
     }
 
     private JdbcTemplate jdbc() {
@@ -47,6 +61,8 @@ public class PointHistoryRepository {
 
     private void markDown(String action, String detail) {
         nextRetryTime = System.currentTimeMillis() + RETRY_INTERVAL_MS;
+        circuitOpen.set(1);
+        meterRegistry.counter("sdncustom.history.errors").increment();
         log.warn("TDengine unavailable ({}), will retry in {}s: {}", action, RETRY_INTERVAL_MS / 1000, detail);
     }
 
@@ -61,7 +77,7 @@ public class PointHistoryRepository {
         try {
             String sql = "CREATE STABLE IF NOT EXISTS point_history (" +
                     "ts TIMESTAMP, " +
-                    "value BINARY(256), " +
+                    "val BINARY(256), " +
                     "quality BINARY(32), " +
                     "source_channel_id BINARY(64)" +
                     ") TAGS (point_id BINARY(64))";
@@ -107,12 +123,70 @@ public class PointHistoryRepository {
     }
 
     /**
-     * 批量保存历史记录
+     * 批量保存历史记录（多表 INSERT 分片，性能远优于逐条写入）
      */
     public void saveBatch(List<PointHistory> histories) {
-        for (PointHistory history : histories) {
-            save(history);
+        if (!enabled() || circuitOpen() || histories.isEmpty()) {
+            return;
         }
+        long started = System.nanoTime();
+        try {
+            JdbcTemplate jdbcTemplate = jdbc();
+
+            // 确保子表存在
+            for (PointHistory h : histories) {
+                String tableName = tableNameOf(h.getPointId());
+                if (createdTables.add(tableName)) {
+                    String createTableSql = String.format(
+                            "CREATE TABLE IF NOT EXISTS %s USING point_history TAGS ('%s')",
+                            tableName, escapeSql(h.getPointId()));
+                    jdbcTemplate.execute(createTableSql);
+                }
+            }
+
+            for (String sql : buildBatchInsertStatements(histories)) {
+                jdbcTemplate.execute(sql);
+            }
+            circuitOpen.set(0);
+        } catch (Exception e) {
+            markDown("saveBatch", e.getMessage());
+        } finally {
+            meterRegistry.timer("sdncustom.history.write")
+                    .record(System.nanoTime() - started, TimeUnit.NANOSECONDS);
+        }
+    }
+
+    /**
+     * 构建 TDengine 多表 INSERT 语句：
+     * {@code INSERT INTO t1 VALUES (...) t2 VALUES (...)}，每 {@link #MAX_VALUES_PER_STMT} 条值分片一条语句。
+     * 值内联进 SQL（TDengine JDBC 不支持多表参数化）：表名经白名单化，
+     * value/sourceChannelId 经单引号转义，quality 为枚举名。
+     */
+    static List<String> buildBatchInsertStatements(List<PointHistory> histories) {
+        List<String> statements = new ArrayList<>();
+        StringBuilder sb = new StringBuilder();
+        int count = 0;
+        for (PointHistory h : histories) {
+            if (count >= MAX_VALUES_PER_STMT) {
+                statements.add(sb.toString());
+                sb = new StringBuilder();
+                count = 0;
+            }
+            if (count == 0) {
+                sb.append("INSERT INTO ");
+            }
+            sb.append(tableNameOf(h.getPointId())).append(" VALUES (");
+            sb.append(h.getTimestamp()).append(", ");
+            sb.append('\'').append(escapeSql(String.valueOf(h.getValue()))).append("', ");
+            sb.append('\'').append(h.getQuality().name()).append("', ");
+            sb.append('\'').append(escapeSql(h.getSourceChannelId() == null ? "" : h.getSourceChannelId())).append('\'');
+            sb.append(") ");
+            count++;
+        }
+        if (count > 0) {
+            statements.add(sb.toString());
+        }
+        return statements;
     }
 
     /**
@@ -125,13 +199,13 @@ public class PointHistoryRepository {
         try {
             String tableName = tableNameOf(pointId);
             String sql = String.format(
-                    "SELECT ts, value, quality, source_channel_id FROM %s WHERE ts >= ? AND ts <= ? ORDER BY ts DESC LIMIT ? OFFSET ?",
+                    "SELECT ts, val, quality, source_channel_id FROM %s WHERE ts >= ? AND ts <= ? ORDER BY ts DESC LIMIT ? OFFSET ?",
                     tableName);
             return jdbc().query(sql, (rs, rowNum) -> {
                 PointHistory history = new PointHistory();
                 history.setPointId(pointId);
                 history.setTimestamp(rs.getTimestamp("ts").getTime());
-                history.setValue(rs.getString("value"));
+                history.setValue(rs.getString("val"));
                 history.setQuality(com.sdncustom.common.model.enums.PointQuality.valueOf(rs.getString("quality")));
                 history.setSourceChannelId(rs.getString("source_channel_id"));
                 return history;
@@ -145,14 +219,14 @@ public class PointHistoryRepository {
     /**
      * 测点 ID 到表名的映射（非法字符替换为下划线）
      */
-    private String tableNameOf(String pointId) {
+    static String tableNameOf(String pointId) {
         return "point_" + pointId.replaceAll("[^a-zA-Z0-9_]", "_");
     }
 
     /**
      * SQL 字符串字面量转义（防止单引号破坏 SQL / 注入）
      */
-    private String escapeSql(String value) {
+    static String escapeSql(String value) {
         return value.replace("'", "''");
     }
 }

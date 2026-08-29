@@ -12,7 +12,6 @@ import lombok.extern.slf4j.Slf4j;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Modbus TCP 协议适配器
@@ -29,19 +28,11 @@ public class ModbusTcpAdapter implements ProtocolAdapter {
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final ModbusTcpClient client = new ModbusTcpClient();
     private Channel channel;
-    private String channelId;
     private volatile boolean connected = false;
-
-    private static final Map<String, ModbusTcpAdapter> instances = new ConcurrentHashMap<>();
-
-    public static ModbusTcpAdapter getInstance(String channelId) {
-        return instances.computeIfAbsent(channelId, k -> new ModbusTcpAdapter());
-    }
 
     @Override
     public void connect(Channel channel) {
         this.channel = channel;
-        this.channelId = channel.getChannelId();
         try {
             Map<String, Object> config = objectMapper.readValue(channel.getConnectionConfig(), Map.class);
             String host = (String) config.get("host");
@@ -56,10 +47,6 @@ public class ModbusTcpAdapter implements ProtocolAdapter {
             connected = false;
             // 清理可能已创建的连接资源
             client.disconnect();
-            // 从实例缓存中移除
-            if (channelId != null) {
-                instances.remove(channelId);
-            }
             log.error("Failed to connect to Modbus TCP server: {}", e.getMessage());
             throw new RuntimeException("Modbus connection failed", e);
         }
@@ -69,9 +56,6 @@ public class ModbusTcpAdapter implements ProtocolAdapter {
     public void disconnect() {
         connected = false;
         client.disconnect();
-        if (channelId != null) {
-            instances.remove(channelId);
-        }
     }
 
     @Override

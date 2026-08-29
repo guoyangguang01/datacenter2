@@ -38,6 +38,10 @@ public class MeasurementPoint {
     @Column(name = "writable")
     private boolean writable = false;
 
+    /** 死区：|新值-旧值| > deadband 才视为有效变化；null 等价于 0（任何变化都上报） */
+    @Column(name = "deadband")
+    private Double deadband;
+
     @Column(name = "create_time")
     private LocalDateTime createTime;
 

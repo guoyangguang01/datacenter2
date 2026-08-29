@@ -6,6 +6,7 @@ import com.sdncustom.common.model.PointValue;
 import com.sdncustom.common.model.enums.PointDataType;
 import com.sdncustom.common.model.enums.PointQuality;
 import com.sdncustom.common.model.enums.ProtocolType;
+import com.sdncustom.protocol.ProtocolAdapter;
 import org.junit.jupiter.api.*;
 
 import java.util.Arrays;
@@ -95,39 +96,15 @@ class CustomTcpAdapterTest {
     }
 
     @Test
-    @DisplayName("获取实例")
-    void getInstance() {
-        CustomTcpAdapter instance1 = CustomTcpAdapter.getInstance("ch_tcp_001");
-        CustomTcpAdapter instance2 = CustomTcpAdapter.getInstance("ch_tcp_001");
+    @DisplayName("工厂每次创建独立新实例")
+    void factoryCreatesNewInstances() {
+        CustomTcpAdapterFactory factory = new CustomTcpAdapterFactory();
+        ProtocolAdapter a = factory.create();
+        ProtocolAdapter b = factory.create();
 
-        assertNotNull(instance1);
-        assertSame(instance1, instance2);
-    }
-
-    @Test
-    @DisplayName("不同通道获取不同实例")
-    void getDifferentInstances() {
-        CustomTcpAdapter instance1 = CustomTcpAdapter.getInstance("ch_tcp_001");
-        CustomTcpAdapter instance2 = CustomTcpAdapter.getInstance("ch_tcp_002");
-
-        assertNotNull(instance1);
-        assertNotNull(instance2);
-        assertNotSame(instance1, instance2);
-    }
-
-    @Test
-    @DisplayName("断开后实例移除")
-    void instanceRemovedAfterDisconnect() {
-        // 使用唯一的 channelId 避免测试间干扰
-        String channelId = "ch_tcp_disconnect_test_" + System.currentTimeMillis();
-        CustomTcpAdapter instance1 = CustomTcpAdapter.getInstance(channelId);
-        instance1.disconnect();
-
-        CustomTcpAdapter instance2 = CustomTcpAdapter.getInstance(channelId);
-
-        // 注意：由于 disconnect 后 channelId 为 null，实例可能不会被移除
-        // 这个测试验证 disconnect 不会抛出异常
-        assertNotNull(instance2);
+        assertNotNull(a);
+        assertNotSame(a, b);
+        assertEquals(ProtocolType.CUSTOM_TCP, factory.protocolType());
     }
 
     @Test

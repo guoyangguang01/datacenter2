@@ -2,10 +2,15 @@ package com.sdncustom.server.service;
 
 import com.sdncustom.common.dto.MeasurementPointDTO;
 import com.sdncustom.common.exception.ResourceNotFoundException;
+import com.sdncustom.common.model.Channel;
 import com.sdncustom.common.model.MeasurementPoint;
 import com.sdncustom.common.model.PointValue;
+import com.sdncustom.common.model.enums.ChannelDirection;
+import com.sdncustom.common.model.enums.ChannelStatus;
 import com.sdncustom.common.model.enums.PointDataType;
 import com.sdncustom.common.model.enums.PointQuality;
+import com.sdncustom.protocol.ProtocolAdapter;
+import com.sdncustom.protocol.ProtocolRegistry;
 import com.sdncustom.server.repository.MeasurementPointRepository;
 import com.sdncustom.server.repository.PointValueCacheRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,14 +45,25 @@ class PointServiceTest {
     @Mock
     private ChannelService channelService;
 
+    @Mock
+    private ChangeGate changeGate;
+
+    @Mock
+    private ProtocolRegistry protocolRegistry;
+
     @InjectMocks
     private PointService pointService;
 
     private MeasurementPoint testPoint;
     private MeasurementPointDTO testDto;
+    private Channel disconnectedChannel;
 
     @BeforeEach
     void setUp() {
+        disconnectedChannel = new Channel();
+        disconnectedChannel.setChannelId("ch_001");
+        disconnectedChannel.setStatus(ChannelStatus.DISCONNECTED);
+
         testPoint = new MeasurementPoint();
         testPoint.setPointId("test_point_001");
         testPoint.setPointName("测试测点");
@@ -112,7 +128,7 @@ class PointServiceTest {
     @Test
     @DisplayName("创建测点")
     void create() {
-        when(channelService.findById("ch_001")).thenReturn(null);
+        when(channelService.findById("ch_001")).thenReturn(disconnectedChannel);
         when(pointRepository.save(any(MeasurementPoint.class))).thenReturn(testPoint);
 
         MeasurementPoint result = pointService.create(testDto);
@@ -120,6 +136,22 @@ class PointServiceTest {
         assertNotNull(result);
         assertEquals("test_point_001", result.getPointId());
         verify(pointRepository).save(any(MeasurementPoint.class));
+    }
+
+    @Test
+    @DisplayName("在已连接通道新增测点 - 触发 onConnected 增量订阅")
+    void createOnConnectedChannelSubscribes() {
+        Channel connected = new Channel();
+        connected.setChannelId("ch_001");
+        connected.setStatus(ChannelStatus.CONNECTED);
+        ProtocolAdapter adapter = mock(ProtocolAdapter.class);
+        when(channelService.findById("ch_001")).thenReturn(connected);
+        when(pointRepository.save(any(MeasurementPoint.class))).thenReturn(testPoint);
+        when(protocolRegistry.get("ch_001")).thenReturn(Optional.of(adapter));
+
+        pointService.create(testDto);
+
+        verify(adapter).onConnected(List.of(testPoint));
     }
 
     @Test
@@ -176,18 +208,36 @@ class PointServiceTest {
     }
 
     @Test
-    @DisplayName("更新测点值")
-    void updateValue() {
+    @DisplayName("批量更新测点值")
+    void updateBatch() {
         PointValue newValue = new PointValue();
         newValue.setPointId("test_point_001");
         newValue.setValue(30.5);
         newValue.setQuality(PointQuality.GOOD);
 
-        doNothing().when(pointValueCache).save(any(PointValue.class));
+        pointService.updateBatch(Arrays.asList(newValue));
 
-        pointService.updateValue(newValue);
+        verify(pointValueCache).saveBatch(Arrays.asList(newValue));
+    }
 
+    @Test
+    @DisplayName("手动写值后同步变更门状态")
+    void writeValueRecordsChangeGate() {
+        testPoint.setWritable(true);
+        when(pointRepository.findById("test_point_001")).thenReturn(Optional.of(testPoint));
+        Channel channel = new Channel();
+        channel.setChannelId("ch_001");
+        channel.setStatus(ChannelStatus.CONNECTED);
+        channel.setDirection(ChannelDirection.READ_WRITE);
+        when(channelService.findById("ch_001")).thenReturn(channel);
+        ProtocolAdapter adapter = mock(ProtocolAdapter.class);
+        when(protocolRegistry.getOrCreate(channel)).thenReturn(adapter);
+
+        pointService.writeValue("test_point_001", 42.0);
+
+        verify(adapter).writePoint(testPoint, 42.0);
         verify(pointValueCache).save(any(PointValue.class));
+        verify(changeGate).recordManualWrite("test_point_001", 42.0, PointQuality.GOOD, "ch_001");
     }
 
     @Test
@@ -196,7 +246,7 @@ class PointServiceTest {
         List<MeasurementPointDTO> dtos = Arrays.asList(testDto);
 
         when(pointRepository.findById("test_point_001")).thenReturn(Optional.empty());
-        when(channelService.findById("ch_001")).thenReturn(null);
+        when(channelService.findById("ch_001")).thenReturn(disconnectedChannel);
         when(pointRepository.save(any(MeasurementPoint.class))).thenReturn(testPoint);
 
         List<MeasurementPoint> result = pointService.importPoints(dtos);

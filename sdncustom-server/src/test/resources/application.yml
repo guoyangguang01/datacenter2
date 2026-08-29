@@ -1,0 +1,45 @@
+spring:
+  application:
+    name: sdncustom-test
+
+  datasource:
+    url: jdbc:h2:mem:sdncustom-test;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 1000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: never
+  health:
+    redis:
+      enabled: false
+
+# 不配置 tdengine.url：TdengineConfig 不加载，历史存储降级跳过
+
+sdncustom:
+  acquisition:
+    # 测试期间基本禁用定时采集
+    interval-ms: 999999999
+  security:
+    username: testadmin
+    password: testpass
+    jwt:
+      secret: test-secret-key-must-be-at-least-32-bytes-long
+      expire-hours: 24

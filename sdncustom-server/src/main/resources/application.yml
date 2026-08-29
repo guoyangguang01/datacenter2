@@ -1,6 +1,21 @@
 server:
   port: 8080
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when_authorized   # 匿名探活只见 status，鉴权后可见 details
+  health:
+    redis:
+      enabled: false                  # Redis 故障按设计降级，不拖垮健康判定
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
 spring:
   application:
     name: sdncustom
@@ -14,8 +29,7 @@ spring:
 
   h2:
     console:
-      enabled: true
-      path: /h2-console
+      enabled: false
 
   jpa:
     hibernate:
@@ -32,14 +46,35 @@ spring:
       port: 6379
       timeout: 3000
 
-# TDengine 配置
+# TDengine 配置（url 可用环境变量覆盖；前缀 TAOS-RS 走 REST 免客户端，TAOS 走原生）
 tdengine:
-  url: jdbc:TAOS://localhost:6030/sdncustom
-  username: root
-  password: taosdata
+  url: ${TDENGINE_URL:jdbc:TAOS://localhost:6030/sdncustom}
+  username: ${TDENGINE_USERNAME:root}
+  password: ${TDENGINE_PASSWORD:taosdata}
 
 # 自定义配置
 sdncustom:
   # 采集引擎配置
   acquisition:
     interval-ms: 200
+
+  # WebSocket 推送与背压
+  websocket:
+    # 待推送批次队列容量，满则丢最旧批次
+    push-queue-capacity: 200
+    # 单会话待发消息队列容量；消费不过来即断开慢客户端
+    session-send-queue-capacity: 512
+
+  # 历史存储配置
+  history:
+    # TDengine 保留天数（KEEP），超期数据自动清理
+    keep-days: ${SDNCUSTOM_HISTORY_KEEP_DAYS:30}
+
+  # 安全配置
+  security:
+    username: ${SDNCUSTOM_SECURITY_USERNAME:admin}
+    password: ${SDNCUSTOM_SECURITY_PASSWORD:changeme}
+    jwt:
+      # 生产环境必须配置（至少 32 字节）；为空时启动使用随机密钥，重启后已发 token 失效
+      secret: ${SDNCUSTOM_JWT_SECRET:}
+      expire-hours: ${SDNCUSTOM_JWT_EXPIRE_HOURS:24}

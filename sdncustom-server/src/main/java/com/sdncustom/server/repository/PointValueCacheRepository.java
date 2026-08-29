@@ -30,6 +30,21 @@ public class PointValueCacheRepository {
         }
     }
 
+    public void saveBatch(List<PointValue> pointValues) {
+        if (pointValues.isEmpty()) {
+            return;
+        }
+        try {
+            Map<String, String> entries = new LinkedHashMap<>();
+            for (PointValue pv : pointValues) {
+                entries.put(KEY_PREFIX + pv.getPointId(), objectMapper.writeValueAsString(pv));
+            }
+            redisTemplate.opsForValue().multiSet(entries);
+        } catch (Exception e) {
+            log.warn("Failed to batch save {} PointValues to cache", pointValues.size(), e);
+        }
+    }
+
     public Optional<PointValue> findByPointId(String pointId) {
         String key = KEY_PREFIX + pointId;
         try {

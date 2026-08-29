@@ -9,6 +9,7 @@ import com.sdncustom.common.model.enums.ChannelDirection;
 import com.sdncustom.common.model.enums.ChannelStatus;
 import com.sdncustom.common.model.enums.PointQuality;
 import com.sdncustom.protocol.ProtocolAdapter;
+import com.sdncustom.protocol.ProtocolRegistry;
 import com.sdncustom.server.repository.MeasurementPointRepository;
 import com.sdncustom.server.repository.PointValueCacheRepository;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +27,8 @@ public class PointService {
     private final MeasurementPointRepository pointRepository;
     private final PointValueCacheRepository pointValueCache;
     private final ChannelService channelService;
+    private final ChangeGate changeGate;
+    private final ProtocolRegistry protocolRegistry;
 
     /**
      * 查询所有测点
@@ -55,7 +58,7 @@ public class PointService {
     @Transactional
     public MeasurementPoint create(MeasurementPointDTO dto) {
         // 验证 Channel 存在
-        channelService.findById(dto.getChannelId());
+        Channel channel = channelService.findById(dto.getChannelId());
 
         MeasurementPoint point = new MeasurementPoint();
         point.setPointId(dto.getPointId());
@@ -65,7 +68,21 @@ public class PointService {
         point.setDataType(dto.getDataType());
         point.setUnit(dto.getUnit());
         point.setWritable(dto.isWritable());
-        return pointRepository.save(point);
+        point.setDeadband(dto.getDeadband());
+        MeasurementPoint saved = pointRepository.save(point);
+
+        // 通道已连接时为订阅型协议增量建立订阅；失败不影响测点保存（重连时会全量订阅）
+        if (channel.getStatus() == ChannelStatus.CONNECTED) {
+            protocolRegistry.get(dto.getChannelId()).ifPresent(adapter -> {
+                try {
+                    adapter.onConnected(List.of(saved));
+                } catch (Exception e) {
+                    log.warn("Failed to subscribe new point {} on connected channel {}",
+                            saved.getPointId(), dto.getChannelId(), e);
+                }
+            });
+        }
+        return saved;
     }
 
     /**
@@ -80,6 +97,7 @@ public class PointService {
         point.setDataType(dto.getDataType());
         point.setUnit(dto.getUnit());
         point.setWritable(dto.isWritable());
+        point.setDeadband(dto.getDeadband());
         return pointRepository.save(point);
     }
 
@@ -90,6 +108,7 @@ public class PointService {
     public void delete(String pointId) {
         pointRepository.deleteById(pointId);
         pointValueCache.delete(pointId);
+        changeGate.removePoints(List.of(pointId));
     }
 
     /**
@@ -130,7 +149,7 @@ public class PointService {
         }
 
         // 写入外部系统
-        ProtocolAdapter adapter = channelService.getOrCreateAdapter(channel);
+        ProtocolAdapter adapter = protocolRegistry.getOrCreate(channel);
         adapter.writePoint(point, value);
 
         // 更新缓存
@@ -141,13 +160,14 @@ public class PointService {
         pv.setSourceChannelId(channel.getChannelId());
         pv.setTimestamp(System.currentTimeMillis());
         pointValueCache.save(pv);
+        changeGate.recordManualWrite(pointId, value, PointQuality.GOOD, channel.getChannelId());
     }
 
     /**
-     * 更新测点值（由采集引擎调用）
+     * 批量更新测点值（由采集引擎对通过变更检测的值调用，Redis MSET 一次往返）
      */
-    public void updateValue(PointValue pointValue) {
-        pointValueCache.save(pointValue);
+    public void updateBatch(List<PointValue> pointValues) {
+        pointValueCache.saveBatch(pointValues);
     }
 
     /**
@@ -165,6 +185,7 @@ public class PointService {
                 existing.setDataType(dto.getDataType());
                 existing.setUnit(dto.getUnit());
                 existing.setWritable(dto.isWritable());
+                existing.setDeadband(dto.getDeadband());
                 result.add(pointRepository.save(existing));
             } else {
                 result.add(create(dto));

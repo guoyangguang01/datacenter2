@@ -43,12 +43,6 @@ public class MqttAdapter implements ProtocolAdapter {
     // 已订阅的 MQTT topic，用于自动重连后恢复订阅
     private final Set<String> subscribedTopics = ConcurrentHashMap.newKeySet();
 
-    private static final Map<String, MqttAdapter> instances = new ConcurrentHashMap<>();
-
-    public static MqttAdapter getInstance(String channelId) {
-        return instances.computeIfAbsent(channelId, k -> new MqttAdapter());
-    }
-
     @Override
     public void connect(Channel channel) {
         this.channel = channel;
@@ -138,9 +132,6 @@ public class MqttAdapter implements ProtocolAdapter {
             client = null;
             valueCache.clear();
             subscribedTopics.clear();
-            if (channel != null) {
-                instances.remove(channel.getChannelId());
-            }
         }
     }
 
@@ -206,11 +197,22 @@ public class MqttAdapter implements ProtocolAdapter {
     }
 
     /**
+     * 连接成功后（含增量新增测点）统一由生命周期层调用，订阅测点 Topic；已订阅的自动跳过
+     */
+    @Override
+    public void onConnected(List<MeasurementPoint> points) {
+        subscribeAll(points.stream().map(MeasurementPoint::getAddress).toList());
+    }
+
+    /**
      * 订阅 MQTT Topic
      */
     public void subscribe(String topic) {
         if (!connected || client == null) {
             throw new RuntimeException("Not connected");
+        }
+        if (subscribedTopics.contains(topic)) {
+            return; // 幂等：已订阅的 topic 跳过
         }
         try {
             subscribedTopics.add(topic);

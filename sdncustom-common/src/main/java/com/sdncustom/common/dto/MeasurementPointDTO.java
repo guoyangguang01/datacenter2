@@ -26,4 +26,6 @@ public class MeasurementPointDTO {
     private String unit;
 
     private boolean writable = false;
+
+    private Double deadband;
 }

@@ -54,4 +54,15 @@ public interface ProtocolAdapter {
      * @return true if connected
      */
     boolean isConnected();
+
+    /**
+     * 连接成功后的钩子，由通道生命周期管理层统一调用。
+     * 订阅型协议（如 MQTT）在此为测点建立订阅；请求/响应型协议无需覆写。
+     * 对同一测点重复调用应当幂等。
+     *
+     * @param points 该通道下的测点
+     */
+    default void onConnected(List<MeasurementPoint> points) {
+        // no-op by default
+    }
 }

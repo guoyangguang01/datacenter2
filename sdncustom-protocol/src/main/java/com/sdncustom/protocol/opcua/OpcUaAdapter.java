@@ -19,7 +19,6 @@ import org.eclipse.milo.opcua.stack.core.types.enumerated.TimestampsToReturn;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -34,12 +33,6 @@ public class OpcUaAdapter implements ProtocolAdapter {
     private volatile OpcUaClient client;
     private Channel channel;
     private volatile boolean connected = false;
-
-    private static final Map<String, OpcUaAdapter> instances = new ConcurrentHashMap<>();
-
-    public static OpcUaAdapter getInstance(String channelId) {
-        return instances.computeIfAbsent(channelId, k -> new OpcUaAdapter());
-    }
 
     @Override
     public void connect(Channel channel) {
@@ -71,9 +64,6 @@ public class OpcUaAdapter implements ProtocolAdapter {
             log.error("Error disconnecting OPC-UA client", e);
         } finally {
             client = null;
-            if (channel != null) {
-                instances.remove(channel.getChannelId());
-            }
         }
     }
 

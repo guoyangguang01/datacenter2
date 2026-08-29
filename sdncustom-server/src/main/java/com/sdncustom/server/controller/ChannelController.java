@@ -9,15 +9,20 @@ import com.sdncustom.common.model.MeasurementPoint;
 import com.sdncustom.common.model.enums.ChannelDirection;
 import com.sdncustom.common.model.enums.PointDataType;
 import com.sdncustom.common.model.enums.ProtocolType;
+import com.sdncustom.server.security.CredentialRedactor;
 import com.sdncustom.server.service.ChannelService;
 import com.sdncustom.server.service.PointService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.BeanUtils;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/channels")
 @RequiredArgsConstructor
@@ -25,6 +30,7 @@ public class ChannelController {
 
     private final ChannelService channelService;
     private final PointService pointService;
+    private final CredentialRedactor credentialRedactor;
 
     @GetMapping
     public ApiResponse<List<Channel>> findAll() {
@@ -47,30 +53,41 @@ public class ChannelController {
     }
 
     @DeleteMapping("/{id}")
-    public ApiResponse<Void> delete(@PathVariable String id) {
+    public ApiResponse<Void> delete(@PathVariable String id, Authentication authentication) {
+        log.info("User {} deleting channel {}", authentication.getName(), id);
         channelService.delete(id);
         return ApiResponse.success();
     }
 
     @PostMapping("/{id}/connect")
-    public ApiResponse<Void> connect(@PathVariable String id) {
+    public ApiResponse<Void> connect(@PathVariable String id, Authentication authentication) {
+        log.info("User {} connecting channel {}", authentication.getName(), id);
         channelService.connect(id);
         return ApiResponse.success();
     }
 
     @PostMapping("/{id}/disconnect")
-    public ApiResponse<Void> disconnect(@PathVariable String id) {
+    public ApiResponse<Void> disconnect(@PathVariable String id, Authentication authentication) {
+        log.info("User {} disconnecting channel {}", authentication.getName(), id);
         channelService.disconnect(id);
         return ApiResponse.success();
     }
 
     /**
-     * 导出所有通道和测点
+     * 导出所有通道和测点（通道凭据脱敏）
      */
     @GetMapping("/export")
     public Map<String, Object> exportAll() {
+        List<Channel> channels = channelService.findAll().stream()
+                .map(ch -> {
+                    Channel copy = new Channel();
+                    BeanUtils.copyProperties(ch, copy);
+                    copy.setConnectionConfig(credentialRedactor.redact(ch.getConnectionConfig()));
+                    return copy;
+                })
+                .toList();
         Map<String, Object> result = new java.util.LinkedHashMap<>();
-        result.put("channels", channelService.findAll());
+        result.put("channels", channels);
         result.put("points", pointService.findAll());
         return result;
     }
@@ -83,7 +100,8 @@ public class ChannelController {
      */
     @SuppressWarnings("unchecked")
     @PostMapping("/import")
-    public Map<String, Object> importAll(@RequestBody Map<String, Object> data) {
+    public Map<String, Object> importAll(@RequestBody Map<String, Object> data, Authentication authentication) {
+        log.info("User {} importing channels/points", authentication.getName());
         int channelCount = 0;
         int pointCount = 0;
 
@@ -137,6 +155,7 @@ public class ChannelController {
                 dto.setDataType(parseEnum(PointDataType.class, pt.get("dataType"), "dataType"));
                 dto.setUnit(optionalString(pt, "unit"));
                 dto.setWritable(optionalBoolean(pt, "writable", false));
+                dto.setDeadband(optionalDouble(pt, "deadband", null));
 
                 // 校验通道存在，避免导入的测点挂在不存在通道下
                 if (channelService.findByIdOrNull(channelId) == null) {
@@ -176,6 +195,21 @@ public class ChannelController {
             return b;
         }
         return Boolean.parseBoolean(String.valueOf(value));
+    }
+
+    private Double optionalDouble(Map<String, Object> map, String key, Double defaultValue) {
+        Object value = map.get(key);
+        if (value == null) {
+            return defaultValue;
+        }
+        if (value instanceof Number n) {
+            return n.doubleValue();
+        }
+        try {
+            return Double.parseDouble(String.valueOf(value));
+        } catch (NumberFormatException e) {
+            return defaultValue;
+        }
     }
 
     private <E extends Enum<E>> E parseEnum(Class<E> enumType, Object value, String field) {
