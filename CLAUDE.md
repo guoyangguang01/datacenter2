@@ -90,7 +90,7 @@ scripts/start-frontend.bat           # 单独启动前端
 
 ## 协议适配器
 
-所有协议适配器实现 `ProtocolAdapter` 接口，通过 `ProtocolRegistry` 注册：
+所有协议适配器实现 `ProtocolAdapter` 接口；每个协议有一个 `ProtocolAdapterFactory`（`@Component`），Spring 启动时由 `ProtocolRegistry` 收集所有工厂，并按 channelId 管理适配器实例的生命周期（`getOrCreate`/`release`/`remove`）。连接成功后统一调用 `adapter.onConnected(points)`，订阅型协议（MQTT）在此建立/增量订阅，上层不再用 `instanceof` 特判：
 
 | 协议 | 适配器类 | 说明 |
 |------|---------|------|
@@ -109,21 +109,38 @@ scripts/start-frontend.bat           # 单独启动前端
 
 ## 关键服务
 
-- **AcquisitionEngine**：定时采集引擎，每 200ms 扫描 CONNECTED 状态的 Channel 并读取测点值
-- **ChannelService**：Channel 生命周期管理（CRUD + 连接/断开）
-- **PointService**：测点值更新（含死区判断）、缓存管理
-- **HistoryService**：TDengine 历史数据存储
-- **DistributionService**：WebSocket 实时数据推送
+- **AcquisitionEngine**：定时采集引擎，每 200ms 扫描 CONNECTED 状态的 Channel 并读取测点值；经 ChangeGate 过滤后**仅对有效变化**做批量落库与推送（无变化则零写入）
+- **ChangeGate**：变更检测门。数值型按 |新−旧| > 测点死区(deadband) 判断，非数值按相等判断，质量变化无条件通过；手动写值会同步门状态避免重复上报
+- **ChannelService**：Channel 生命周期唯一入口（CRUD + connect/disconnect/syncDisconnected，按通道加锁串行化；DB status 是适配器运行时状态的投影）
+- **PointService**：测点 CRUD、手动写入（writeValue）、缓存批量更新
+- **HistoryService**：TDengine 历史存储（超级表初始化 + 批量写入）
+- **DistributionService**：WebSocket 实时数据推送（按通道合帧；采集线程仅向专用单线程队列提交任务，绝不因推送阻塞）
+- **DataWebSocketHandler**：每个客户端会话持有独立的有界发送队列 + 守护发送线程（`sdncustom.websocket.session-send-queue-capacity`），慢/卡死客户端只影响自己；队列溢出即断开该会话，不影响其他客户端与采集
 
 ## 数据流
 
 ```
-外部系统 ──→ Channel ──→ AcquisitionEngine ──→ Redis(实时) + TDengine(历史)
-                                ↓
+外部系统 ──→ Channel ──→ AcquisitionEngine ──→ ChangeGate(死区/变更过滤)
+                                                    ↓ 仅有效变化（批量）
+                              Redis MSET(实时) + TDengine 多表INSERT(历史) + WebSocket按通道合帧推送
+                                                    ↓
                           DistributionService ──→ WebSocket ──→ 前端
 
 前端 ──→ REST API ──→ PointService ──→ Redis + Channel ──→ 外部系统
 ```
+
+## TDengine 历史存储
+
+- 启动时自动创建数据库（库名取 `tdengine.url` 最后一段）并强制 `KEEP` 保留天数（`sdncustom.history.keep-days`，默认 30）
+- 超级表 `point_history(ts, val, quality, source_channel_id) TAGS(point_id)`，**列名是 `val` 不是 `value`**（value 为 TDengine 3.x 保留字）
+- 驱动按 URL 前缀自动选择：`jdbc:TAOS-RS://host:6041` 走 REST（纯 Java，免本机客户端）；`jdbc:TAOS://host:6030` 走原生（需安装 TDengine 客户端库）。Windows 本机验证建议用 TAOS-RS
+
+## 可观测性
+
+- Actuator 端点：`/actuator/health`（匿名可访问，仅 status；含自定义 `channels` 健康指示器——autoConnect 通道掉线即 DOWN；鉴权后可见 details）；`/actuator/metrics`、`/actuator/prometheus`（均需 JWT）
+- 业务指标（前缀 `sdncustom_`）：acquisition.cycle（采集周期 Timer，P50/P95/P99）、acquisition.channels.connected、acquisition.failures（tag=channel）、acquisition.changed.values（有效变化数，量化死区节省）、history.write、history.errors、history.circuit.open（TDengine 熔断 0/1）、ws.sessions、ws.evictions（慢客户端踢除）
+- 前端仪表盘顶部为系统状态卡（通道连接数 / WS 会话 / 采集 P99 与失败 / 历史存储健康），数据源 `GET /api/system/status`（10s 轮询）
+- Redis 不参与 health 判定（按设计降级）；TDengine 初始化任何失败（含原生驱动缺客户端库的 UnsatisfiedLinkError）仅告警，不阻断启动
 
 ## 前端路由
 
@@ -180,7 +197,7 @@ GET    /api/points/{id}/history        # 查询历史
 - 统一返回 `ApiResponse<T>` 包装
 - 异常通过 `GlobalExceptionHandler` 全局处理
 - Repository 继承 `JpaRepository`
-- 协议适配器使用静态 `ConcurrentHashMap` 缓存实例（按 channelId）
+- 协议适配器无静态单例缓存；实例由 `ProtocolRegistry`（Spring 管理）按 channelId 创建与释放
 
 ### TypeScript 前端
 
@@ -206,6 +223,16 @@ cd mock
 | MockOpcUaServer | 4840 | 模拟 OPC-UA 服务器 |
 
 > 注意：自定义 TCP 模拟服务器使用 **9002** 端口（9001 已被 Mosquitto 的 MQTT WebSocket 占用）。
+
+## 安全配置
+
+- 全站启用 JWT 认证（Spring Security，无状态）。唯一内置管理员账号配置在 `application.yml` 的 `sdncustom.security`：
+  - 默认 `admin` / `changeme`，生产环境必须通过 `SDNCUSTOM_SECURITY_USERNAME` / `SDNCUSTOM_SECURITY_PASSWORD` 覆盖
+  - `SDNCUSTOM_JWT_SECRET`：签名密钥（至少 32 字节）；为空时启动自动生成随机密钥（重启后已发 token 失效，仅限开发）
+- 登录接口：`POST /api/auth/login`；WebSocket 握手需携带 `?token=`，REST 需 `Authorization: Bearer` 头
+- `/api/channels/export` 导出的 connectionConfig 中密码类字段会被脱敏为 `******`
+- H2 console 已禁用；TDengine 凭据可通过 `TDENGINE_USERNAME` / `TDENGINE_PASSWORD` 覆盖
+- 前端登录页位于 `/login`，token 存 localStorage（key: `sdncustom_token`）
 
 ## 端口
 

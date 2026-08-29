@@ -145,6 +145,7 @@ npm run dev
 - [x] TDengine 历史存储
 - [x] WebSocket 实时推送
 - [x] 前端三个页面 (Channel 管理、测点管理、实时看板)
+- [x] 认证鉴权 (JWT，默认账号 admin / changeme，可通过环境变量覆盖)
 
 ## 后续迭代
 
@@ -152,5 +153,4 @@ npm run dev
 - [ ] MQTT 适配器
 - [ ] OPC-UA 适配器
 - [ ] 历史数据查询页面
-- [ ] 认证鉴权 (JWT)
 - [ ] 告警管理
