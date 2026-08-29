@@ -86,6 +86,18 @@ class PointHistoryRepositoryTest {
         assertTrue(sqls.get(0).contains("point_p_1_x VALUES"));
     }
 
+    @Test
+    @DisplayName("异常时间戳被钳制，避免毒化整批写入")
+    void abnormalTimestampClamped() {
+        long now = System.currentTimeMillis();
+        assertEquals(now, PointHistoryRepository.safeTimestamp(now), "正常时间应透传");
+        // OPC-UA 状态码零值对应 1601 年
+        long clamped = PointHistoryRepository.safeTimestamp(-11644473600000L);
+        assertTrue(clamped > 0 && clamped <= now + 1000, "越界过去时间应被替换为当前时间");
+        assertTrue(PointHistoryRepository.safeTimestamp(99999999999999L) < 4102444800000L,
+                "未来越界时间也应被替换");
+    }
+
     private int countOccurrences(String s, String sub) {
         int count = 0;
         int idx = 0;

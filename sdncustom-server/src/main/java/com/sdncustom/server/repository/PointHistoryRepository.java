@@ -176,7 +176,7 @@ public class PointHistoryRepository {
                 sb.append("INSERT INTO ");
             }
             sb.append(tableNameOf(h.getPointId())).append(" VALUES (");
-            sb.append(h.getTimestamp()).append(", ");
+            sb.append(safeTimestamp(h.getTimestamp())).append(", ");
             sb.append('\'').append(escapeSql(String.valueOf(h.getValue()))).append("', ");
             sb.append('\'').append(h.getQuality().name()).append("', ");
             sb.append('\'').append(escapeSql(h.getSourceChannelId() == null ? "" : h.getSourceChannelId())).append('\'');
@@ -214,6 +214,17 @@ public class PointHistoryRepository {
             log.error("Failed to query point history: {}", pointId, e);
             return List.of();
         }
+    }
+
+    /**
+     * 协议侧可能产生超出 TDengine 范围的异常时间戳（如 OPC-UA 状态码零值对应
+     * 1601 年的 -11644473600000），单个坏时间戳会使整批多表 INSERT 被拒，
+     * 这里钳制到 [1970, 2100) 之外时替换为当前时间。
+     */
+    static long safeTimestamp(long ts) {
+        final long lowerBound = 0L;
+        final long upperBound = 4102444800000L; // 2100-01-01
+        return (ts < lowerBound || ts >= upperBound) ? System.currentTimeMillis() : ts;
     }
 
     /**
