@@ -32,3 +32,6 @@ dist/
 # Environment
 .env
 .env.local
+
+# CodeGraph 本地索引（机器相关，不入库）
+.codegraph/
