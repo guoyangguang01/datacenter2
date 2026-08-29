@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { Table, Button, Modal, Form, Input, InputNumber, Select, Switch, Space, Tag, message } from 'antd';
+import { Table, Button, Modal, Form, Input, InputNumber, Select, Switch, Space, message } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, DownloadOutlined, UploadOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import { usePointStore } from '../stores/pointStore';
 import { useChannelStore } from '../stores/channelStore';
@@ -21,6 +21,8 @@ export default function PointPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<MeasurementPoint | null>(null);
   const [filterChannel, setFilterChannel] = useState<string | undefined>();
+  const [linkPointId, setLinkPointId] = useState<string | undefined>();
+  const [allPoints, setAllPoints] = useState<MeasurementPoint[]>([]);
   const [form] = Form.useForm();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mainChannelId = Form.useWatch('channelId', form);
@@ -39,15 +41,35 @@ export default function PointPage() {
     if (error) message.error(error);
   }, [error]);
 
-  const handleAdd = () => {
+  const showCreateModal = async () => {
     setEditing(null);
+    setLinkPointId(undefined);
     form.resetFields();
+    form.setFieldsValue({ channelId: filterChannel, writable: false });
+    try {
+      const res = await pointApi.getAll();
+      setAllPoints(res.data.data ?? []);
+    } catch {
+      setAllPoints([]);
+    }
     setModalOpen(true);
   };
 
-  const handleEdit = (record: MeasurementPoint) => {
+  const showEditModal = (record: MeasurementPoint) => {
     setEditing(record);
-    form.setFieldsValue(record);
+    setLinkPointId(undefined);
+    const b = record.bindings ?? [];
+    form.setFieldsValue({
+      pointId: record.pointId,
+      pointName: record.pointName,
+      channelId: b[0]?.channelId,
+      address: b[0]?.address,
+      dataType: record.dataType,
+      unit: record.unit,
+      deadband: record.deadband,
+      writable: record.writable,
+      additionalBindings: b.slice(1).map((x) => ({ channelId: x.channelId, address: x.address })),
+    });
     setModalOpen(true);
   };
 
@@ -93,34 +115,64 @@ export default function PointPage() {
     const values = await form.validateFields();
     try {
       if (editing) {
-        await updatePoint(editing.pointId, values);
+        const bindings = [
+          { channelId: values.channelId, address: values.address },
+          ...(values.additionalBindings ?? []),
+        ];
+        await updatePoint(editing.pointId, {
+          pointId: editing.pointId,
+          pointName: values.pointName,
+          dataType: values.dataType,
+          unit: values.unit,
+          deadband: values.deadband,
+          writable: values.writable,
+          bindings,
+        });
         message.success('已更新');
+      } else if (linkPointId) {
+        // 关联既有测点：给该测点加一条绑定，不新建测点
+        await pointApi.addBinding(linkPointId, { channelId: values.channelId, address: values.address });
+        message.success(`已关联到测点 ${linkPointId}`);
       } else {
-        await createPoint(values);
+        await createPoint({
+          pointId: values.pointId,
+          pointName: values.pointName,
+          dataType: values.dataType,
+          unit: values.unit,
+          deadband: values.deadband,
+          writable: values.writable,
+          bindings: [{ channelId: values.channelId, address: values.address }],
+        });
         message.success('已创建');
       }
       setModalOpen(false);
+      fetchPoints(filterChannel);
     } catch {
       // 错误信息已通过 store.error 展示；保持弹窗打开
     }
   };
 
+  // 关联选择器：排除已绑定当前所属通道的点
+  const linkOptions = allPoints
+    .filter((p) => p.pointId !== editing?.pointId)
+    .filter((p) => !(p.bindings ?? []).some((x) => x.channelId === mainChannelId))
+    .map((p) => ({ label: `${p.pointName} (${p.pointId})`, value: p.pointId }));
+
+  // 创建 + 已选关联 → 不新建测点，隐藏元数据字段
+  const showMetadata = editing ? true : !linkPointId;
+
   const columns = [
     { title: 'ID', dataIndex: 'pointId', key: 'pointId' },
     { title: '名称', dataIndex: 'pointName', key: 'pointName' },
-    { title: '通道', dataIndex: 'channelId', key: 'channelId' },
-    { title: '地址', dataIndex: 'address', key: 'address' },
     {
-      title: '来源',
-      key: 'sources',
-      render: (_: unknown, record: MeasurementPoint) => (
-        <Space wrap>
-          <Tag color="blue">{record.channelId}: {record.address}</Tag>
-          {(record.additionalSources ?? []).map((s, i) => (
-            <Tag key={`src-${i}`} color="green">{s.channelId}: {s.address}</Tag>
-          ))}
-        </Space>
-      ),
+      title: '所属通道',
+      key: 'channelId',
+      render: (_: unknown, r: MeasurementPoint) => r.bindings?.[0]?.channelId ?? '-',
+    },
+    {
+      title: '地址',
+      key: 'address',
+      render: (_: unknown, r: MeasurementPoint) => r.bindings?.[0]?.address ?? '-',
     },
     { title: '类型', dataIndex: 'dataType', key: 'dataType' },
     { title: '单位', dataIndex: 'unit', key: 'unit' },
@@ -131,7 +183,7 @@ export default function PointPage() {
       key: 'actions',
       render: (_: unknown, record: MeasurementPoint) => (
         <Space>
-          <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
+          <Button size="small" icon={<EditOutlined />} onClick={() => showEditModal(record)} />
           <Button size="small" icon={<DeleteOutlined />} danger onClick={() => handleDelete(record.pointId)} />
         </Space>
       ),
@@ -171,7 +223,7 @@ export default function PointPage() {
               }
             }}
           />
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
+          <Button type="primary" icon={<PlusOutlined />} onClick={showCreateModal}>
             添加测点
           </Button>
         </Space>
@@ -186,68 +238,94 @@ export default function PointPage() {
         width={720}
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="pointId" label="测点ID" rules={[{ required: true }]}>
-            <Input disabled={!!editing} />
-          </Form.Item>
-          <Form.Item name="pointName" label="名称" rules={[{ required: true }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="channelId" label="通道" rules={[{ required: true }]}>
+          <Form.Item name="channelId" label="所属通道" rules={[{ required: true }]}>
             <Select options={channels.map((c) => ({ label: c.channelName, value: c.channelId }))} />
           </Form.Item>
           <Form.Item name="address" label="地址" rules={[{ required: true }]}>
             <Input placeholder="例如 40001 或 sensors/temp01" />
           </Form.Item>
-          <Form.List name="additionalSources">
-            {(fields, { add, remove }) => (
-              <>
-                {fields.map(({ key, name, ...restField }) => (
-                  <Space key={key} align="baseline" style={{ display: 'flex', marginBottom: 8 }}>
-                    <Form.Item
-                      {...restField}
-                      name={[name, 'channelId']}
-                      rules={[{ required: true, message: '选择来源通道' }]}
-                      style={{ marginBottom: 0 }}
-                    >
-                      <Select
-                        placeholder="来源通道"
-                        style={{ width: 190 }}
-                        options={channels
-                          .filter((c) => c.channelId !== mainChannelId)
-                          .map((c) => ({ label: c.channelName, value: c.channelId }))}
-                      />
-                    </Form.Item>
-                    <Form.Item
-                      {...restField}
-                      name={[name, 'address']}
-                      rules={[{ required: true, message: '输入来源地址' }]}
-                      style={{ marginBottom: 0 }}
-                    >
-                      <Input placeholder="来源地址" style={{ width: 220 }} />
-                    </Form.Item>
-                    <MinusCircleOutlined onClick={() => remove(name)} />
-                  </Space>
-                ))}
-                <Form.Item>
-                  <Button type="dashed" onClick={() => add({ channelId: undefined, address: '' })} block icon={<PlusOutlined />}>
-                    添加来源通道
-                  </Button>
-                </Form.Item>
-              </>
-            )}
-          </Form.List>
-          <Form.Item name="dataType" label="数据类型" rules={[{ required: true }]}>
-            <Select options={dataTypeOptions} />
-          </Form.Item>
-          <Form.Item name="unit" label="单位">
-            <Input placeholder="例如 °C, Pa, %" />
-          </Form.Item>
-          <Form.Item name="deadband" label="死区" tooltip="数值变化超过死区才上报历史与推送；0 表示任何变化都上报">
-            <InputNumber min={0} step={0.01} placeholder="0 = 任何变化都上报" style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item name="writable" label="可写" valuePropName="checked">
-            <Switch />
-          </Form.Item>
+
+          {!editing && (
+            <Form.Item name="linkPointId" label="关联既有测点（可选）" tooltip="选中后不新建测点，把上面的通道:地址作为绑定附加到该测点">
+              <Select
+                allowClear
+                placeholder="选择其它通道的既有测点进行关联"
+                onChange={(v) => setLinkPointId(v)}
+                options={linkOptions}
+                showSearch
+                optionFilterProp="label"
+              />
+            </Form.Item>
+          )}
+          {!editing && linkPointId && (
+            <div style={{ marginBottom: 16, color: '#fa8c16' }}>
+              将把 [{mainChannelId ?? '-'}:{form.getFieldValue('address')}] 作为绑定附加到测点 {linkPointId}，不再新建测点。
+            </div>
+          )}
+
+          {showMetadata && (
+            <>
+              <Form.Item name="pointId" label="测点ID" rules={[{ required: true }]}>
+                <Input disabled={!!editing} />
+              </Form.Item>
+              <Form.Item name="pointName" label="名称" rules={[{ required: true }]}>
+                <Input />
+              </Form.Item>
+              <Form.Item name="dataType" label="数据类型" rules={[{ required: true }]}>
+                <Select options={dataTypeOptions} />
+              </Form.Item>
+              <Form.Item name="unit" label="单位">
+                <Input placeholder="例如 °C, Pa, %" />
+              </Form.Item>
+              <Form.Item name="deadband" label="死区" tooltip="数值变化超过死区才上报历史与推送；0 表示任何变化都上报">
+                <InputNumber min={0} step={0.01} placeholder="0 = 任何变化都上报" style={{ width: '100%' }} />
+              </Form.Item>
+              <Form.Item name="writable" label="可写" valuePropName="checked">
+                <Switch />
+              </Form.Item>
+            </>
+          )}
+
+          {editing && (
+            <Form.List name="additionalBindings">
+              {(fields, { add, remove }) => (
+                <>
+                  {fields.map(({ key, name, ...restField }) => (
+                    <Space key={key} align="baseline" style={{ display: 'flex', marginBottom: 8 }}>
+                      <Form.Item
+                        {...restField}
+                        name={[name, 'channelId']}
+                        rules={[{ required: true, message: '选择来源通道' }]}
+                        style={{ marginBottom: 0 }}
+                      >
+                        <Select
+                          placeholder="来源通道"
+                          style={{ width: 190 }}
+                          options={channels
+                            .filter((c) => c.channelId !== mainChannelId)
+                            .map((c) => ({ label: c.channelName, value: c.channelId }))}
+                        />
+                      </Form.Item>
+                      <Form.Item
+                        {...restField}
+                        name={[name, 'address']}
+                        rules={[{ required: true, message: '输入来源地址' }]}
+                        style={{ marginBottom: 0 }}
+                      >
+                        <Input placeholder="来源地址" style={{ width: 220 }} />
+                      </Form.Item>
+                      <MinusCircleOutlined onClick={() => remove(name)} />
+                    </Space>
+                  ))}
+                  <Form.Item>
+                    <Button type="dashed" onClick={() => add({ channelId: undefined, address: '' })} block icon={<PlusOutlined />}>
+                      添加附加来源
+                    </Button>
+                  </Form.Item>
+                </>
+              )}
+            </Form.List>
+          )}
         </Form>
       </Modal>
     </div>

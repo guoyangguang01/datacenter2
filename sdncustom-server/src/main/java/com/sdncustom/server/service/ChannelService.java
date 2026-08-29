@@ -128,20 +128,22 @@ public class ChannelService {
         disconnect(channelId);
         lifecycleLocks.remove(channelId);
 
-        // 该通道涉及的所有测点（主绑定 + 附加来源）：清合并基线，避免陈旧权威值滞留
+        // 该通道涉及的所有测点：清合并基线，避免陈旧权威值滞留
         List<MeasurementPoint> boundPoints = pointSourceService.findPointsForChannel(channelId);
-        changeGate.removePoints(boundPoints.stream().map(MeasurementPoint::getPointId).distinct().toList());
+        List<String> boundPointIds = boundPoints.stream().map(MeasurementPoint::getPointId).distinct().toList();
+        changeGate.removePoints(boundPointIds);
 
-        // 本通道作为其它测点的附加来源：删除这些来源行
+        // 删除该通道的所有绑定行
         pointSourceService.deleteByChannelId(channelId);
 
-        // 删除主绑定在本通道的测点（连带其附加来源行与缓存）
-        List<MeasurementPoint> points = pointRepository.findByChannelId(channelId);
-        for (MeasurementPoint point : points) {
-            pointValueCache.delete(point.getPointId());
-            pointSourceService.deleteByPointId(point.getPointId());
+        // 仅剩该通道绑定的测点（无其余绑定）→ 删除；多绑定点存活（已失去本通道绑定）
+        for (String pointId : boundPointIds) {
+            if (pointSourceService.bindingChannelIds(pointId).isEmpty()) {
+                pointValueCache.delete(pointId);
+                pointSourceService.deleteByPointId(pointId);
+                pointRepository.deleteById(pointId);
+            }
         }
-        pointRepository.deleteByChannelId(channelId);
         channelRepository.deleteById(channelId);
         pointBindingRegistry.invalidateChannel(channelId);
     }

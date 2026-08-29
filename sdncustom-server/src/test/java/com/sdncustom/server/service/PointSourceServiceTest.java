@@ -39,26 +39,35 @@ class PointSourceServiceTest {
     @InjectMocks
     private PointSourceService pointSourceService;
 
-    private MeasurementPoint point(String id, String channel, String address) {
+    private PointSource source(String pointId, String channel, String address) {
+        PointSource s = new PointSource();
+        s.setPointId(pointId);
+        s.setChannelId(channel);
+        s.setAddress(address);
+        return s;
+    }
+
+    private MeasurementPoint point(String id) {
         MeasurementPoint p = new MeasurementPoint();
         p.setPointId(id);
-        p.setChannelId(channel);
-        p.setAddress(address);
         p.setDataType(PointDataType.FLOAT32);
         return p;
     }
 
+    private PointSourceDTO binding(String channel, String address) {
+        PointSourceDTO dto = new PointSourceDTO();
+        dto.setChannelId(channel);
+        dto.setAddress(address);
+        return dto;
+    }
+
     @Test
-    @DisplayName("findPointsForChannel 返回主绑定 + 附加来源视图（地址按来源覆盖、保留 pointId）")
-    void findPointsForChannelReturnsMainAndSourceViews() {
-        MeasurementPoint main = point("p1", "ch_a", "addr_a");
-        PointSource source = new PointSource();
-        source.setPointId("p1");
-        source.setChannelId("ch_b");
-        source.setAddress("addr_b");
-        when(pointRepository.findByChannelId("ch_b")).thenReturn(List.of());
-        when(pointSourceRepository.findByChannelId("ch_b")).thenReturn(List.of(source));
-        when(pointRepository.findById("p1")).thenReturn(Optional.of(main));
+    @DisplayName("findPointsForChannel 返回绑定命中该通道的测点视图（地址按绑定覆盖）")
+    void findPointsForChannel() {
+        MeasurementPoint p = point("p1");
+        PointSource binding = source("p1", "ch_b", "addr_b");
+        when(pointSourceRepository.findByChannelId("ch_b")).thenReturn(List.of(binding));
+        when(pointRepository.findById("p1")).thenReturn(Optional.of(p));
 
         List<MeasurementPoint> result = pointSourceService.findPointsForChannel("ch_b");
 
@@ -69,23 +78,12 @@ class PointSourceServiceTest {
     }
 
     @Test
-    @DisplayName("findPointsForChannel 主通道点原样返回")
-    void findPointsForChannelMainBindingsKeptAsIs() {
-        MeasurementPoint main = point("p1", "ch_a", "addr_a");
-        when(pointRepository.findByChannelId("ch_a")).thenReturn(List.of(main));
-        when(pointSourceRepository.findByChannelId("ch_a")).thenReturn(List.of());
-
-        List<MeasurementPoint> result = pointSourceService.findPointsForChannel("ch_a");
-
-        assertEquals(1, result.size());
-        assertSame(main, result.get(0));
-        assertEquals("addr_a", result.get(0).getAddress());
-    }
-
-    @Test
     @DisplayName("viewForBinding 保留 pointId/name/type，覆盖 channelId/address")
     void viewForBindingCopiesAndOverrides() {
-        MeasurementPoint main = point("p1", "ch_a", "addr_a");
+        MeasurementPoint main = new MeasurementPoint();
+        main.setPointId("p1");
+        main.setPointName("n");
+        main.setDataType(PointDataType.FLOAT32);
         MeasurementPoint view = pointSourceService.viewForBinding(main, "ch_b", "addr_b");
 
         assertEquals("p1", view.getPointId());
@@ -95,32 +93,24 @@ class PointSourceServiceTest {
     }
 
     @Test
-    @DisplayName("allBindingViews 返回主实体本体 + 各来源视图")
-    void allBindingViewsReturnsMainAndSources() {
-        MeasurementPoint main = point("p1", "ch_a", "addr_a");
-        PointSource source = new PointSource();
-        source.setPointId("p1");
-        source.setChannelId("ch_b");
-        source.setAddress("addr_b");
-        when(pointSourceRepository.findByPointId("p1")).thenReturn(List.of(source));
+    @DisplayName("allBindingViews 每个绑定生成一个视图")
+    void allBindingViews() {
+        MeasurementPoint p = point("p1");
+        when(pointSourceRepository.findByPointId("p1"))
+                .thenReturn(List.of(source("p1", "ch_a", "a"), source("p1", "ch_b", "b")));
 
-        List<MeasurementPoint> views = pointSourceService.allBindingViews(main);
+        List<MeasurementPoint> views = pointSourceService.allBindingViews(p);
 
         assertEquals(2, views.size());
-        assertSame(main, views.get(0)); // 主绑定返回实体本体
+        assertEquals("ch_a", views.get(0).getChannelId());
         assertEquals("ch_b", views.get(1).getChannelId());
-        assertEquals("addr_b", views.get(1).getAddress());
     }
 
     @Test
-    @DisplayName("bindingChannelIds 返回主通道 + 来源通道")
+    @DisplayName("bindingChannelIds 从绑定表取全部通道")
     void bindingChannelIds() {
-        PointSource source = new PointSource();
-        source.setPointId("p1");
-        source.setChannelId("ch_b");
-        source.setAddress("addr_b");
-        when(pointRepository.findById("p1")).thenReturn(Optional.of(point("p1", "ch_a", "addr_a")));
-        when(pointSourceRepository.findByPointId("p1")).thenReturn(List.of(source));
+        when(pointSourceRepository.findByPointId("p1"))
+                .thenReturn(List.of(source("p1", "ch_a", "a"), source("p1", "ch_b", "b")));
 
         Set<String> channels = pointSourceService.bindingChannelIds("p1");
 
@@ -128,39 +118,54 @@ class PointSourceServiceTest {
     }
 
     @Test
-    @DisplayName("validateSources 拒绝与主通道相同的来源")
-    void validateSourcesRejectsSameAsMainChannel() {
-        PointSourceDTO dto = new PointSourceDTO();
-        dto.setChannelId("ch_a");
-        dto.setAddress("x");
-
-        assertThrows(BusinessException.class, () -> pointSourceService.validateSources(List.of(dto), "ch_a"));
+    @DisplayName("validateBindings 拒绝空/缺失绑定")
+    void validateBindingsRejectsEmpty() {
+        assertThrows(BusinessException.class, () -> pointSourceService.validateBindings(List.of()));
+        assertThrows(BusinessException.class, () -> pointSourceService.validateBindings(null));
     }
 
     @Test
-    @DisplayName("validateSources 拒绝重复来源通道")
-    void validateSourcesRejectsDuplicateChannels() {
+    @DisplayName("validateBindings 拒绝重复通道")
+    void validateBindingsRejectsDuplicateChannels() {
         Channel ch = new Channel();
         ch.setChannelId("ch_b");
         when(channelRepository.findById("ch_b")).thenReturn(Optional.of(ch));
-        PointSourceDTO a = new PointSourceDTO();
-        a.setChannelId("ch_b");
-        a.setAddress("x");
-        PointSourceDTO b = new PointSourceDTO();
-        b.setChannelId("ch_b");
-        b.setAddress("y");
 
-        assertThrows(BusinessException.class, () -> pointSourceService.validateSources(List.of(a, b), "ch_a"));
+        assertThrows(BusinessException.class,
+                () -> pointSourceService.validateBindings(List.of(binding("ch_b", "x"), binding("ch_b", "y"))));
     }
 
     @Test
-    @DisplayName("validateSources 拒绝不存在的来源通道")
-    void validateSourcesRejectsMissingChannel() {
+    @DisplayName("validateBindings 拒绝不存在通道")
+    void validateBindingsRejectsMissingChannel() {
         when(channelRepository.findById("ch_zzz")).thenReturn(Optional.empty());
-        PointSourceDTO dto = new PointSourceDTO();
-        dto.setChannelId("ch_zzz");
-        dto.setAddress("x");
 
-        assertThrows(BusinessException.class, () -> pointSourceService.validateSources(List.of(dto), "ch_a"));
+        assertThrows(BusinessException.class,
+                () -> pointSourceService.validateBindings(List.of(binding("ch_zzz", "x"))));
+    }
+
+    @Test
+    @DisplayName("addBinding 校验通道存在且未重复，成功保存")
+    void addBinding() {
+        Channel ch = new Channel();
+        ch.setChannelId("ch_b");
+        when(channelRepository.findById("ch_b")).thenReturn(Optional.of(ch));
+        when(pointSourceRepository.findByPointId("p1")).thenReturn(List.of(source("p1", "ch_a", "a")));
+        when(pointSourceRepository.save(any(PointSource.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        PointSource saved = pointSourceService.addBinding("p1", "ch_b", "addr_b");
+
+        assertEquals("p1", saved.getPointId());
+        assertEquals("ch_b", saved.getChannelId());
+        verify(pointSourceRepository).save(any(PointSource.class));
+    }
+
+    @Test
+    @DisplayName("addBinding 拒绝已绑定通道")
+    void addBindingRejectsDuplicate() {
+        when(channelRepository.findById("ch_b")).thenReturn(Optional.of(new Channel()));
+        when(pointSourceRepository.findByPointId("p1")).thenReturn(List.of(source("p1", "ch_b", "x")));
+
+        assertThrows(BusinessException.class, () -> pointSourceService.addBinding("p1", "ch_b", "y"));
     }
 }

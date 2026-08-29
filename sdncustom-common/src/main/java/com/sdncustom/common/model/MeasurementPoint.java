@@ -1,5 +1,6 @@
 package com.sdncustom.common.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.sdncustom.common.model.enums.PointDataType;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -25,10 +26,17 @@ public class MeasurementPoint {
     @Column(name = "point_name", length = 128, nullable = false)
     private String pointName;
 
-    @Column(name = "channel_id", length = 64, nullable = false)
+    /** 视图传输字段（非持久化、无权威）：采集/写入时按绑定通道设置，供协议适配器读取地址；API 响应忽略 */
+    @Transient
+    @JsonIgnore
+    @EqualsAndHashCode.Exclude
+    @ToString.Exclude
     private String channelId;
 
-    @Column(name = "address", length = 256, nullable = false)
+    @Transient
+    @JsonIgnore
+    @EqualsAndHashCode.Exclude
+    @ToString.Exclude
     private String address;
 
     @Enumerated(EnumType.STRING)
@@ -51,11 +59,11 @@ public class MeasurementPoint {
     @Column(name = "update_time")
     private LocalDateTime updateTime;
 
-    /** 附加来源（REST/导出回填用，非持久化字段；主绑定仍是 channelId+address） */
+    /** 绑定（REST/导出回填用，非持久化字段）：该测点绑定的全部 (通道,地址)，无主从之分 */
     @Transient
     @EqualsAndHashCode.Exclude
     @ToString.Exclude
-    private List<PointSource> additionalSources;
+    private List<PointSource> bindings;
 
     @PrePersist
     protected void onCreate() {

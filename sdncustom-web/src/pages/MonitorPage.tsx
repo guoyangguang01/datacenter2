@@ -314,9 +314,8 @@ export default function MonitorPage() {
           columns={columns}
           dataSource={points.filter((p) => {
             if (selectedChannels.length === 0) return true;
-            if (selectedChannels.includes(p.channelId)) return true;
-            // 多来源测点：任一附加来源命中选中通道也展示
-            return (p.additionalSources ?? []).some((s) => selectedChannels.includes(s.channelId));
+            // 绑定集：任一绑定通道命中选中通道即展示
+            return (p.bindings ?? []).some((s) => selectedChannels.includes(s.channelId));
           })}
           rowKey="pointId"
           size="small"

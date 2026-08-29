@@ -3,6 +3,7 @@ package com.sdncustom.server.service;
 import com.sdncustom.common.dto.ChannelDTO;
 import com.sdncustom.common.exception.ResourceNotFoundException;
 import com.sdncustom.common.model.Channel;
+import com.sdncustom.common.model.MeasurementPoint;
 import com.sdncustom.common.model.enums.ChannelDirection;
 import com.sdncustom.common.model.enums.ChannelStatus;
 import com.sdncustom.common.model.enums.ProtocolType;
@@ -210,12 +211,12 @@ class ChannelServiceTest {
     @DisplayName("删除通道 - 未连接状态")
     void deleteDisconnected() {
         when(channelRepository.findById("ch_001")).thenReturn(Optional.of(testChannel));
-        when(pointRepository.findByChannelId("ch_001")).thenReturn(Arrays.asList());
-        doNothing().when(pointRepository).deleteByChannelId("ch_001");
+        when(pointSourceService.findPointsForChannel("ch_001")).thenReturn(List.of());
         doNothing().when(channelRepository).deleteById("ch_001");
 
         channelService.delete("ch_001");
 
+        verify(pointSourceService).deleteByChannelId("ch_001");
         verify(channelRepository).deleteById("ch_001");
     }
 
@@ -224,13 +225,36 @@ class ChannelServiceTest {
     void deleteConnected() {
         testChannel.setStatus(ChannelStatus.CONNECTED);
         when(channelRepository.findById("ch_001")).thenReturn(Optional.of(testChannel));
-        when(pointRepository.findByChannelId("ch_001")).thenReturn(Arrays.asList());
-        doNothing().when(pointRepository).deleteByChannelId("ch_001");
+        when(pointSourceService.findPointsForChannel("ch_001")).thenReturn(List.of());
         doNothing().when(channelRepository).deleteById("ch_001");
 
         channelService.delete("ch_001");
 
         verify(protocolRegistry).release("ch_001");
+        verify(pointSourceService).deleteByChannelId("ch_001");
+        verify(channelRepository).deleteById("ch_001");
+    }
+
+    @Test
+    @DisplayName("删除通道：仅剩该通道绑定的点被删，多绑定点存活")
+    void deleteRemovesOrphanedPointsOnly() {
+        when(channelRepository.findById("ch_001")).thenReturn(Optional.of(testChannel));
+        MeasurementPoint p1 = new MeasurementPoint();
+        p1.setPointId("p1");
+        MeasurementPoint p2 = new MeasurementPoint();
+        p2.setPointId("p2");
+        when(pointSourceService.findPointsForChannel("ch_001")).thenReturn(List.of(p1, p2));
+        // 删除 ch_001 绑定后：p1 无剩余绑定 → 删；p2 仍绑定 ch_002 → 存活
+        when(pointSourceService.bindingChannelIds("p1")).thenReturn(java.util.Set.of());
+        when(pointSourceService.bindingChannelIds("p2")).thenReturn(java.util.Set.of("ch_002"));
+        doNothing().when(channelRepository).deleteById("ch_001");
+
+        channelService.delete("ch_001");
+
+        verify(pointSourceService).deleteByChannelId("ch_001");
+        verify(pointRepository).deleteById("p1");
+        verify(pointRepository, never()).deleteById("p2");
+        verify(pointValueCache).delete("p1");
         verify(channelRepository).deleteById("ch_001");
     }
 

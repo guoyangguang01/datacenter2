@@ -110,7 +110,7 @@ scripts/start-frontend.bat           # 单独启动前端
 ## 关键服务
 
 - **AcquisitionEngine**：定时采集引擎，每 200ms 扫描 CONNECTED 状态的 Channel 并读取测点值；经 ChangeGate 过滤后**仅对有效变化**做批量落库与推送（无变化则零写入）
-- **ChangeGate**：变更检测门 + 多来源合并。一个测点可绑定多个通道来源（主绑定 `MeasurementPoint.channelId+address` + 附加来源表 `point_source`），权威值 = 质量优先（GOOD>UNCERTAIN>BAD>COMM_LOST）→ 时间戳最新 → 来源键稳定平局；数值型按 |新−旧| > 测点死区(deadband) 判断对权威值增量生效；手动写值会同步门状态避免重复上报。写入广播到所有绑定通道（跳过未连接/只读），WS 推送按绑定通道 fan-out
+- **ChangeGate**：变更检测门 + 多来源合并。测点为**绑定集模型**（无主通道）：`MeasurementPoint` 不带 channelId/address，全部绑定在 `point_source` 表（每点≥1条，绑定通道互不相同），API 用 `bindings` 数组；权威值 = 质量优先（GOOD>UNCERTAIN>BAD>COMM_LOST）→ 时间戳最新 → 来源键稳定平局；数值型按 |新−旧| > 测点死区(deadband) 判断对权威值增量生效；手动写值会同步门状态避免重复上报。写入广播到所有绑定通道（跳过未连接/只读），WS 推送按绑定通道 fan-out。启动时 `BindingMigration` 把旧 channel_id/address 回填到 point_source 并删除旧列（幂等）
 - **ChannelService**：Channel 生命周期唯一入口（CRUD + connect/disconnect/syncDisconnected，按通道加锁串行化；DB status 是适配器运行时状态的投影）
 - **PointService**：测点 CRUD、手动写入（writeValue）、缓存批量更新
 - **HistoryService**：TDengine 历史存储（超级表初始化 + 批量写入）
@@ -167,12 +167,13 @@ POST   /api/channels/{id}/disconnect  # 断开
 ### MeasurementPoint
 
 ```
-GET    /api/points                     # 查询所有 (可选 ?channelId=xxx)
-POST   /api/points                     # 创建
-PUT    /api/points/{id}                # 更新
+GET    /api/points                     # 查询所有 (可选 ?channelId=xxx，返回绑定到该通道的点)
+POST   /api/points                     # 创建（body 含 bindings:[{channelId,address}]）
+PUT    /api/points/{id}                # 更新（整体替换 bindings）
 DELETE /api/points/{id}                # 删除
+POST   /api/points/{id}/bindings       # 给既有测点加绑定（创建表单"关联既有测点"）
 GET    /api/points/{id}/value          # 获取当前值
-PUT    /api/points/{id}/value          # 写入值
+PUT    /api/points/{id}/value          # 写入值（广播到所有绑定通道）
 GET    /api/points/{id}/history        # 查询历史
 ```
 

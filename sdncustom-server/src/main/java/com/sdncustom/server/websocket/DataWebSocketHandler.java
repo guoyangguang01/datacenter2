@@ -196,12 +196,7 @@ public class DataWebSocketHandler extends TextWebSocketHandler {
             return targets;
         }
         String channelId = pv.getSourceChannelId();
-        if (channelId == null) {
-            MeasurementPoint point = pointRepository.findById(pv.getPointId()).orElse(null);
-            if (point == null) return Set.of();
-            channelId = point.getChannelId();
-        }
-        return Set.of(channelId);
+        return channelId != null ? Set.of(channelId) : Set.of();
     }
 
     private String buildDataMessage(List<PointValue> values) throws Exception {

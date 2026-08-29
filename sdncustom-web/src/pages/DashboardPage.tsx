@@ -16,7 +16,7 @@ const qualityColors: Record<PointQuality, string> = {
 
 export default function DashboardPage() {
   const { channels, fetchChannels } = useChannelStore();
-  const { points, pointValues, fetchPointsForChannels, fetchAllValues, updateValue, error } = usePointStore();
+  const { points, pointValues, fetchPoints, fetchAllValues, updateValue, error } = usePointStore();
   const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
   const [status, setStatus] = useState<SystemStatus | null>(null);
 
@@ -41,12 +41,10 @@ export default function DashboardPage() {
     };
   }, []);
 
-  // 获取所有选中通道的测点并合并（复用 store 的合并逻辑）
+  // 仪表盘显示全部数据：挂载即加载全部测点
   useEffect(() => {
-    if (selectedChannels.length > 0) {
-      fetchPointsForChannels(selectedChannels);
-    }
-  }, [selectedChannels, fetchPointsForChannels]);
+    fetchPoints();
+  }, [fetchPoints]);
 
   useEffect(() => {
     if (points.length > 0) {
@@ -76,26 +74,22 @@ export default function DashboardPage() {
     };
   }, [updateValue]);
 
-  // 订阅/取消订阅通道；断线重连后自动重新订阅
+  // 订阅全部通道以接收所有实时数据；断线重连后自动重新订阅
   useEffect(() => {
-    const doSubscribe = () => {
-      if (selectedChannels.length > 0) {
-        wsService.subscribe(selectedChannels);
-      }
-    };
+    const allChannelIds = channels.map((c) => c.channelId);
+    if (allChannelIds.length === 0) return;
+    const doSubscribe = () => wsService.subscribe(allChannelIds);
     doSubscribe();
     wsService.on('connected', doSubscribe);
     return () => {
       wsService.off('connected', doSubscribe);
-      if (selectedChannels.length > 0) {
-        wsService.unsubscribe(selectedChannels);
-      }
+      wsService.unsubscribe(allChannelIds);
     };
-  }, [selectedChannels]);
+  }, [channels]);
 
   const handleRefresh = () => {
-    if (selectedChannels.length > 0) {
-      wsService.refresh(selectedChannels);
+    if (channels.length > 0) {
+      wsService.refresh(channels.map((c) => c.channelId));
       fetchAllValues();
       message.success('已刷新');
     }
@@ -104,7 +98,16 @@ export default function DashboardPage() {
   const columns = [
     { title: '测点ID', dataIndex: 'pointId', key: 'pointId' },
     { title: '名称', dataIndex: 'pointName', key: 'pointName' },
-    { title: '地址', dataIndex: 'address', key: 'address' },
+    {
+      title: '来源',
+      key: 'source',
+      render: (_: unknown, record: { pointId: string }) => {
+        const ch = pointValues.get(record.pointId)?.sourceChannelId;
+        if (!ch) return '-';
+        const name = channels.find((c) => c.channelId === ch)?.channelName ?? ch;
+        return <Tag color="geekblue">{name}</Tag>;
+      },
+    },
     { title: '类型', dataIndex: 'dataType', key: 'dataType' },
     { title: '单位', dataIndex: 'unit', key: 'unit' },
     {
@@ -186,9 +189,14 @@ export default function DashboardPage() {
       <Table
         columns={columns}
         dataSource={points.filter(
-          (p) => selectedChannels.length === 0 || selectedChannels.includes(p.channelId)
+          (p) => selectedChannels.length === 0 || (p.bindings ?? []).some((s) => selectedChannels.includes(s.channelId))
         )}
         rowKey="pointId"
+        pagination={{
+          showSizeChanger: true,
+          pageSizeOptions: [10, 20, 50, 100, 200],
+          showTotal: (total) => `共 ${total} 条`,
+        }}
       />
     </div>
   );

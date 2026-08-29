@@ -28,13 +28,11 @@ export interface PointSourceDTO {
 export interface MeasurementPoint {
   pointId: string;
   pointName: string;
-  channelId: string;
-  address: string;
   dataType: PointDataType;
   unit: string;
   writable: boolean;
   deadband?: number;
-  additionalSources?: PointSourceDTO[];
+  bindings: PointSourceDTO[];
   createTime: string;
   updateTime: string;
 }

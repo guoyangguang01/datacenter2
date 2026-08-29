@@ -3,6 +3,7 @@ package com.sdncustom.common.dto;
 import com.sdncustom.common.model.enums.PointDataType;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
@@ -17,12 +18,6 @@ public class MeasurementPointDTO {
     @NotBlank(message = "pointName 不能为空")
     private String pointName;
 
-    @NotBlank(message = "channelId 不能为空")
-    private String channelId;
-
-    @NotBlank(message = "address 不能为空")
-    private String address;
-
     @NotNull(message = "dataType 不能为空")
     private PointDataType dataType;
 
@@ -32,7 +27,8 @@ public class MeasurementPointDTO {
 
     private Double deadband;
 
-    /** 附加来源（同一物理量可从多个通道采集/下发）；null=不修改现有来源，空列表=清空 */
+    /** 绑定（全部通道来源，至少一条；创建/更新时整体替换） */
     @Valid
-    private List<PointSourceDTO> additionalSources;
+    @NotEmpty(message = "bindings 不能为空")
+    private List<PointSourceDTO> bindings;
 }

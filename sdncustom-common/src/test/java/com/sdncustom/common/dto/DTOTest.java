@@ -12,6 +12,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -30,14 +31,20 @@ class DTOTest {
         validator = factory.getValidator();
     }
 
+    private static PointSourceDTO binding(String channelId, String address) {
+        PointSourceDTO dto = new PointSourceDTO();
+        dto.setChannelId(channelId);
+        dto.setAddress(address);
+        return dto;
+    }
+
     @Test
     @DisplayName("MeasurementPointDTO 有效数据")
     void measurementPointDTOValid() {
         MeasurementPointDTO dto = new MeasurementPointDTO();
         dto.setPointId("point_001");
         dto.setPointName("测试测点");
-        dto.setChannelId("ch_001");
-        dto.setAddress("40001");
+        dto.setBindings(List.of(binding("ch_001", "40001")));
         dto.setDataType(PointDataType.INT16);
         dto.setUnit("°C");
         dto.setWritable(true);
@@ -54,7 +61,7 @@ class DTOTest {
 
         Set<ConstraintViolation<MeasurementPointDTO>> violations = validator.validate(dto);
         assertFalse(violations.isEmpty());
-        assertTrue(violations.size() >= 4); // pointId, pointName, channelId, address, dataType
+        assertTrue(violations.size() >= 4); // pointId, pointName, dataType, bindings
     }
 
     @Test
@@ -151,8 +158,7 @@ class DTOTest {
         MeasurementPointDTO boolDto = new MeasurementPointDTO();
         boolDto.setPointId("bool_001");
         boolDto.setPointName("Bool Point");
-        boolDto.setChannelId("ch_001");
-        boolDto.setAddress("00001");
+        boolDto.setBindings(List.of(binding("ch_001", "00001")));
         boolDto.setDataType(PointDataType.BOOL);
         assertTrue(validator.validate(boolDto).isEmpty());
 
@@ -160,8 +166,7 @@ class DTOTest {
         MeasurementPointDTO int16Dto = new MeasurementPointDTO();
         int16Dto.setPointId("int16_001");
         int16Dto.setPointName("Int16 Point");
-        int16Dto.setChannelId("ch_001");
-        int16Dto.setAddress("40001");
+        int16Dto.setBindings(List.of(binding("ch_001", "40001")));
         int16Dto.setDataType(PointDataType.INT16);
         assertTrue(validator.validate(int16Dto).isEmpty());
 
@@ -169,8 +174,7 @@ class DTOTest {
         MeasurementPointDTO float64Dto = new MeasurementPointDTO();
         float64Dto.setPointId("float64_001");
         float64Dto.setPointName("Float64 Point");
-        float64Dto.setChannelId("ch_001");
-        float64Dto.setAddress("ns=2;s=Temperature");
+        float64Dto.setBindings(List.of(binding("ch_001", "ns=2;s=Temperature")));
         float64Dto.setDataType(PointDataType.FLOAT64);
         assertTrue(validator.validate(float64Dto).isEmpty());
 
@@ -178,8 +182,7 @@ class DTOTest {
         MeasurementPointDTO stringDto = new MeasurementPointDTO();
         stringDto.setPointId("string_001");
         stringDto.setPointName("String Point");
-        stringDto.setChannelId("ch_001");
-        stringDto.setAddress("status");
+        stringDto.setBindings(List.of(binding("ch_001", "status")));
         stringDto.setDataType(PointDataType.STRING);
         assertTrue(validator.validate(stringDto).isEmpty());
     }

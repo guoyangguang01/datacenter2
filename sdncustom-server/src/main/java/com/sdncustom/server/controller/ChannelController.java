@@ -150,19 +150,11 @@ public class ChannelController {
                 MeasurementPointDTO dto = new MeasurementPointDTO();
                 dto.setPointId(requireString(pt, "pointId"));
                 dto.setPointName(requireString(pt, "pointName"));
-                String channelId = requireString(pt, "channelId");
-                dto.setChannelId(channelId);
-                dto.setAddress(requireString(pt, "address"));
                 dto.setDataType(parseEnum(PointDataType.class, pt.get("dataType"), "dataType"));
                 dto.setUnit(optionalString(pt, "unit"));
                 dto.setWritable(optionalBoolean(pt, "writable", false));
                 dto.setDeadband(optionalDouble(pt, "deadband", null));
-                dto.setAdditionalSources(parseAdditionalSources(pt.get("additionalSources")));
-
-                // 校验通道存在，避免导入的测点挂在不存在通道下
-                if (channelService.findByIdOrNull(channelId) == null) {
-                    throw new BusinessException(400, "通道不存在: " + channelId);
-                }
+                dto.setBindings(parseBindings(pt));
                 dtos.add(dto);
             }
             pointService.importPoints(dtos);
@@ -248,5 +240,38 @@ public class ChannelController {
             sources.add(dto);
         }
         return sources;
+    }
+
+    /**
+     * 解析测点绑定：新格式 bindings=[{channelId,address},...]；
+     * 兼容旧格式（channelId+address，可含 additionalSources）合成 bindings。
+     */
+    @SuppressWarnings("unchecked")
+    private List<PointSourceDTO> parseBindings(Map<String, Object> pt) {
+        List<PointSourceDTO> bindings = new java.util.ArrayList<>();
+        if (pt.containsKey("bindings")) {
+            List<PointSourceDTO> parsed = parseAdditionalSources(pt.get("bindings"));
+            if (parsed != null) {
+                bindings.addAll(parsed);
+            }
+            if (bindings.isEmpty()) {
+                throw new BusinessException(400, "bindings 不能为空");
+            }
+            return bindings;
+        }
+        if (pt.containsKey("channelId")) {
+            PointSourceDTO main = new PointSourceDTO();
+            main.setChannelId(requireString(pt, "channelId"));
+            main.setAddress(requireString(pt, "address"));
+            bindings.add(main);
+            List<PointSourceDTO> extra = parseAdditionalSources(pt.get("additionalSources"));
+            if (extra != null) {
+                bindings.addAll(extra);
+            }
+        }
+        if (bindings.isEmpty()) {
+            throw new BusinessException(400, "测点缺少绑定");
+        }
+        return bindings;
     }
 }
