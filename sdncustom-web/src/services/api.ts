@@ -1,10 +1,42 @@
 import axios from 'axios';
-import type { ApiResponse, Channel, MeasurementPoint, PointValue } from '../types';
+import type { ApiResponse, Channel, MeasurementPoint, PointValue, SystemStatus } from '../types';
+import { authUtil } from '../utils/auth';
 
 const api = axios.create({
   baseURL: '/api',
   timeout: 10000,
 });
+
+api.interceptors.request.use((config) => {
+  const token = authUtil.getToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401 && window.location.pathname !== '/login') {
+      authUtil.clearToken();
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
+  }
+);
+
+// Auth API
+export const authApi = {
+  login: (data: { username: string; password: string }) =>
+    api.post<ApiResponse<{ token: string; username: string; expiresAt: number }>>('/auth/login', data),
+  me: () => api.get<ApiResponse<{ username: string }>>('/auth/me'),
+};
+
+// System API
+export const systemApi = {
+  getStatus: () => api.get<ApiResponse<SystemStatus>>('/system/status'),
+};
 
 // Channel API
 export const channelApi = {

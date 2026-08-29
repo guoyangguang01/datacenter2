@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Table, Select, Space, Tag, Button, message } from 'antd';
+import { Table, Select, Space, Tag, Button, Card, Col, Row, Statistic, message } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import { useChannelStore } from '../stores/channelStore';
 import { usePointStore } from '../stores/pointStore';
 import { wsService } from '../services/websocket';
-import type { PointValue, PointQuality } from '../types';
+import { systemApi } from '../services/api';
+import type { PointValue, PointQuality, SystemStatus } from '../types';
 
 const qualityColors: Record<PointQuality, string> = {
   GOOD: 'green',
@@ -17,10 +18,28 @@ export default function DashboardPage() {
   const { channels, fetchChannels } = useChannelStore();
   const { points, pointValues, fetchPointsForChannels, fetchAllValues, updateValue, error } = usePointStore();
   const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
+  const [status, setStatus] = useState<SystemStatus | null>(null);
 
   useEffect(() => {
     fetchChannels();
   }, [fetchChannels]);
+
+  useEffect(() => {
+    let alive = true;
+    const load = () => {
+      systemApi.getStatus()
+        .then((res) => {
+          if (alive && res.data.code === 200) setStatus(res.data.data);
+        })
+        .catch(() => { /* 状态卡刷新失败静默，下一次轮询重试 */ });
+    };
+    load();
+    const timer = setInterval(load, 10000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, []);
 
   // 获取所有选中通道的测点并合并（复用 store 的合并逻辑）
   useEffect(() => {
@@ -133,6 +152,37 @@ export default function DashboardPage() {
           刷新
         </Button>
       </div>
+      <Row gutter={16} style={{ marginBottom: 16 }}>
+        <Col span={6}>
+          <Card size="small">
+            <Statistic title="通道（已连接/总数）" value={status ? `${status.channelsConnected}/${status.channelsTotal}` : '-'} />
+          </Card>
+        </Col>
+        <Col span={6}>
+          <Card size="small">
+            <Statistic title="在线实时会话" value={status ? status.wsSessions : '-'} />
+          </Card>
+        </Col>
+        <Col span={6}>
+          <Card size="small">
+            <Statistic
+              title="采集周期 P99 / 累计失败"
+              value={status ? `${status.cycleP99Ms.toFixed(1)}ms / ${status.acquisitionFailures}` : '-'}
+              valueStyle={status && status.acquisitionFailures > 0 ? { color: '#cf1322' } : undefined}
+            />
+          </Card>
+        </Col>
+        <Col span={6}>
+          <Card size="small">
+            <div style={{ color: 'rgba(0,0,0,0.45)', fontSize: 14, marginBottom: 4 }}>历史存储</div>
+            {
+              !status ? '-' :
+              !status.tdengineEnabled ? <Tag>未启用</Tag> :
+              status.historyCircuitOpen ? <Tag color="red">熔断中</Tag> : <Tag color="green">正常</Tag>
+            }
+          </Card>
+        </Col>
+      </Row>
       <Table
         columns={columns}
         dataSource={points.filter(

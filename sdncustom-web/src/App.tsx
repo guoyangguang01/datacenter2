@@ -1,10 +1,14 @@
-import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { Layout, Menu } from 'antd';
-import { DashboardOutlined, NodeIndexOutlined, SettingOutlined } from '@ant-design/icons';
+import type { ReactNode } from 'react';
+import { BrowserRouter, Routes, Route, Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { Button, Layout, Menu, Space } from 'antd';
+import { DashboardOutlined, LogoutOutlined, NodeIndexOutlined, SettingOutlined } from '@ant-design/icons';
 import ChannelPage from './pages/ChannelPage';
 import PointPage from './pages/PointPage';
 import DashboardPage from './pages/DashboardPage';
 import MonitorPage from './pages/MonitorPage';
+import LoginPage from './pages/LoginPage';
+import { authUtil } from './utils/auth';
+import { wsService } from './services/websocket';
 
 const { Header, Content, Sider } = Layout;
 
@@ -14,8 +18,22 @@ const menuItems = [
   { key: '/points', icon: <SettingOutlined />, label: <Link to="/points">测点</Link> },
 ];
 
+function ProtectedRoute({ children }: { children: ReactNode }) {
+  if (!authUtil.isAuthenticated()) {
+    return <Navigate to="/login" replace />;
+  }
+  return <>{children}</>;
+}
+
 function AppLayout() {
   const location = useLocation();
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    wsService.disconnect();
+    authUtil.clearToken();
+    navigate('/login', { replace: true });
+  };
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
@@ -31,8 +49,22 @@ function AppLayout() {
         />
       </Sider>
       <Layout>
-        <Header style={{ padding: '0 16px', background: '#fff', display: 'flex', alignItems: 'center' }}>
+        <Header
+          style={{
+            padding: '0 16px',
+            background: '#fff',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
           <h1 style={{ margin: 0, fontSize: 18 }}>物联网数据中心</h1>
+          <Space>
+            <span>{authUtil.getUsername()}</span>
+            <Button type="text" icon={<LogoutOutlined />} onClick={handleLogout}>
+              退出登录
+            </Button>
+          </Space>
         </Header>
         <Content style={{ margin: 16, padding: 24, background: '#fff', borderRadius: 8 }}>
           <Routes>
@@ -51,7 +83,17 @@ function AppLayout() {
 export default function App() {
   return (
     <BrowserRouter>
-      <AppLayout />
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route
+          path="/*"
+          element={
+            <ProtectedRoute>
+              <AppLayout />
+            </ProtectedRoute>
+          }
+        />
+      </Routes>
     </BrowserRouter>
   );
 }

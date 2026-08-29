@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { Table, Button, Modal, Form, Input, Select, Switch, Space, message } from 'antd';
+import { Table, Button, Modal, Form, Input, InputNumber, Select, Switch, Space, message } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, DownloadOutlined, UploadOutlined } from '@ant-design/icons';
 import { usePointStore } from '../stores/pointStore';
 import { useChannelStore } from '../stores/channelStore';
@@ -111,6 +111,7 @@ export default function PointPage() {
     { title: '地址', dataIndex: 'address', key: 'address' },
     { title: '类型', dataIndex: 'dataType', key: 'dataType' },
     { title: '单位', dataIndex: 'unit', key: 'unit' },
+    { title: '死区', dataIndex: 'deadband', key: 'deadband', render: (v: number | null | undefined) => v != null ? v : '-' },
     { title: '可写', dataIndex: 'writable', key: 'writable', render: (v: boolean) => v ? '是' : '否' },
     {
       title: '操作',
@@ -189,6 +190,9 @@ export default function PointPage() {
           </Form.Item>
           <Form.Item name="unit" label="单位">
             <Input placeholder="例如 °C, Pa, %" />
+          </Form.Item>
+          <Form.Item name="deadband" label="死区" tooltip="数值变化超过死区才上报历史与推送；0 表示任何变化都上报">
+            <InputNumber min={0} step={0.01} placeholder="0 = 任何变化都上报" style={{ width: '100%' }} />
           </Form.Item>
           <Form.Item name="writable" label="可写" valuePropName="checked">
             <Switch />

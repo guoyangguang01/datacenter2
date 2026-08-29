@@ -28,6 +28,7 @@ export interface MeasurementPoint {
   dataType: PointDataType;
   unit: string;
   writable: boolean;
+  deadband?: number;
   createTime: string;
   updateTime: string;
 }
@@ -44,4 +45,16 @@ export interface ApiResponse<T> {
   code: number;
   message: string;
   data: T;
+}
+
+export interface SystemStatus {
+  uptimeSeconds: number;
+  channelsConnected: number;
+  channelsTotal: number;
+  wsSessions: number;
+  cycleP99Ms: number;
+  acquisitionFailures: number;
+  changedValuesTotal: number;
+  historyCircuitOpen: boolean;
+  tdengineEnabled: boolean;
 }

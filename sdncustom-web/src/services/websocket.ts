@@ -1,3 +1,5 @@
+import { authUtil } from '../utils/auth';
+
 type MessageHandler = (data: unknown) => void;
 
 class WebSocketService {
@@ -16,8 +18,14 @@ class WebSocketService {
       return this.ws;
     }
 
+    const token = authUtil.getToken();
+    if (!token) {
+      console.warn('WebSocket connect skipped: not authenticated');
+      return null;
+    }
+
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = `${protocol}//${window.location.host}/ws/data`;
+    const url = `${protocol}//${window.location.host}/ws/data?token=${encodeURIComponent(token)}`;
 
     // A manual connect() means the caller wants the socket alive, so re-enable reconnection.
     this.shouldReconnect = true;
@@ -61,6 +69,7 @@ class WebSocketService {
 
   private scheduleReconnect() {
     if (this.reconnectTimer !== null) return;
+    if (!authUtil.isAuthenticated()) return;
     this.reconnectTimer = window.setTimeout(() => {
       this.reconnectTimer = null;
       this.connect();
