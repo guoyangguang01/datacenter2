@@ -162,11 +162,12 @@ class ModelTest {
     void measurementPointAllArgsConstructor() {
         LocalDateTime now = LocalDateTime.now();
         MeasurementPoint point = new MeasurementPoint(
-                "point_001", "测试测点", "ch_001", "40001",
+                "point_001", "default", "测试测点", "ch_001", "40001",
                 PointDataType.INT16, "°C", true, 0.5, now, now, null
         );
 
         assertEquals("point_001", point.getPointId());
+        assertEquals("default", point.getBusinessId());
         assertEquals("测试测点", point.getPointName());
         assertEquals("ch_001", point.getChannelId());
         assertEquals("40001", point.getAddress());
@@ -176,6 +177,22 @@ class ModelTest {
         assertEquals(0.5, point.getDeadband());
         assertEquals(now, point.getCreateTime());
         assertEquals(now, point.getUpdateTime());
+    }
+
+    @Test
+    @DisplayName("BusinessSystem 创建和属性")
+    void businessSystem() {
+        BusinessSystem biz = new BusinessSystem();
+        biz.setBusinessId("biz_a");
+        biz.setBusinessName("业务A");
+        biz.setDescription("测试业务");
+        biz.onCreate();
+
+        assertEquals("biz_a", biz.getBusinessId());
+        assertEquals("业务A", biz.getBusinessName());
+        assertEquals("测试业务", biz.getDescription());
+        assertNotNull(biz.getCreateTime());
+        assertNotNull(biz.getUpdateTime());
     }
 
     @Test

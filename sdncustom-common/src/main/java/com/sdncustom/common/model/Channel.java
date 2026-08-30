@@ -21,6 +21,10 @@ public class Channel {
     @Column(name = "channel_id", length = 64)
     private String channelId;
 
+    /** 归属业务；实体层声明可空以便 Hibernate 对存量表安全加列，非空约束由 BusinessSystemMigration 收紧 */
+    @Column(name = "business_id", length = 64)
+    private String businessId;
+
     @Column(name = "channel_name", length = 128, nullable = false)
     private String channelName;
 
@@ -50,8 +54,9 @@ public class Channel {
 
     @PrePersist
     protected void onCreate() {
-        createTime = LocalDateTime.now();
-        updateTime = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now();
+        createTime = now;
+        updateTime = now;
     }
 
     @PreUpdate

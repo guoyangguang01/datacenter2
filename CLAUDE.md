@@ -31,6 +31,7 @@ SDNCustom/
 
 - **测点 (MeasurementPoint)**：数据的最小单元，平台的一等公民
 - **管道 (Channel)**：与外部设备/系统的连接通道，负责数据采集和写入
+- **业务系统 (BusinessSystem)**：多业务隔离的逻辑维度；通道与测点归属到某个业务，列表查询/创建校验按业务过滤。测点不跨业务共享（绑定只能绑本业务通道）；归属创建后不可变更（update 静默忽略 DTO 中的 businessId）；删除业务前要求名下无通道、无测点。存量数据由 `BusinessSystemMigration` 回填到默认业务 `default`（幂等，含建默认业务）；空库首次启动由 `DemoDataInitializer` 播种示例数据（2 业务/4 通道/6 测点，全部 autoConnect=false，不依赖模拟器）。隔离是数据组织维度——单管理员、采集/推送/缓存/历史不感知业务
 - **数据中枢**：平台是测点数据的唯一权威源，所有客户端通过平台读写数据
 
 ## 环境要求
@@ -146,18 +147,30 @@ scripts/start-frontend.bat           # 单独启动前端
 
 | 路径 | 页面 | 功能 |
 |------|------|------|
-| `/dashboard` | DashboardPage | 仪表盘，系统概览 |
+| `/dashboard` | DashboardPage | 仪表盘，系统概览（状态卡平台级，测点表按当前业务） |
+| `/businesses` | BusinessPage | 业务管理（业务系统 CRUD） |
 | `/channels` | ChannelPage | Channel 管理（CRUD + 连接/断开） |
 | `/points` | PointPage | 测点管理（CRUD + 按 Channel 过滤） |
 | `/monitor` | MonitorPage | 实时监控看板 |
 
+> 顶栏有业务切换器（`useBusinessStore`，localStorage `sdncustom_business` 持久化）；通道/测点/监控/仪表盘均按当前业务过滤加载。
+
 ## API 端点
+
+### BusinessSystem
+
+```
+GET    /api/businesses           # 查询所有业务
+POST   /api/businesses           # 创建
+PUT    /api/businesses/{id}      # 更新（仅名称/描述）
+DELETE /api/businesses/{id}      # 删除（名下有通道/测点时返回 400）
+```
 
 ### Channel
 
 ```
-GET    /api/channels           # 查询所有
-POST   /api/channels           # 创建
+GET    /api/channels           # 查询所有（可选 ?businessId= 按业务过滤）
+POST   /api/channels           # 创建（body 必填 businessId 且业务必须存在）
 PUT    /api/channels/{id}      # 更新
 DELETE /api/channels/{id}      # 删除
 POST   /api/channels/{id}/connect     # 连接
@@ -167,8 +180,8 @@ POST   /api/channels/{id}/disconnect  # 断开
 ### MeasurementPoint
 
 ```
-GET    /api/points                     # 查询所有 (可选 ?channelId=xxx，返回绑定到该通道的点)
-POST   /api/points                     # 创建（body 含 bindings:[{channelId,address}]）
+GET    /api/points                     # 查询所有 (可选 ?channelId=xxx / ?businessId=xxx，可叠加；返回绑定到该通道的点)
+POST   /api/points                     # 创建（body 必填 businessId；bindings 通道必须与测点同业务）
 PUT    /api/points/{id}                # 更新（整体替换 bindings）
 DELETE /api/points/{id}                # 删除
 POST   /api/points/{id}/bindings       # 给既有测点加绑定（创建表单"关联既有测点"）

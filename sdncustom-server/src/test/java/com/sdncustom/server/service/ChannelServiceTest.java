@@ -59,6 +59,9 @@ class ChannelServiceTest {
     private PointBindingRegistry pointBindingRegistry;
 
     @Mock
+    private BusinessSystemService businessSystemService;
+
+    @Mock
     private ProtocolAdapter adapter;
 
     @InjectMocks
@@ -71,6 +74,7 @@ class ChannelServiceTest {
     void setUp() {
         testChannel = new Channel();
         testChannel.setChannelId("ch_001");
+        testChannel.setBusinessId("default");
         testChannel.setChannelName("测试通道");
         testChannel.setProtocolType(ProtocolType.CUSTOM_TCP);
         testChannel.setDirection(ChannelDirection.READ_WRITE);
@@ -80,6 +84,7 @@ class ChannelServiceTest {
 
         testDto = new ChannelDTO();
         testDto.setChannelId("ch_001");
+        testDto.setBusinessId("default");
         testDto.setChannelName("测试通道");
         testDto.setProtocolType(ProtocolType.CUSTOM_TCP);
         testDto.setDirection(ChannelDirection.READ_WRITE);
@@ -128,7 +133,47 @@ class ChannelServiceTest {
         assertNotNull(result);
         assertEquals("ch_001", result.getChannelId());
         assertEquals(ChannelStatus.DISCONNECTED, result.getStatus());
-        verify(channelRepository).save(any(Channel.class));
+        verify(businessSystemService).requireExists("default");
+        ArgumentCaptor<Channel> captor = ArgumentCaptor.forClass(Channel.class);
+        verify(channelRepository).save(captor.capture());
+        assertEquals("default", captor.getValue().getBusinessId());
+    }
+
+    @Test
+    @DisplayName("创建通道 - businessId 缺失时拒绝")
+    void createWithoutBusinessRejected() {
+        testDto.setBusinessId(null);
+        doThrow(new com.sdncustom.common.exception.BusinessException(400, "businessId 不能为空"))
+                .when(businessSystemService).requireExists(null);
+
+        assertThrows(com.sdncustom.common.exception.BusinessException.class,
+                () -> channelService.create(testDto));
+        verify(channelRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("创建通道 - 业务不存在时拒绝")
+    void createWithUnknownBusinessRejected() {
+        testDto.setBusinessId("ghost");
+        doThrow(new com.sdncustom.common.exception.BusinessException(400, "业务不存在: ghost"))
+                .when(businessSystemService).requireExists("ghost");
+
+        assertThrows(com.sdncustom.common.exception.BusinessException.class,
+                () -> channelService.create(testDto));
+        verify(channelRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("更新通道 - businessId 不可变更（DTO 传不同值被忽略）")
+    void updateDoesNotChangeBusinessId() {
+        when(channelRepository.findById("ch_001")).thenReturn(Optional.of(testChannel));
+        when(channelRepository.save(any(Channel.class))).thenReturn(testChannel);
+
+        testDto.setBusinessId("other");
+        testDto.setChannelName("更新后的名称");
+        channelService.update("ch_001", testDto);
+
+        assertEquals("default", testChannel.getBusinessId());
     }
 
     @Test

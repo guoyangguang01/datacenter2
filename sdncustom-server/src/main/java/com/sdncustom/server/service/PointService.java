@@ -38,12 +38,22 @@ public class PointService {
     private final PointSourceService pointSourceService;
     private final PointBindingRegistry pointBindingRegistry;
     private final DistributionService distributionService;
+    private final BusinessSystemService businessSystemService;
 
     /**
      * 查询所有测点
      */
     public List<MeasurementPoint> findAll() {
         List<MeasurementPoint> points = pointRepository.findAll();
+        attachBindings(points);
+        return points;
+    }
+
+    /**
+     * 查询指定业务下的所有测点
+     */
+    public List<MeasurementPoint> findByBusinessId(String businessId) {
+        List<MeasurementPoint> points = pointRepository.findByBusinessId(businessId);
         attachBindings(points);
         return points;
     }
@@ -75,14 +85,16 @@ public class PointService {
     }
 
     /**
-     * 创建测点（绑定集：bindings ≥1）
+     * 创建测点（绑定集：bindings ≥1，归属业务必填，绑定通道必须同业务）
      */
     @Transactional
     public MeasurementPoint create(MeasurementPointDTO dto) {
-        pointSourceService.validateBindings(dto.getBindings());
+        businessSystemService.requireExists(dto.getBusinessId());
+        pointSourceService.validateBindings(dto.getBindings(), dto.getBusinessId());
 
         MeasurementPoint point = new MeasurementPoint();
         point.setPointId(dto.getPointId());
+        point.setBusinessId(dto.getBusinessId());
         point.setPointName(dto.getPointName());
         point.setDataType(dto.getDataType());
         point.setUnit(dto.getUnit());
@@ -104,7 +116,8 @@ public class PointService {
     @Transactional
     public MeasurementPoint update(String pointId, MeasurementPointDTO dto) {
         MeasurementPoint point = findById(pointId);
-        pointSourceService.validateBindings(dto.getBindings());
+        // 归属不可变更：绑定校验以测点现有业务为准，DTO 中的 businessId 被忽略
+        pointSourceService.validateBindings(dto.getBindings(), point.getBusinessId());
 
         point.setPointName(dto.getPointName());
         point.setDataType(dto.getDataType());
@@ -138,7 +151,7 @@ public class PointService {
     @Transactional
     public MeasurementPoint addBinding(String pointId, String channelId, String address) {
         MeasurementPoint point = findById(pointId);
-        pointSourceService.addBinding(pointId, channelId, address);
+        pointSourceService.addBinding(pointId, channelId, address, point.getBusinessId());
         subscribeConnectedChannel(channelId,
                 List.of(pointSourceService.viewForBinding(point, channelId, address)));
         pointBindingRegistry.invalidate(pointId);

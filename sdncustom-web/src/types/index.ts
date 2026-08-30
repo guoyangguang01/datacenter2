@@ -8,8 +8,17 @@ export type PointDataType = 'BOOL' | 'INT16' | 'INT32' | 'FLOAT32' | 'FLOAT64' |
 
 export type PointQuality = 'GOOD' | 'BAD' | 'UNCERTAIN' | 'COMM_LOST';
 
+export interface BusinessSystem {
+  businessId: string;
+  businessName: string;
+  description?: string;
+  createTime: string;
+  updateTime: string;
+}
+
 export interface Channel {
   channelId: string;
+  businessId: string;
   channelName: string;
   protocolType: ProtocolType;
   direction: ChannelDirection;
@@ -27,6 +36,7 @@ export interface PointSourceDTO {
 
 export interface MeasurementPoint {
   pointId: string;
+  businessId: string;
   pointName: string;
   dataType: PointDataType;
   unit: string;

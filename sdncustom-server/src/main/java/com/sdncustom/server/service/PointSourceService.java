@@ -2,6 +2,7 @@ package com.sdncustom.server.service;
 
 import com.sdncustom.common.dto.PointSourceDTO;
 import com.sdncustom.common.exception.BusinessException;
+import com.sdncustom.common.model.Channel;
 import com.sdncustom.common.model.MeasurementPoint;
 import com.sdncustom.common.model.PointSource;
 import com.sdncustom.server.repository.ChannelRepository;
@@ -15,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -79,8 +81,8 @@ public class PointSourceService {
         return view;
     }
 
-    /** 校验绑定：至少一条、通道存在、通道互不重复 */
-    public void validateBindings(List<PointSourceDTO> bindings) {
+    /** 校验绑定：至少一条、通道存在、通道互不重复、通道必须与测点同业务（测点不跨业务共享） */
+    public void validateBindings(List<PointSourceDTO> bindings, String pointBusinessId) {
         if (bindings == null || bindings.isEmpty()) {
             throw new BusinessException(400, "测点至少需要一个绑定通道");
         }
@@ -89,8 +91,12 @@ public class PointSourceService {
             if (!seen.add(dto.getChannelId())) {
                 throw new BusinessException(400, "绑定通道重复: " + dto.getChannelId());
             }
-            if (channelRepository.findById(dto.getChannelId()).isEmpty()) {
+            Channel channel = channelRepository.findById(dto.getChannelId()).orElse(null);
+            if (channel == null) {
                 throw new BusinessException(400, "绑定通道不存在: " + dto.getChannelId());
+            }
+            if (!Objects.equals(channel.getBusinessId(), pointBusinessId)) {
+                throw new BusinessException(400, "绑定通道不属于当前业务: " + dto.getChannelId());
             }
         }
     }
@@ -111,11 +117,15 @@ public class PointSourceService {
         }
     }
 
-    /** 给既有测点增加一条绑定（校验通道存在、该点尚未绑定此通道） */
+    /** 给既有测点增加一条绑定（校验通道存在、同业务、该点尚未绑定此通道） */
     @Transactional
-    public PointSource addBinding(String pointId, String channelId, String address) {
-        if (channelRepository.findById(channelId).isEmpty()) {
+    public PointSource addBinding(String pointId, String channelId, String address, String pointBusinessId) {
+        Channel channel = channelRepository.findById(channelId).orElse(null);
+        if (channel == null) {
             throw new BusinessException(400, "绑定通道不存在: " + channelId);
+        }
+        if (!Objects.equals(channel.getBusinessId(), pointBusinessId)) {
+            throw new BusinessException(400, "绑定通道不属于当前业务: " + channelId);
         }
         boolean exists = pointSourceRepository.findByPointId(pointId).stream()
                 .anyMatch(b -> b.getChannelId().equals(channelId));

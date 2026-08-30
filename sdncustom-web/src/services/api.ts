@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { ApiResponse, Channel, MeasurementPoint, PointSourceDTO, PointValue, SystemStatus } from '../types';
+import type { ApiResponse, BusinessSystem, Channel, MeasurementPoint, PointSourceDTO, PointValue, SystemStatus } from '../types';
 import { authUtil } from '../utils/auth';
 
 const api = axios.create({
@@ -38,9 +38,17 @@ export const systemApi = {
   getStatus: () => api.get<ApiResponse<SystemStatus>>('/system/status'),
 };
 
+// Business API
+export const businessApi = {
+  getAll: () => api.get<ApiResponse<BusinessSystem[]>>('/businesses'),
+  create: (data: Partial<BusinessSystem>) => api.post<ApiResponse<BusinessSystem>>('/businesses', data),
+  update: (id: string, data: Partial<BusinessSystem>) => api.put<ApiResponse<BusinessSystem>>(`/businesses/${id}`, data),
+  delete: (id: string) => api.delete<ApiResponse<void>>(`/businesses/${id}`),
+};
+
 // Channel API
 export const channelApi = {
-  getAll: () => api.get<ApiResponse<Channel[]>>('/channels'),
+  getAll: (businessId?: string) => api.get<ApiResponse<Channel[]>>('/channels', { params: { businessId } }),
   getById: (id: string) => api.get<ApiResponse<Channel>>(`/channels/${id}`),
   create: (data: Partial<Channel>) => api.post<ApiResponse<Channel>>('/channels', data),
   update: (id: string, data: Partial<Channel>) => api.put<ApiResponse<Channel>>(`/channels/${id}`, data),
@@ -54,7 +62,8 @@ export const channelApi = {
 
 // MeasurementPoint API
 export const pointApi = {
-  getAll: (channelId?: string) => api.get<ApiResponse<MeasurementPoint[]>>('/points', { params: { channelId } }),
+  getAll: (channelId?: string, businessId?: string) =>
+    api.get<ApiResponse<MeasurementPoint[]>>('/points', { params: { channelId, businessId } }),
   getById: (id: string) => api.get<ApiResponse<MeasurementPoint>>(`/points/${id}`),
   create: (data: Partial<MeasurementPoint>) => api.post<ApiResponse<MeasurementPoint>>('/points', data),
   update: (id: string, data: Partial<MeasurementPoint>) => api.put<ApiResponse<MeasurementPoint>>(`/points/${id}`, data),

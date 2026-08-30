@@ -96,6 +96,20 @@ class DTOTest {
     }
 
     @Test
+    @DisplayName("BusinessSystemDTO 有效数据与必填校验")
+    void businessSystemDTO() {
+        BusinessSystemDTO dto = new BusinessSystemDTO();
+        dto.setBusinessId("biz_a");
+        dto.setBusinessName("业务A");
+        dto.setDescription("描述");
+        assertTrue(validator.validate(dto).isEmpty());
+
+        BusinessSystemDTO empty = new BusinessSystemDTO();
+        Set<ConstraintViolation<BusinessSystemDTO>> violations = validator.validate(empty);
+        assertEquals(2, violations.size()); // businessId, businessName
+    }
+
+    @Test
     @DisplayName("ApiResponse 成功响应")
     void apiResponseSuccess() {
         ApiResponse<String> response = ApiResponse.success("test");

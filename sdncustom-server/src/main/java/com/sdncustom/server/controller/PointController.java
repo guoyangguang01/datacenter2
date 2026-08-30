@@ -11,6 +11,8 @@ import com.sdncustom.common.model.MeasurementPoint;
 import com.sdncustom.common.model.PointHistory;
 import com.sdncustom.common.model.PointValue;
 import com.sdncustom.common.model.enums.PointDataType;
+import com.sdncustom.server.config.BusinessSystemMigration;
+import com.sdncustom.server.service.BusinessSystemService;
 import com.sdncustom.server.service.ChannelService;
 import com.sdncustom.server.service.HistoryService;
 import com.sdncustom.server.service.PointService;
@@ -36,9 +38,21 @@ public class PointController {
     private final ChannelService channelService;
     private final HistoryService historyService;
     private final ObjectMapper objectMapper;
+    private final BusinessSystemService businessSystemService;
 
     @GetMapping
-    public ApiResponse<List<MeasurementPoint>> findAll(@RequestParam(required = false) String channelId) {
+    public ApiResponse<List<MeasurementPoint>> findAll(@RequestParam(required = false) String channelId,
+                                                       @RequestParam(required = false) String businessId) {
+        if (businessId != null) {
+            List<MeasurementPoint> points = pointService.findByBusinessId(businessId);
+            if (channelId != null) {
+                points = points.stream()
+                        .filter(p -> p.getBindings() != null && p.getBindings().stream()
+                                .anyMatch(b -> channelId.equals(b.getChannelId())))
+                        .toList();
+            }
+            return ApiResponse.success(points);
+        }
         if (channelId != null) {
             return ApiResponse.success(pointService.findByChannelId(channelId));
         }
@@ -110,6 +124,7 @@ public class PointController {
 
     /**
      * 批量导入测点。新格式 bindings=[{channelId,address}]；兼容旧格式（channelId+address+additionalSources）。
+     * businessId 缺失时落默认业务；引用的业务不存在时自动创建。
      */
     @PostMapping("/import")
     public ApiResponse<List<MeasurementPoint>> importPoints(@RequestBody List<Map<String, Object>> rawPoints) {
@@ -117,15 +132,23 @@ public class PointController {
         for (Map<String, Object> pt : rawPoints) {
             MeasurementPointDTO dto = new MeasurementPointDTO();
             dto.setPointId(requireString(pt, "pointId"));
+            dto.setBusinessId(resolveBusinessId(pt));
             dto.setPointName(requireString(pt, "pointName"));
             dto.setDataType(parseEnum(PointDataType.class, pt.get("dataType"), "dataType"));
             dto.setUnit(optionalString(pt, "unit"));
             dto.setWritable(optionalBoolean(pt, "writable", false));
             dto.setDeadband(optionalDouble(pt, "deadband", null));
             dto.setBindings(parseBindings(pt));
+            businessSystemService.ensureExistsForImport(dto.getBusinessId());
             dtos.add(dto);
         }
         return ApiResponse.success(pointService.importPoints(dtos));
+    }
+
+    /** 解析业务归属：缺失或空时落默认业务（兼容旧格式导出） */
+    private String resolveBusinessId(Map<String, Object> item) {
+        String businessId = optionalString(item, "businessId");
+        return businessId == null || businessId.isBlank() ? BusinessSystemMigration.DEFAULT_BUSINESS_ID : businessId;
     }
 
     private String requireString(Map<String, Object> map, String key) {

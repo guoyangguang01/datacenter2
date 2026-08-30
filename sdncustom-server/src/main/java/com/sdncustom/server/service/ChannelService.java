@@ -40,6 +40,7 @@ public class ChannelService {
     private final PointValueCacheRepository pointValueCache;
     private final ProtocolRegistry protocolRegistry;
     private final ChangeGate changeGate;
+    private final BusinessSystemService businessSystemService;
 
     // per-channel 生命周期锁：串行化用户操作与采集循环的状态修正
     private final ConcurrentHashMap<String, ReentrantLock> lifecycleLocks = new ConcurrentHashMap<>();
@@ -49,6 +50,13 @@ public class ChannelService {
      */
     public List<Channel> findAll() {
         return channelRepository.findAll();
+    }
+
+    /**
+     * 查询指定业务下的所有 Channel
+     */
+    public List<Channel> findByBusinessId(String businessId) {
+        return channelRepository.findByBusinessId(businessId);
     }
 
     /**
@@ -71,8 +79,10 @@ public class ChannelService {
      */
     @Transactional
     public Channel create(ChannelDTO dto) {
+        businessSystemService.requireExists(dto.getBusinessId());
         Channel channel = new Channel();
         channel.setChannelId(dto.getChannelId());
+        channel.setBusinessId(dto.getBusinessId());
         channel.setChannelName(dto.getChannelName());
         channel.setProtocolType(dto.getProtocolType());
         channel.setDirection(dto.getDirection());

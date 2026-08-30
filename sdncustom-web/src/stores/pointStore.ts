@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { MeasurementPoint, PointValue } from '../types';
 import { pointApi } from '../services/api';
+import { useBusinessStore } from './businessStore';
 
 function toErrorMessage(e: unknown, fallback: string): string {
   if (e instanceof Error) return e.message;
@@ -16,7 +17,7 @@ interface PointStore {
   pointValues: Map<string, PointValue>;
   loading: boolean;
   error: string | null;
-  fetchPoints: (channelId?: string) => Promise<void>;
+  fetchPoints: (channelId?: string, businessId?: string | null) => Promise<void>;
   fetchPointsForChannels: (channelIds: string[]) => Promise<void>;
   createPoint: (data: Partial<MeasurementPoint>) => Promise<void>;
   updatePoint: (id: string, data: Partial<MeasurementPoint>) => Promise<void>;
@@ -34,19 +35,24 @@ export const usePointStore = create<PointStore>((set, get) => ({
   loading: false,
   error: null,
 
-  fetchPoints: async (channelId) => {
+  fetchPoints: async (channelId, businessId) => {
+    // 缺省按当前业务过滤；业务尚未解析时不加载（页面以 currentBusinessId 为 effect 依赖）
+    const biz = businessId === undefined ? useBusinessStore.getState().currentBusinessId : businessId;
+    if (biz === null) return;
+    const seq = ++fetchPointsSeq;
     set({ loading: true, error: null });
     try {
-      const res = await pointApi.getAll(channelId);
+      const res = await pointApi.getAll(channelId, biz);
+      if (seq !== fetchPointsSeq) return; // 业务/通道已切换，丢弃过期响应
       if (res.data.code !== 200) {
         set({ error: res.data.message || '加载测点失败' });
         return;
       }
       set({ points: res.data.data });
     } catch (e) {
-      set({ error: toErrorMessage(e, '加载测点失败') });
+      if (seq === fetchPointsSeq) set({ error: toErrorMessage(e, '加载测点失败') });
     } finally {
-      set({ loading: false });
+      if (seq === fetchPointsSeq) set({ loading: false });
     }
   },
 

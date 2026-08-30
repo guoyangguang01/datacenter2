@@ -13,4 +13,6 @@ public interface ChannelRepository extends JpaRepository<Channel, String> {
     List<Channel> findByAutoConnect(boolean autoConnect);
 
     List<Channel> findByStatus(ChannelStatus status);
+
+    List<Channel> findByBusinessId(String businessId);
 }

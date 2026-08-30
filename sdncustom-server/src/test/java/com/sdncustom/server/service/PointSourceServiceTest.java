@@ -120,8 +120,8 @@ class PointSourceServiceTest {
     @Test
     @DisplayName("validateBindings 拒绝空/缺失绑定")
     void validateBindingsRejectsEmpty() {
-        assertThrows(BusinessException.class, () -> pointSourceService.validateBindings(List.of()));
-        assertThrows(BusinessException.class, () -> pointSourceService.validateBindings(null));
+        assertThrows(BusinessException.class, () -> pointSourceService.validateBindings(List.of(), "default"));
+        assertThrows(BusinessException.class, () -> pointSourceService.validateBindings(null, "default"));
     }
 
     @Test
@@ -129,10 +129,12 @@ class PointSourceServiceTest {
     void validateBindingsRejectsDuplicateChannels() {
         Channel ch = new Channel();
         ch.setChannelId("ch_b");
+        ch.setBusinessId("default");
         when(channelRepository.findById("ch_b")).thenReturn(Optional.of(ch));
 
         assertThrows(BusinessException.class,
-                () -> pointSourceService.validateBindings(List.of(binding("ch_b", "x"), binding("ch_b", "y"))));
+                () -> pointSourceService.validateBindings(
+                        List.of(binding("ch_b", "x"), binding("ch_b", "y")), "default"));
     }
 
     @Test
@@ -141,19 +143,33 @@ class PointSourceServiceTest {
         when(channelRepository.findById("ch_zzz")).thenReturn(Optional.empty());
 
         assertThrows(BusinessException.class,
-                () -> pointSourceService.validateBindings(List.of(binding("ch_zzz", "x"))));
+                () -> pointSourceService.validateBindings(List.of(binding("ch_zzz", "x")), "default"));
     }
 
     @Test
-    @DisplayName("addBinding 校验通道存在且未重复，成功保存")
+    @DisplayName("validateBindings 拒绝跨业务通道（测点不跨业务共享）")
+    void validateBindingsRejectsCrossBusinessChannel() {
+        Channel ch = new Channel();
+        ch.setChannelId("ch_b");
+        ch.setBusinessId("biz_a");
+        when(channelRepository.findById("ch_b")).thenReturn(Optional.of(ch));
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> pointSourceService.validateBindings(List.of(binding("ch_b", "x")), "default"));
+        assertTrue(ex.getMessage().contains("不属于当前业务"));
+    }
+
+    @Test
+    @DisplayName("addBinding 校验通道存在、同业务且未重复，成功保存")
     void addBinding() {
         Channel ch = new Channel();
         ch.setChannelId("ch_b");
+        ch.setBusinessId("default");
         when(channelRepository.findById("ch_b")).thenReturn(Optional.of(ch));
         when(pointSourceRepository.findByPointId("p1")).thenReturn(List.of(source("p1", "ch_a", "a")));
         when(pointSourceRepository.save(any(PointSource.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        PointSource saved = pointSourceService.addBinding("p1", "ch_b", "addr_b");
+        PointSource saved = pointSourceService.addBinding("p1", "ch_b", "addr_b", "default");
 
         assertEquals("p1", saved.getPointId());
         assertEquals("ch_b", saved.getChannelId());
@@ -163,9 +179,26 @@ class PointSourceServiceTest {
     @Test
     @DisplayName("addBinding 拒绝已绑定通道")
     void addBindingRejectsDuplicate() {
-        when(channelRepository.findById("ch_b")).thenReturn(Optional.of(new Channel()));
+        Channel ch = new Channel();
+        ch.setChannelId("ch_b");
+        ch.setBusinessId("default");
+        when(channelRepository.findById("ch_b")).thenReturn(Optional.of(ch));
         when(pointSourceRepository.findByPointId("p1")).thenReturn(List.of(source("p1", "ch_b", "x")));
 
-        assertThrows(BusinessException.class, () -> pointSourceService.addBinding("p1", "ch_b", "y"));
+        assertThrows(BusinessException.class, () -> pointSourceService.addBinding("p1", "ch_b", "y", "default"));
+    }
+
+    @Test
+    @DisplayName("addBinding 拒绝跨业务通道")
+    void addBindingRejectsCrossBusinessChannel() {
+        Channel ch = new Channel();
+        ch.setChannelId("ch_b");
+        ch.setBusinessId("biz_a");
+        when(channelRepository.findById("ch_b")).thenReturn(Optional.of(ch));
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> pointSourceService.addBinding("p1", "ch_b", "y", "default"));
+        assertTrue(ex.getMessage().contains("不属于当前业务"));
+        verify(pointSourceRepository, never()).save(any());
     }
 }

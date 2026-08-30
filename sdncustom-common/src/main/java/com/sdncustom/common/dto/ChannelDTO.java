@@ -12,6 +12,9 @@ public class ChannelDTO {
     @NotBlank(message = "channelId 不能为空")
     private String channelId;
 
+    /** 归属业务：创建时必填（service 层校验），更新时忽略（归属不可变更） */
+    private String businessId;
+
     @NotBlank(message = "channelName 不能为空")
     private String channelName;
 

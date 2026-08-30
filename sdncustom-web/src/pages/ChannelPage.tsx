@@ -4,6 +4,7 @@ import { PlusOutlined, EditOutlined, DeleteOutlined, LinkOutlined, DisconnectOut
 import { useChannelStore } from '../stores/channelStore';
 import { channelApi } from '../services/api';
 import { usePointStore } from '../stores/pointStore';
+import { useBusinessStore } from '../stores/businessStore';
 import type { Channel } from '../types';
 
 const protocolOptions = [
@@ -38,6 +39,8 @@ function parseConnectionConfig(config: string | undefined): Record<string, unkno
 export default function ChannelPage() {
   const { channels, loading, error, fetchChannels, createChannel, updateChannel, deleteChannel, connectChannel, disconnectChannel } = useChannelStore();
   const { fetchPoints } = usePointStore();
+  const currentBusinessId = useBusinessStore((s) => s.currentBusinessId);
+  const businessesLoaded = useBusinessStore((s) => s.businesses.length > 0);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Channel | null>(null);
   const [form] = Form.useForm();
@@ -46,7 +49,7 @@ export default function ChannelPage() {
 
   useEffect(() => {
     fetchChannels();
-  }, [fetchChannels]);
+  }, [fetchChannels, currentBusinessId]);
 
   // 展示 store 中的错误信息
   useEffect(() => {
@@ -111,10 +114,10 @@ export default function ChannelPage() {
     }
   };
 
-  // 仅导出通道
+  // 仅导出当前业务的通道
   const handleExportChannels = async () => {
     try {
-      const res = await channelApi.getAll();
+      const res = await channelApi.getAll(currentBusinessId ?? undefined);
       const blob = new Blob([JSON.stringify(res.data.data, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -150,7 +153,7 @@ export default function ChannelPage() {
       } else if (Array.isArray(data)) {
         // 纯通道数组格式
         for (const ch of data) {
-          await createChannel(ch);
+          await createChannel(ch.businessId ? ch : { ...ch, businessId: currentBusinessId ?? undefined });
         }
         message.success(`导入成功，共导入 ${data.length} 个通道`);
       } else {
@@ -222,6 +225,7 @@ export default function ChannelPage() {
       direction: values.direction,
       autoConnect: values.autoConnect || false,
       connectionConfig,
+      ...(!editing && currentBusinessId ? { businessId: currentBusinessId } : {}),
     };
 
     try {
@@ -309,12 +313,18 @@ export default function ChannelPage() {
               }
             }}
           />
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd} disabled={!currentBusinessId}>
             添加通道
           </Button>
         </Space>
       </div>
-      <Table columns={columns} dataSource={channels} rowKey="channelId" loading={loading} />
+      {!currentBusinessId && businessesLoaded ? (
+        <div style={{ textAlign: 'center', padding: 48, color: '#999' }}>
+          暂无可用业务，请先在「业务管理」中创建业务
+        </div>
+      ) : (
+        <Table columns={columns} dataSource={channels} rowKey="channelId" loading={loading} />
+      )}
 
       <Modal
         title={editing ? '编辑通道' : '添加通道'}

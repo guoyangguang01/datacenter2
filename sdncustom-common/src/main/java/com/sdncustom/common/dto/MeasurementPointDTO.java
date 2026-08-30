@@ -15,6 +15,9 @@ public class MeasurementPointDTO {
     @NotBlank(message = "pointId 不能为空")
     private String pointId;
 
+    /** 归属业务：创建时必填（service 层校验），更新时忽略（归属不可变更） */
+    private String businessId;
+
     @NotBlank(message = "pointName 不能为空")
     private String pointName;
 

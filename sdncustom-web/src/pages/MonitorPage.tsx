@@ -10,6 +10,7 @@ import {
 } from '@ant-design/icons';
 import { useChannelStore } from '../stores/channelStore';
 import { usePointStore } from '../stores/pointStore';
+import { useBusinessStore } from '../stores/businessStore';
 import { wsService } from '../services/websocket';
 import type { PointValue, PointQuality, ChannelStatus } from '../types';
 
@@ -32,6 +33,7 @@ interface LogEntry {
 export default function MonitorPage() {
   const { channels, fetchChannels, updateStatus } = useChannelStore();
   const { points, pointValues, fetchPointsForChannels, fetchAllValues, updateValue, error } = usePointStore();
+  const currentBusinessId = useBusinessStore((s) => s.currentBusinessId);
 
   // 从 URL 读取 channelId 参数（仅在通道列表存在该通道时才自动选中）
   const [urlChannelId] = useState(() => new URLSearchParams(window.location.search).get('channelId'));
@@ -57,7 +59,12 @@ export default function MonitorPage() {
 
   useEffect(() => {
     fetchChannels();
-  }, [fetchChannels]);
+  }, [fetchChannels, currentBusinessId]);
+
+  // 切换业务后旧选中通道不再属于当前业务，清空选择（订阅随之取消）
+  useEffect(() => {
+    setSelectedChannels([]);
+  }, [currentBusinessId]);
 
   // URL 注入的 channelId：仅在通道列表中存在时才自动选中，否则忽略
   useEffect(() => {

@@ -1,17 +1,21 @@
 import { create } from 'zustand';
 import type { Channel, ChannelStatus } from '../types';
 import { channelApi } from '../services/api';
+import { useBusinessStore } from './businessStore';
 
 function toErrorMessage(e: unknown, fallback: string): string {
   if (e instanceof Error) return e.message;
   return fallback;
 }
 
+// Monotonic guard: only the most recent fetch commits its results.
+let fetchChannelsSeq = 0;
+
 interface ChannelStore {
   channels: Channel[];
   loading: boolean;
   error: string | null;
-  fetchChannels: () => Promise<void>;
+  fetchChannels: (businessId?: string | null) => Promise<void>;
   createChannel: (data: Partial<Channel>) => Promise<void>;
   updateChannel: (id: string, data: Partial<Channel>) => Promise<void>;
   deleteChannel: (id: string) => Promise<void>;
@@ -25,19 +29,24 @@ export const useChannelStore = create<ChannelStore>((set, get) => ({
   loading: false,
   error: null,
 
-  fetchChannels: async () => {
+  fetchChannels: async (businessId) => {
+    // 缺省按当前业务过滤；业务尚未解析时不加载（页面以 currentBusinessId 为 effect 依赖）
+    const biz = businessId === undefined ? useBusinessStore.getState().currentBusinessId : businessId;
+    if (biz === null) return;
+    const seq = ++fetchChannelsSeq;
     set({ loading: true, error: null });
     try {
-      const res = await channelApi.getAll();
+      const res = await channelApi.getAll(biz);
+      if (seq !== fetchChannelsSeq) return; // 业务已切换，丢弃过期响应
       if (res.data.code !== 200) {
         set({ error: res.data.message || '加载通道失败' });
         return;
       }
       set({ channels: res.data.data });
     } catch (e) {
-      set({ error: toErrorMessage(e, '加载通道失败') });
+      if (seq === fetchChannelsSeq) set({ error: toErrorMessage(e, '加载通道失败') });
     } finally {
-      set({ loading: false });
+      if (seq === fetchChannelsSeq) set({ loading: false });
     }
   },
 

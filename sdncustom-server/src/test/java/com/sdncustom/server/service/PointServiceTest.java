@@ -67,6 +67,9 @@ class PointServiceTest {
     @Mock
     private DistributionService distributionService;
 
+    @Mock
+    private BusinessSystemService businessSystemService;
+
     @InjectMocks
     private PointService pointService;
 
@@ -82,6 +85,7 @@ class PointServiceTest {
 
         testPoint = new MeasurementPoint();
         testPoint.setPointId("test_point_001");
+        testPoint.setBusinessId("default");
         testPoint.setPointName("测试测点");
         testPoint.setChannelId("ch_001");
         testPoint.setAddress("40001");
@@ -91,6 +95,7 @@ class PointServiceTest {
 
         testDto = new MeasurementPointDTO();
         testDto.setPointId("test_point_001");
+        testDto.setBusinessId("default");
         testDto.setPointName("测试测点");
         testDto.setBindings(List.of(binding("ch_001", "40001")));
         testDto.setDataType(PointDataType.INT16);
@@ -162,8 +167,37 @@ class PointServiceTest {
 
         assertNotNull(result);
         assertEquals("test_point_001", result.getPointId());
-        verify(pointRepository).save(any(MeasurementPoint.class));
+        verify(businessSystemService).requireExists("default");
+        ArgumentCaptor<MeasurementPoint> captor = ArgumentCaptor.forClass(MeasurementPoint.class);
+        verify(pointRepository).save(captor.capture());
+        assertEquals("default", captor.getValue().getBusinessId());
         verify(pointSourceService).replaceBindings("test_point_001", testDto.getBindings());
+    }
+
+    @Test
+    @DisplayName("创建测点 - businessId 缺失时拒绝")
+    void createWithoutBusinessRejected() {
+        testDto.setBusinessId(null);
+        doThrow(new com.sdncustom.common.exception.BusinessException(400, "businessId 不能为空"))
+                .when(businessSystemService).requireExists(null);
+
+        assertThrows(com.sdncustom.common.exception.BusinessException.class,
+                () -> pointService.create(testDto));
+        verify(pointRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("更新测点 - businessId 不可变更（绑定校验以现有业务为准）")
+    void updateDoesNotChangeBusinessId() {
+        when(pointRepository.findById("test_point_001")).thenReturn(Optional.of(testPoint));
+        when(pointRepository.save(any(MeasurementPoint.class))).thenReturn(testPoint);
+        when(pointSourceService.viewForBinding(any(), any(), any())).thenReturn(testPoint);
+
+        testDto.setBusinessId("other");
+        pointService.update("test_point_001", testDto);
+
+        assertEquals("default", testPoint.getBusinessId());
+        verify(pointSourceService).validateBindings(testDto.getBindings(), "default");
     }
 
     @Test
@@ -313,7 +347,7 @@ class PointServiceTest {
 
         MeasurementPoint result = pointService.addBinding("test_point_001", "ch_002", "reg2");
 
-        verify(pointSourceService).addBinding("test_point_001", "ch_002", "reg2");
+        verify(pointSourceService).addBinding("test_point_001", "ch_002", "reg2", "default");
         verify(adapter).onConnected(anyList());
         verify(pointBindingRegistry).invalidate("test_point_001");
         verify(changeGate).syncPointBindings(eq("test_point_001"), anySet());

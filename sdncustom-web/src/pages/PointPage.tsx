@@ -3,6 +3,7 @@ import { Table, Button, Modal, Form, Input, InputNumber, Select, Switch, Space, 
 import { PlusOutlined, EditOutlined, DeleteOutlined, DownloadOutlined, UploadOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import { usePointStore } from '../stores/pointStore';
 import { useChannelStore } from '../stores/channelStore';
+import { useBusinessStore } from '../stores/businessStore';
 import { pointApi } from '../services/api';
 import type { MeasurementPoint } from '../types';
 
@@ -18,6 +19,8 @@ const dataTypeOptions = [
 export default function PointPage() {
   const { points, loading, error, fetchPoints, createPoint, updatePoint, deletePoint, importPoints } = usePointStore();
   const { channels, fetchChannels } = useChannelStore();
+  const currentBusinessId = useBusinessStore((s) => s.currentBusinessId);
+  const businessesLoaded = useBusinessStore((s) => s.businesses.length > 0);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<MeasurementPoint | null>(null);
   const [filterChannel, setFilterChannel] = useState<string | undefined>();
@@ -29,12 +32,12 @@ export default function PointPage() {
 
   useEffect(() => {
     fetchChannels();
-  }, [fetchChannels]);
+  }, [fetchChannels, currentBusinessId]);
 
-  // 挂载时按当前筛选（默认全部）加载测点；筛选变化时重新加载
+  // 挂载时按当前筛选（默认全部）加载测点；筛选或业务变化时重新加载
   useEffect(() => {
     fetchPoints(filterChannel);
-  }, [filterChannel, fetchPoints]);
+  }, [filterChannel, fetchPoints, currentBusinessId]);
 
   // 展示 store 中的错误信息
   useEffect(() => {
@@ -47,7 +50,7 @@ export default function PointPage() {
     form.resetFields();
     form.setFieldsValue({ channelId: filterChannel, writable: false });
     try {
-      const res = await pointApi.getAll();
+      const res = await pointApi.getAll(undefined, currentBusinessId ?? undefined);
       setAllPoints(res.data.data ?? []);
     } catch {
       setAllPoints([]);
@@ -101,8 +104,12 @@ export default function PointPage() {
   const handleImport = async (file: File) => {
     try {
       const text = await file.text();
-      const data = JSON.parse(text);
-      const count = await importPoints(Array.isArray(data) ? data : [data]);
+      const parsed = JSON.parse(text);
+      const raw: Partial<MeasurementPoint>[] = Array.isArray(parsed) ? parsed : [parsed];
+      const data = raw.map((p) =>
+        p.businessId ? p : { ...p, businessId: currentBusinessId ?? undefined }
+      );
+      const count = await importPoints(data);
       message.success(`导入成功，共导入 ${count} 个测点`);
     } catch {
       if (!usePointStore.getState().error) {
@@ -136,6 +143,7 @@ export default function PointPage() {
       } else {
         await createPoint({
           pointId: values.pointId,
+          businessId: currentBusinessId ?? undefined,
           pointName: values.pointName,
           dataType: values.dataType,
           unit: values.unit,
@@ -223,12 +231,18 @@ export default function PointPage() {
               }
             }}
           />
-          <Button type="primary" icon={<PlusOutlined />} onClick={showCreateModal}>
+          <Button type="primary" icon={<PlusOutlined />} onClick={showCreateModal} disabled={!currentBusinessId}>
             添加测点
           </Button>
         </Space>
       </div>
-      <Table columns={columns} dataSource={points} rowKey="pointId" loading={loading} />
+      {!currentBusinessId && businessesLoaded ? (
+        <div style={{ textAlign: 'center', padding: 48, color: '#999' }}>
+          暂无可用业务，请先在「业务管理」中创建业务
+        </div>
+      ) : (
+        <Table columns={columns} dataSource={points} rowKey="pointId" loading={loading} />
+      )}
 
       <Modal
         title={editing ? '编辑测点' : '添加测点'}

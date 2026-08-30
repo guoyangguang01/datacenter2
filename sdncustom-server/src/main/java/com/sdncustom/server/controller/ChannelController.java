@@ -1,6 +1,7 @@
 package com.sdncustom.server.controller;
 
 import com.sdncustom.common.dto.ApiResponse;
+import com.sdncustom.common.dto.BusinessSystemDTO;
 import com.sdncustom.common.dto.ChannelDTO;
 import com.sdncustom.common.dto.MeasurementPointDTO;
 import com.sdncustom.common.dto.PointSourceDTO;
@@ -10,7 +11,9 @@ import com.sdncustom.common.model.MeasurementPoint;
 import com.sdncustom.common.model.enums.ChannelDirection;
 import com.sdncustom.common.model.enums.PointDataType;
 import com.sdncustom.common.model.enums.ProtocolType;
+import com.sdncustom.server.config.BusinessSystemMigration;
 import com.sdncustom.server.security.CredentialRedactor;
+import com.sdncustom.server.service.BusinessSystemService;
 import com.sdncustom.server.service.ChannelService;
 import com.sdncustom.server.service.PointService;
 import jakarta.validation.Valid;
@@ -32,9 +35,13 @@ public class ChannelController {
     private final ChannelService channelService;
     private final PointService pointService;
     private final CredentialRedactor credentialRedactor;
+    private final BusinessSystemService businessSystemService;
 
     @GetMapping
-    public ApiResponse<List<Channel>> findAll() {
+    public ApiResponse<List<Channel>> findAll(@RequestParam(required = false) String businessId) {
+        if (businessId != null) {
+            return ApiResponse.success(channelService.findByBusinessId(businessId));
+        }
         return ApiResponse.success(channelService.findAll());
     }
 
@@ -75,7 +82,7 @@ public class ChannelController {
     }
 
     /**
-     * 导出所有通道和测点（通道凭据脱敏）
+     * 导出所有业务、通道和测点（通道凭据脱敏）
      */
     @GetMapping("/export")
     public Map<String, Object> exportAll() {
@@ -88,16 +95,18 @@ public class ChannelController {
                 })
                 .toList();
         Map<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put("businesses", businessSystemService.findAll());
         result.put("channels", channels);
         result.put("points", pointService.findAll());
         return result;
     }
 
     /**
-     * 导入通道和测点（组合格式）
+     * 导入业务、通道和测点（组合格式）
      * 支持两种格式：
-     * 1. {"channels": [...], "points": [...]} — 同时导入通道和测点
+     * 1. {"businesses": [...], "channels": [...], "points": [...]} — 完整导出格式
      * 2. 通道数组 [ChannelDTO, ...] — 仅导入通道
+     * 旧格式（无 businesses 段/无 businessId 字段）的数据统一落默认业务。
      */
     @SuppressWarnings("unchecked")
     @PostMapping("/import")
@@ -105,6 +114,20 @@ public class ChannelController {
         log.info("User {} importing channels/points", authentication.getName());
         int channelCount = 0;
         int pointCount = 0;
+
+        // 先导入业务（通道/测点创建时校验业务存在）
+        if (data.containsKey("businesses")) {
+            Object businessesObj = data.get("businesses");
+            if (!(businessesObj instanceof List)) {
+                throw new BusinessException(400, "'businesses' 必须是数组");
+            }
+            for (Object item : (List<Object>) businessesObj) {
+                if (!(item instanceof Map)) {
+                    throw new BusinessException(400, "业务项必须是对象");
+                }
+                upsertBusiness((Map<String, Object>) item);
+            }
+        }
 
         // 导入通道
         if (data.containsKey("channels")) {
@@ -119,6 +142,7 @@ public class ChannelController {
                 }
                 ChannelDTO dto = new ChannelDTO();
                 dto.setChannelId(requireString(ch, "channelId"));
+                dto.setBusinessId(resolveBusinessId(ch));
                 dto.setChannelName(requireString(ch, "channelName"));
                 dto.setProtocolType(parseEnum(ProtocolType.class, ch.get("protocolType"), "protocolType"));
                 dto.setDirection(parseEnum(ChannelDirection.class, ch.get("direction"), "direction"));
@@ -129,6 +153,7 @@ public class ChannelController {
                 if (existing != null) {
                     channelService.update(dto.getChannelId(), dto);
                 } else {
+                    businessSystemService.ensureExistsForImport(dto.getBusinessId());
                     channelService.create(dto);
                 }
                 channelCount++;
@@ -149,12 +174,14 @@ public class ChannelController {
                 }
                 MeasurementPointDTO dto = new MeasurementPointDTO();
                 dto.setPointId(requireString(pt, "pointId"));
+                dto.setBusinessId(resolveBusinessId(pt));
                 dto.setPointName(requireString(pt, "pointName"));
                 dto.setDataType(parseEnum(PointDataType.class, pt.get("dataType"), "dataType"));
                 dto.setUnit(optionalString(pt, "unit"));
                 dto.setWritable(optionalBoolean(pt, "writable", false));
                 dto.setDeadband(optionalDouble(pt, "deadband", null));
                 dto.setBindings(parseBindings(pt));
+                businessSystemService.ensureExistsForImport(dto.getBusinessId());
                 dtos.add(dto);
             }
             pointService.importPoints(dtos);
@@ -165,6 +192,26 @@ public class ChannelController {
         result.put("channelCount", channelCount);
         result.put("pointCount", pointCount);
         return result;
+    }
+
+    /** 解析业务归属：缺失或空时落默认业务（兼容旧格式导出） */
+    private String resolveBusinessId(Map<String, Object> item) {
+        String businessId = optionalString(item, "businessId");
+        return businessId == null || businessId.isBlank() ? BusinessSystemMigration.DEFAULT_BUSINESS_ID : businessId;
+    }
+
+    /** upsert 导出文件中的业务项 */
+    private void upsertBusiness(Map<String, Object> b) {
+        BusinessSystemDTO dto = new BusinessSystemDTO();
+        dto.setBusinessId(requireString(b, "businessId"));
+        String name = optionalString(b, "businessName");
+        dto.setBusinessName(name == null || name.isBlank() ? dto.getBusinessId() : name);
+        dto.setDescription(optionalString(b, "description"));
+        if (businessSystemService.exists(dto.getBusinessId())) {
+            businessSystemService.update(dto.getBusinessId(), dto);
+        } else {
+            businessSystemService.create(dto);
+        }
     }
 
     private String requireString(Map<String, Object> map, String key) {

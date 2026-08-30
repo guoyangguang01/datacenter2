@@ -3,6 +3,7 @@ import { Table, Select, Space, Tag, Button, Card, Col, Row, Statistic, message }
 import { ReloadOutlined } from '@ant-design/icons';
 import { useChannelStore } from '../stores/channelStore';
 import { usePointStore } from '../stores/pointStore';
+import { useBusinessStore } from '../stores/businessStore';
 import { wsService } from '../services/websocket';
 import { systemApi } from '../services/api';
 import type { PointValue, PointQuality, SystemStatus } from '../types';
@@ -17,12 +18,18 @@ const qualityColors: Record<PointQuality, string> = {
 export default function DashboardPage() {
   const { channels, fetchChannels } = useChannelStore();
   const { points, pointValues, fetchPoints, fetchAllValues, updateValue, error } = usePointStore();
+  const currentBusinessId = useBusinessStore((s) => s.currentBusinessId);
   const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
   const [status, setStatus] = useState<SystemStatus | null>(null);
 
   useEffect(() => {
     fetchChannels();
-  }, [fetchChannels]);
+  }, [fetchChannels, currentBusinessId]);
+
+  // 切换业务后旧筛选通道不再属于当前业务
+  useEffect(() => {
+    setSelectedChannels([]);
+  }, [currentBusinessId]);
 
   useEffect(() => {
     let alive = true;
@@ -41,10 +48,10 @@ export default function DashboardPage() {
     };
   }, []);
 
-  // 仪表盘显示全部数据：挂载即加载全部测点
+  // 仪表盘显示当前业务全部数据：挂载/切换业务即加载该业务全部测点
   useEffect(() => {
     fetchPoints();
-  }, [fetchPoints]);
+  }, [fetchPoints, currentBusinessId]);
 
   useEffect(() => {
     if (points.length > 0) {
