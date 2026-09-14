@@ -1,8 +1,9 @@
 package com.sdncustom.server.controller;
 
+import com.sdncustom.common.dto.MeasurementPointDTO;
 import com.sdncustom.common.dto.PointSourceDTO;
 import com.sdncustom.common.exception.BusinessException;
-import com.sdncustom.server.config.BusinessSystemMigration;
+import com.sdncustom.common.model.enums.PointDataType;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -70,41 +71,26 @@ final class ImportFields {
         }
     }
 
-    /** 业务归属：缺失或空时落默认业务 */
-    static String resolveBusinessId(Map<String, Object> item) {
-        String businessId = optionalString(item, "businessId");
-        return businessId == null || businessId.isBlank()
-                ? BusinessSystemMigration.DEFAULT_BUSINESS_ID
-                : businessId;
+    /**
+     * 解析单个测点对象。businessId 必填——不再回退默认业务。
+     */
+    static MeasurementPointDTO parsePoint(Map<String, Object> pt) {
+        MeasurementPointDTO dto = new MeasurementPointDTO();
+        dto.setPointId(requireString(pt, "pointId"));
+        dto.setBusinessId(requireString(pt, "businessId"));
+        dto.setPointName(requireString(pt, "pointName"));
+        dto.setDataType(parseEnum(PointDataType.class, pt.get("dataType"), "dataType"));
+        dto.setUnit(optionalString(pt, "unit"));
+        dto.setWritable(optionalBoolean(pt, "writable", false));
+        dto.setDeadband(optionalDouble(pt, "deadband", null));
+        dto.setBindings(parseBindings(pt));
+        return dto;
     }
 
-    /**
-     * 测点绑定：新格式 bindings=[{channelId,address},...]；
-     * 兼容旧格式（channelId+address，可含 additionalSources）合成 bindings。
-     */
+    /** 测点绑定：只接受 bindings=[{channelId,address},...] */
     static List<PointSourceDTO> parseBindings(Map<String, Object> pt) {
-        List<PointSourceDTO> bindings = new ArrayList<>();
-        if (pt.containsKey("bindings")) {
-            List<PointSourceDTO> parsed = parseBindingList(pt.get("bindings"));
-            if (parsed != null) {
-                bindings.addAll(parsed);
-            }
-            if (bindings.isEmpty()) {
-                throw new BusinessException(400, "bindings 不能为空");
-            }
-            return bindings;
-        }
-        if (pt.containsKey("channelId")) {
-            PointSourceDTO main = new PointSourceDTO();
-            main.setChannelId(requireString(pt, "channelId"));
-            main.setAddress(requireString(pt, "address"));
-            bindings.add(main);
-            List<PointSourceDTO> extra = parseBindingList(pt.get("additionalSources"));
-            if (extra != null) {
-                bindings.addAll(extra);
-            }
-        }
-        if (bindings.isEmpty()) {
+        List<PointSourceDTO> bindings = parseBindingList(pt.get("bindings"));
+        if (bindings == null || bindings.isEmpty()) {
             throw new BusinessException(400, "测点缺少绑定");
         }
         return bindings;

@@ -123,7 +123,7 @@ public class ChannelController {
     private ChannelDTO parseChannel(Map<String, Object> ch) {
         ChannelDTO dto = new ChannelDTO();
         dto.setChannelId(ImportFields.requireString(ch, "channelId"));
-        dto.setBusinessId(ImportFields.resolveBusinessId(ch));
+        dto.setBusinessId(ImportFields.requireString(ch, "businessId"));
         dto.setChannelName(ImportFields.requireString(ch, "channelName"));
         dto.setProtocolType(ImportFields.parseEnum(ProtocolType.class, ch.get("protocolType"), "protocolType"));
         dto.setDirection(ImportFields.parseEnum(ChannelDirection.class, ch.get("direction"), "direction"));

@@ -4,7 +4,6 @@ import com.sdncustom.common.dto.ApiResponse;
 import com.sdncustom.common.dto.BusinessSystemDTO;
 import com.sdncustom.common.dto.MeasurementPointDTO;
 import com.sdncustom.common.exception.BusinessException;
-import com.sdncustom.common.model.enums.PointDataType;
 import com.sdncustom.server.service.BusinessSystemService;
 import com.sdncustom.server.service.DataTransferService;
 import com.sdncustom.server.service.PointService;
@@ -108,16 +107,7 @@ public class DataTransferController {
                 throw new BusinessException(400, "测点项必须是对象");
             }
             Map<String, Object> pt = (Map<String, Object>) item;
-            MeasurementPointDTO dto = new MeasurementPointDTO();
-            dto.setPointId(ImportFields.requireString(pt, "pointId"));
-            dto.setBusinessId(ImportFields.resolveBusinessId(pt));
-            dto.setPointName(ImportFields.requireString(pt, "pointName"));
-            dto.setDataType(ImportFields.parseEnum(PointDataType.class, pt.get("dataType"), "dataType"));
-            dto.setUnit(ImportFields.optionalString(pt, "unit"));
-            dto.setWritable(ImportFields.optionalBoolean(pt, "writable", false));
-            dto.setDeadband(ImportFields.optionalDouble(pt, "deadband", null));
-            dto.setBindings(ImportFields.parseBindings(pt));
-            dtos.add(dto);
+            dtos.add(ImportFields.parsePoint(pt));
         }
         return dtos;
     }

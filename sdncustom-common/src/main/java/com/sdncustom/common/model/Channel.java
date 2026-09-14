@@ -25,7 +25,7 @@ public class Channel {
     @Column(name = "channel_id", length = 64)
     private String channelId;
 
-    /** 归属业务；实体层声明可空以便 Hibernate 对存量表安全加列，非空约束由 BusinessSystemMigration 收紧 */
+    /** 归属业务；业务约束由服务层校验（BusinessSystemService.requireExists），DB 层不加非空约束 */
     @Column(name = "business_id", length = 64)
     private String businessId;
 
