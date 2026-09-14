@@ -33,6 +33,7 @@ const ENUMS = [
   { java: `${COMMON}/model/enums/ChannelStatus.java`, ts: 'ChannelStatus' },
   { java: `${COMMON}/model/enums/PointDataType.java`, ts: 'PointDataType' },
   { java: `${COMMON}/model/enums/PointQuality.java`, ts: 'PointQuality' },
+  { java: `${COMMON}/model/enums/PointDirection.java`, ts: 'PointDirection' },
 ];
 
 const read = (rel) => readFileSync(resolve(repoRoot, rel), 'utf8');
