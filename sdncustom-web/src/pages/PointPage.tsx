@@ -5,7 +5,7 @@ import { usePointStore } from '../stores/pointStore';
 import { useChannelStore } from '../stores/channelStore';
 import { useBusinessStore } from '../stores/businessStore';
 import { pointApi } from '../services/api';
-import type { DataExportPayload, MeasurementPoint } from '../types';
+import type { DataExportPayload, MeasurementPoint, PointDirection } from '../types';
 
 const dataTypeOptions = [
   { label: 'BOOL', value: 'BOOL' },
@@ -24,11 +24,13 @@ export default function PointPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<MeasurementPoint | null>(null);
   const [filterChannel, setFilterChannel] = useState<string | undefined>();
+  const [filterDirection, setFilterDirection] = useState<PointDirection | undefined>();
   const [linkPointId, setLinkPointId] = useState<string | undefined>();
   const [allPoints, setAllPoints] = useState<MeasurementPoint[]>([]);
   const [form] = Form.useForm();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mainChannelId = Form.useWatch('channelId', form);
+  const watchedDirection = Form.useWatch('direction', form);
 
   useEffect(() => {
     fetchChannels();
@@ -36,8 +38,8 @@ export default function PointPage() {
 
   // 挂载时按当前筛选（默认全部）加载测点；筛选或业务变化时重新加载
   useEffect(() => {
-    fetchPoints(filterChannel);
-  }, [filterChannel, fetchPoints, currentBusinessId]);
+    fetchPoints(filterChannel, undefined, filterDirection);
+  }, [filterChannel, filterDirection, fetchPoints, currentBusinessId]);
 
   // 展示 store 中的错误信息；弹出后立即清空，否则重新进入本页会重复弹同一条
   useEffect(() => {
@@ -134,7 +136,6 @@ export default function PointPage() {
           dataType: values.dataType,
           unit: values.unit,
           deadband: values.deadband,
-          direction: values.direction,
           bindings,
         });
         message.success('已更新');
@@ -151,6 +152,7 @@ export default function PointPage() {
           unit: values.unit,
           deadband: values.deadband,
           direction: values.direction,
+          referencePointId: values.direction === 'INPUT' ? values.referencePointId : undefined,
           bindings: [{ channelId: values.channelId, address: values.address }],
         });
         message.success('已创建');
@@ -167,6 +169,15 @@ export default function PointPage() {
     .filter((p) => p.pointId !== editing?.pointId)
     .filter((p) => !(p.bindings ?? []).some((x) => x.channelId === mainChannelId))
     .map((p) => ({ label: `${p.pointName} (${p.pointId})`, value: p.pointId }));
+
+  // 输入测点只能引用「绑定到所选通道」的输出测点
+  const referenceOptions = allPoints
+    .filter((p) => p.direction === 'OUTPUT')
+    .filter((p) => (p.bindings ?? []).some((b) => b.channelId === mainChannelId))
+    .map((p) => ({
+      label: `${p.pointName} (${p.pointId}) · ${p.dataType}`,
+      value: p.pointId,
+    }));
 
   // 创建 + 已选关联 → 不新建测点，隐藏元数据字段
   const showMetadata = editing ? true : !linkPointId;
@@ -220,6 +231,16 @@ export default function PointPage() {
             onChange={(v) => setFilterChannel(v)}
             options={channels.map((c) => ({ label: c.channelName, value: c.channelId }))}
           />
+          <Select
+            placeholder="按方向筛选"
+            allowClear
+            style={{ width: 160 }}
+            onChange={(v) => setFilterDirection(v)}
+            options={[
+              { label: '输入测点', value: 'INPUT' },
+              { label: '输出测点', value: 'OUTPUT' },
+            ]}
+          />
         </Space>
         <Space>
           <Button icon={<DownloadOutlined />} onClick={handleExport}>
@@ -271,12 +292,34 @@ export default function PointPage() {
               ]}
             />
           </Form.Item>
+          {editing && editing.direction === 'INPUT' && (
+            <div style={{ marginBottom: 16, color: '#8c8c8c' }}>
+              输入测点，引用自 <b>{allPoints.find((p) => p.pointId === editing.referencePointId)?.pointName ?? editing.referencePointId}</b>（创建后不可变更）
+            </div>
+          )}
           <Form.Item name="channelId" label="所属通道" rules={[{ required: true }]}>
             <Select options={channels.map((c) => ({ label: c.channelName, value: c.channelId }))} />
           </Form.Item>
           <Form.Item name="address" label="地址" rules={[{ required: true }]}>
             <Input placeholder="例如 40001 或 sensors/temp01" />
           </Form.Item>
+
+          {watchedDirection === 'INPUT' && !editing && (
+            <Form.Item
+              name="referencePointId"
+              label="引用的输出测点"
+              tooltip="仅列出绑定到你上面所选通道的输出测点"
+              rules={[{ required: true, message: '请选择引用的输出测点' }]}
+            >
+              <Select
+                disabled={!mainChannelId}
+                placeholder={mainChannelId ? '选择输出测点' : '请先选择所属通道'}
+                showSearch
+                optionFilterProp="label"
+                options={referenceOptions}
+              />
+            </Form.Item>
+          )}
 
           {!editing && (
             <Form.Item name="linkPointId" label="关联既有测点（可选）" tooltip="选中后不新建测点，把上面的通道:地址作为绑定附加到该测点">
