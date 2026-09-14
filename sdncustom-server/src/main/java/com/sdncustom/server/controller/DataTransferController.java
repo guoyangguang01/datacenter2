@@ -2,7 +2,6 @@ package com.sdncustom.server.controller;
 
 import com.sdncustom.common.dto.ApiResponse;
 import com.sdncustom.common.dto.BusinessSystemDTO;
-import com.sdncustom.common.dto.MeasurementPointDTO;
 import com.sdncustom.common.exception.BusinessException;
 import com.sdncustom.server.service.BusinessSystemService;
 import com.sdncustom.server.service.DataTransferService;
@@ -59,8 +58,9 @@ public class DataTransferController {
             throw new BusinessException(400, "缺少 'points'，或不含 'businesses' 的 payload");
         }
 
+        ImportFields.ParseResult parsed = parsePoints(data);
         DataTransferService.ImportResult result =
-                dataTransferService.importData(parseBusinesses(data), parsePoints(data));
+                dataTransferService.importData(parseBusinesses(data), parsed.points(), parsed.problems());
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("businessCount", result.businessCount());
@@ -92,23 +92,15 @@ public class DataTransferController {
         return dtos;
     }
 
-    @SuppressWarnings("unchecked")
-    private List<MeasurementPointDTO> parsePoints(Map<String, Object> data) {
+    private ImportFields.ParseResult parsePoints(Map<String, Object> data) {
         Object raw = data.get("points");
         if (raw == null) {
-            return List.of();
+            return new ImportFields.ParseResult(List.of(), List.of());
         }
         if (!(raw instanceof List)) {
             throw new BusinessException(400, "'points' 必须是数组");
         }
-        List<MeasurementPointDTO> dtos = new ArrayList<>();
-        for (Object item : (List<Object>) raw) {
-            if (!(item instanceof Map)) {
-                throw new BusinessException(400, "测点项必须是对象");
-            }
-            Map<String, Object> pt = (Map<String, Object>) item;
-            dtos.add(ImportFields.parsePoint(pt));
-        }
-        return dtos;
+        // 逐条累积问题交给 DataTransferService 汇总：一次列出文件里所有不合格的测点
+        return ImportFields.parsePoints((List<?>) raw);
     }
 }

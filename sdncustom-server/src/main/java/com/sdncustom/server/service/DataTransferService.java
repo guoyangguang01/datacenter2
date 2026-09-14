@@ -41,8 +41,19 @@ public class DataTransferService {
 
     @Transactional
     public ImportResult importData(List<BusinessSystemDTO> businesses, List<MeasurementPointDTO> points) {
+        return importData(businesses, points, List.of());
+    }
+
+    /**
+     * @param parseProblems 解析层累积的问题（HTTP 路径的 {@code ImportFields.parsePoints} 产生：
+     *                      该层的裸 Map 没有 bean validation，缺失/非法的 direction 等在那里被判出）。
+     *                      在这里与引用问题合并成**一条**报错——用户一次就能看到文件里所有不合格的测点。
+     */
+    @Transactional
+    public ImportResult importData(List<BusinessSystemDTO> businesses, List<MeasurementPointDTO> points,
+                                   List<String> parseProblems) {
         validateChannelsExist(points);
-        validateReferencesExist(points);
+        validateReferencesExist(points, parseProblems);
 
         for (BusinessSystemDTO dto : businesses) {
             upsertBusiness(dto);
@@ -83,13 +94,17 @@ public class DataTransferService {
      *
      * <p>之所以不复用 {@link PointDirectionValidator}：那个校验的是「单个测点对库」，
      * 而导入的 INPUT 可以合法引用同一份文件里、尚未落库的 OUTPUT。
+     *
+     * <p>{@code parseProblems} 是解析层攒下的问题（如 direction 缺失/非法，见
+     * {@code ImportFields.parsePoints}）。它们与本层的问题**合并成一条**报错：这条路径上
+     * 报错是用户唯一能看到的反馈，分两次抛会让他修完一条再撞见下一条。
      */
-    private void validateReferencesExist(List<MeasurementPointDTO> points) {
+    private void validateReferencesExist(List<MeasurementPointDTO> points, List<String> parseProblems) {
         Set<String> inPayload = new HashSet<>();
         for (MeasurementPointDTO dto : points) {
             inPayload.add(dto.getPointId());
         }
-        List<String> problems = new ArrayList<>();
+        List<String> problems = new ArrayList<>(parseProblems);
         for (MeasurementPointDTO dto : points) {
             String who = describe(dto);
             if (dto.getDirection() == null) {
@@ -132,7 +147,7 @@ public class DataTransferService {
             }
         }
         if (!problems.isEmpty()) {
-            throw new BusinessException(400, "导入失败：测点引用不合法 - " + String.join("；", problems));
+            throw new BusinessException(400, "导入失败：以下测点不合格 - " + String.join("；", problems));
         }
     }
 

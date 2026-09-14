@@ -16,6 +16,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -25,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -61,8 +63,22 @@ class InputPointPropagatorTest {
         inputPoint.setDirection(PointDirection.INPUT);
         inputPoint.setReferencePointId("out_1");
         inputPoint.setDataType(PointDataType.FLOAT32);
-        // 测试把 inputPoint 本身当作 allBindingViews 返回的绑定视图，视图的 channelId 即绑定通道
-        inputPoint.setChannelId("ch_dst");
+        // 刻意不给实体设 channelId/address：它们是 @Transient 视图字段，持久化实体上恒为空
+        // （见 MeasurementPoint 的字段注释）。生产路径写入的是 allBindingViews 合成的**另一个对象**。
+    }
+
+    /**
+     * 绑定视图。与实体是**不同的对象**，携带该绑定的 channelId/address——写出去的是它。
+     * 若实现误把实体当视图写，写到的地址就是 null，而这里断言的身份与地址会立刻暴露。
+     */
+    private MeasurementPoint bindingView() {
+        MeasurementPoint view = new MeasurementPoint();
+        view.setPointId("in_1");
+        view.setChannelId("ch_dst");
+        view.setAddress("reg_dst");
+        view.setDataType(PointDataType.FLOAT32);
+        view.setDirection(PointDirection.INPUT);
+        return view;
     }
 
     private PointValue outputChange(Object v) {
@@ -97,8 +113,9 @@ class InputPointPropagatorTest {
     @Test
     @DisplayName("单个输入测点：写出并返回复制自输出测点的值")
     void propagatesSingleInputPoint() {
+        MeasurementPoint view = bindingView();
         when(pointRepository.findByReferencePointIdIn(List.of("out_1"))).thenReturn(List.of(inputPoint));
-        when(pointSourceService.allBindingViews(inputPoint)).thenReturn(List.of(inputPoint));
+        when(pointSourceService.allBindingViews(inputPoint)).thenReturn(List.of(view));
         Channel ch = connectedChannel("ch_dst");
         when(channelService.findByIdOrNull("ch_dst")).thenReturn(ch);
         ProtocolAdapter adapter = mock(ProtocolAdapter.class);
@@ -113,7 +130,11 @@ class InputPointPropagatorTest {
         assertEquals(PointQuality.GOOD, pv.getQuality());
         assertEquals("ch_dst", pv.getSourceChannelId());
         assertEquals(1700000000000L, pv.getTimestamp(), "时间戳应沿用输出测点");
-        verify(adapter).writePoint(inputPoint, 25.0);
+        // 写的必须是绑定视图，且地址原样带到适配器（把实体当视图写 = 写到 null 地址）
+        ArgumentCaptor<MeasurementPoint> written = ArgumentCaptor.forClass(MeasurementPoint.class);
+        verify(adapter).writePoint(written.capture(), eq(25.0));
+        assertSame(view, written.getValue());
+        assertEquals("reg_dst", written.getValue().getAddress());
         assertEquals(1.0, meterRegistry.get("sdncustom.propagation.writes")
                 .tag("channel", "ch_dst").counter().count());
     }
@@ -143,7 +164,7 @@ class InputPointPropagatorTest {
     @DisplayName("绑定通道未连接：跳过写出但仍返回值")
     void writesSkippedButValueReturned() {
         when(pointRepository.findByReferencePointIdIn(List.of("out_1"))).thenReturn(List.of(inputPoint));
-        when(pointSourceService.allBindingViews(inputPoint)).thenReturn(List.of(inputPoint));
+        when(pointSourceService.allBindingViews(inputPoint)).thenReturn(List.of(bindingView()));
         Channel ch = connectedChannel("ch_dst");
         ch.setStatus(ChannelStatus.DISCONNECTED);
         when(channelService.findByIdOrNull("ch_dst")).thenReturn(ch);
@@ -161,7 +182,7 @@ class InputPointPropagatorTest {
     @DisplayName("只读通道：跳过写出但仍返回值")
     void readOnlyChannelSkipped() {
         when(pointRepository.findByReferencePointIdIn(List.of("out_1"))).thenReturn(List.of(inputPoint));
-        when(pointSourceService.allBindingViews(inputPoint)).thenReturn(List.of(inputPoint));
+        when(pointSourceService.allBindingViews(inputPoint)).thenReturn(List.of(bindingView()));
         Channel ch = connectedChannel("ch_dst");
         ch.setDirection(ChannelDirection.READ_ONLY);
         when(channelService.findByIdOrNull("ch_dst")).thenReturn(ch);
@@ -177,7 +198,7 @@ class InputPointPropagatorTest {
     @DisplayName("写出抛异常：不向上抛，仍返回值且失败计数 +1")
     void writeFailureIsContained() {
         when(pointRepository.findByReferencePointIdIn(List.of("out_1"))).thenReturn(List.of(inputPoint));
-        when(pointSourceService.allBindingViews(inputPoint)).thenReturn(List.of(inputPoint));
+        when(pointSourceService.allBindingViews(inputPoint)).thenReturn(List.of(bindingView()));
         Channel ch = connectedChannel("ch_dst");
         when(channelService.findByIdOrNull("ch_dst")).thenReturn(ch);
         ProtocolAdapter adapter = mock(ProtocolAdapter.class);

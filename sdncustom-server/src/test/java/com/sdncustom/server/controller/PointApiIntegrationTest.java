@@ -11,6 +11,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -92,6 +93,36 @@ class PointApiIntegrationTest {
                 .andExpect(jsonPath("$.data.unit").value("C"))
                 // 方向未被编辑请求清空：DTO 里没有它 = 保持原值
                 .andExpect(jsonPath("$.data.direction").value("OUTPUT"));
+    }
+
+    /**
+     * I6：导入文件里有多条方向不合格的测点时，报错必须一次点名每一条，而不是在第一条上抛
+     * 「缺少必填字段: direction」——既点不出是哪条记录，也看不到文件里其它的问题。
+     * 走的是真实 HTTP 路径：controller 解析裸 Map，DTO 的 bean validation 在这条路上不生效。
+     */
+    @Test
+    @DisplayName("导入：方向不合格的测点一次报全并逐条点名")
+    void importReportsEveryBadDirectionInOneMessage() throws Exception {
+        String auth = bearer();
+
+        String payload = "{\"points\":["
+                + "{\"pointId\":\"no_dir\",\"businessId\":\"biz_x\",\"pointName\":\"无方向\","
+                + "\"dataType\":\"FLOAT32\",\"bindings\":[{\"channelId\":\"ch_x\",\"address\":\"a\"}]},"
+                + "{\"pointId\":\"bad_dir\",\"businessId\":\"biz_x\",\"pointName\":\"方向非法\","
+                + "\"dataType\":\"FLOAT32\",\"direction\":\"SIDEWAYS\","
+                + "\"bindings\":[{\"channelId\":\"ch_x\",\"address\":\"b\"}]}"
+                + "]}";
+
+        mockMvc.perform(post("/api/data/import")
+                        .header("Authorization", auth)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(400))
+                // 两条都必须被点名，且各自带上原因
+                .andExpect(jsonPath("$.message").value(containsString("no_dir")))
+                .andExpect(jsonPath("$.message").value(containsString("bad_dir")))
+                .andExpect(jsonPath("$.message").value(containsString("SIDEWAYS")));
     }
 
 }

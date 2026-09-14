@@ -6,6 +6,7 @@ import com.sdncustom.common.model.Channel;
 import com.sdncustom.common.model.MeasurementPoint;
 import com.sdncustom.common.model.PointSource;
 import com.sdncustom.common.model.enums.PointDataType;
+import com.sdncustom.common.model.enums.PointDirection;
 import com.sdncustom.server.repository.ChannelRepository;
 import com.sdncustom.server.repository.MeasurementPointRepository;
 import com.sdncustom.server.repository.PointSourceRepository;
@@ -75,6 +76,31 @@ class PointSourceServiceTest {
         assertEquals("p1", result.get(0).getPointId());
         assertEquals("ch_b", result.get(0).getChannelId());
         assertEquals("addr_b", result.get(0).getAddress());
+    }
+
+    /**
+     * 全平台采集都压在这两行上：极性写反（返回 INPUT）或 viewForBinding 漏拷 direction，
+     * 采集就整体停下，而两者的失败模式都是"没有数据"而不是报错——必须有真实行的钉子。
+     */
+    @Test
+    @DisplayName("findOutputPointsForChannel：同一通道同时绑定 OUTPUT 与 INPUT 时只返回 OUTPUT，且视图带方向")
+    void findOutputPointsForChannelKeepsOnlyOutputWithDirection() {
+        MeasurementPoint output = point("out_1");
+        output.setDirection(PointDirection.OUTPUT);
+        MeasurementPoint input = point("in_1");
+        input.setDirection(PointDirection.INPUT);
+        when(pointSourceRepository.findByChannelId("ch_b"))
+                .thenReturn(List.of(source("out_1", "ch_b", "a_out"), source("in_1", "ch_b", "a_in")));
+        when(pointRepository.findAllById(List.of("out_1", "in_1"))).thenReturn(List.of(output, input));
+
+        // 不分方向的路径两者都命中——差别只在下游的过滤，这正是要钉住的地方
+        assertEquals(2, pointSourceService.findPointsForChannel("ch_b").size());
+
+        List<MeasurementPoint> result = pointSourceService.findOutputPointsForChannel("ch_b");
+
+        assertEquals(List.of("out_1"), result.stream().map(MeasurementPoint::getPointId).toList());
+        assertEquals(PointDirection.OUTPUT, result.get(0).getDirection());
+        assertEquals("a_out", result.get(0).getAddress());
     }
 
     @Test

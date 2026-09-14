@@ -15,7 +15,8 @@ import java.util.Map;
  * 各自复制了一份同名实现，收敛到此处。
  *
  * 绑定通道的存在性不在这里校验：由 {@code DataTransferService} 预检统一给出
- * 可操作的报错（否则会先撞上这里的通用消息）。
+ * 可操作的报错（否则会先撞上这里的通用消息）。同理，解析出的一条条问题（见
+ * {@link #parsePoints}）也不在这里拼成消息——汇总成单条报错是预检的职责。
  */
 final class ImportFields {
 
@@ -70,6 +71,54 @@ final class ImportFields {
         } catch (IllegalArgumentException e) {
             throw new BusinessException(400, "非法的 " + field + ": " + value);
         }
+    }
+
+    /**
+     * 批量解析结果：解析成功的测点 + 逐条记录的解析问题。
+     * 问题不带整条报错的措辞——汇总成一条消息是 {@code DataTransferService} 预检的职责
+     * （与 {@code validateChannelsExist} 同形）。
+     */
+    record ParseResult(List<MeasurementPointDTO> points, List<String> problems) {
+    }
+
+    /**
+     * 逐条解析并**累积**问题，而不是在第一条不合格记录上抛出。
+     *
+     * <p>为什么必须有这一层：HTTP 路径（{@code POST /api/data/import}）解析的是裸 Map，
+     * DTO 上的 bean validation 不生效，这里就是唯一的把关点。原先 {@code parsePoint} 直接抛
+     * 「缺少必填字段: direction」——既点不出是哪条记录，也看不到文件里其它的问题；
+     * 导入 100 条要试错 100 次（设计文档 §5.3）。
+     *
+     * <p>解析失败的记录不进 {@code points}：它没有可用的 DTO。问题字符串交给调用方汇总。
+     */
+    static ParseResult parsePoints(List<?> raw) {
+        List<MeasurementPointDTO> points = new ArrayList<>();
+        List<String> problems = new ArrayList<>();
+        for (Object item : raw) {
+            if (!(item instanceof Map)) {
+                problems.add("<非对象的测点项> 测点项必须是对象");
+                continue;
+            }
+            @SuppressWarnings("unchecked")
+            Map<String, Object> pt = (Map<String, Object>) item;
+            try {
+                points.add(parsePoint(pt));
+            } catch (BusinessException e) {
+                problems.add(describe(pt) + " " + e.getMessage());
+            }
+        }
+        return new ParseResult(List.copyOf(points), List.copyOf(problems));
+    }
+
+    /**
+     * 报错里的测点标识。手工编辑的导入文件可能整条缺 pointId，此时拼出裸 "null" 等于没点名，
+     * 换成能让人定位到那条记录的占位说法（与 {@code DataTransferService.describe} 同一约定）。
+     */
+    static String describe(Map<String, Object> pt) {
+        Object pointId = pt.get("pointId");
+        return pointId == null || String.valueOf(pointId).isBlank()
+                ? "<缺少 pointId 的测点>"
+                : String.valueOf(pointId);
     }
 
     /**

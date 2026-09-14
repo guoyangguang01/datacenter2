@@ -346,11 +346,36 @@ class DataTransferServiceTest {
         noId.setPointId(null);
         noId.setDirection(PointDirection.INPUT);   // 这条记录自身也不合格，才会被点名
 
+        // noId 必须排在 input **前面**：payload 内引用用 findFirst() 解析，命中 input 会短路，
+        // 让缺 pointId 的那条永远不被扫到——那样这个用例钉不住它要钉的崩溃路径
         BusinessException ex = assertThrows(BusinessException.class, () ->
-                dataTransferService.importData(List.of(business("biz")), List.of(input, noId)));
+                dataTransferService.importData(List.of(business("biz")), List.of(noId, input)));
 
         assertTrue(ex.getMessage().contains("in_1"), ex.getMessage());
         assertTrue(ex.getMessage().contains("<缺少 pointId 的测点>"), ex.getMessage());
+        verifyNoInteractions(pointService);
+    }
+
+    /**
+     * 解析层（{@code ImportFields.parsePoints}）攒下的问题必须与本层的引用问题合成**一条**报错：
+     * 这条路径上用户只能看到这一次反馈，分两次抛等于让他修完一条再撞见下一条。
+     */
+    @Test
+    @DisplayName("解析层的问题与服务层的问题合并成一条报错")
+    void joinsParseProblemsWithReferenceProblems() {
+        when(channelRepository.findById("ch_1")).thenReturn(Optional.of(new Channel()));
+
+        MeasurementPointDTO noRef = point("in_no_ref", "biz", "ch_1");
+        noRef.setDirection(PointDirection.INPUT);
+
+        BusinessException ex = assertThrows(BusinessException.class, () ->
+                dataTransferService.importData(List.of(business("biz")), List.of(noRef),
+                        List.of("no_dir 缺少必填字段: direction")));
+
+        assertTrue(ex.getMessage().contains("no_dir"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("缺少必填字段: direction"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("in_no_ref"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("缺少 referencePointId"), ex.getMessage());
         verifyNoInteractions(pointService);
     }
 
