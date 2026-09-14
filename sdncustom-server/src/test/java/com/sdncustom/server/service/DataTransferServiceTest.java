@@ -5,18 +5,24 @@ import com.sdncustom.common.dto.MeasurementPointDTO;
 import com.sdncustom.common.dto.PointSourceDTO;
 import com.sdncustom.common.exception.BusinessException;
 import com.sdncustom.common.model.Channel;
+import com.sdncustom.common.model.MeasurementPoint;
 import com.sdncustom.common.model.enums.PointDataType;
+import com.sdncustom.common.model.enums.PointDirection;
 import com.sdncustom.server.repository.ChannelRepository;
+import com.sdncustom.server.repository.MeasurementPointRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -38,6 +44,9 @@ class DataTransferServiceTest {
     @Mock
     private ChannelRepository channelRepository;
 
+    @Mock
+    private MeasurementPointRepository pointRepository;
+
     @InjectMocks
     private DataTransferService dataTransferService;
 
@@ -54,6 +63,7 @@ class DataTransferServiceTest {
         dto.setBusinessId(businessId);
         dto.setPointName(pointId);
         dto.setDataType(PointDataType.FLOAT32);
+        dto.setDirection(PointDirection.OUTPUT);
         List<PointSourceDTO> bindings = new ArrayList<>();
         for (String channelId : channelIds) {
             PointSourceDTO binding = new PointSourceDTO();
@@ -119,5 +129,189 @@ class DataTransferServiceTest {
         dataTransferService.importData(List.of(dto), List.of());
 
         assertEquals("biz", dto.getBusinessName());
+    }
+
+    @Test
+    @DisplayName("导入 INPUT 引用不存在的测点：整批失败并点名")
+    void failsWhenReferenceMissing() {
+        when(channelRepository.findById("ch_1")).thenReturn(Optional.of(new Channel()));
+        when(pointRepository.findById("out_missing")).thenReturn(Optional.empty());
+
+        MeasurementPointDTO input = point("in_1", "biz", "ch_1");
+        input.setDirection(PointDirection.INPUT);
+        input.setReferencePointId("out_missing");
+
+        BusinessException ex = assertThrows(BusinessException.class, () ->
+                dataTransferService.importData(List.of(business("biz")), List.of(input)));
+
+        assertTrue(ex.getMessage().contains("out_missing"), ex.getMessage());
+        verifyNoInteractions(pointService);
+    }
+
+    @Test
+    @DisplayName("导入 INPUT 引用本次导入内的 OUTPUT：解析成功")
+    void resolvesReferenceWithinSamePayload() {
+        when(channelRepository.findById("ch_1")).thenReturn(Optional.of(new Channel()));
+        when(businessSystemService.exists("biz")).thenReturn(false);
+
+        MeasurementPointDTO output = point("out_1", "biz", "ch_1");
+        MeasurementPointDTO input = point("in_1", "biz", "ch_1");
+        input.setDirection(PointDirection.INPUT);
+        input.setReferencePointId("out_1");
+
+        DataTransferService.ImportResult result = dataTransferService.importData(
+                List.of(business("biz")), List.of(output, input));
+
+        assertEquals(2, result.pointCount());
+        verify(pointService).importPoints(anyList());
+    }
+
+    @Test
+    @DisplayName("导入 INPUT 引用 dataType 不一致的 OUTPUT：整批失败")
+    void failsOnDataTypeMismatch() {
+        when(channelRepository.findById("ch_1")).thenReturn(Optional.of(new Channel()));
+        MeasurementPoint out = new MeasurementPoint();
+        out.setPointId("out_1");
+        out.setBusinessId("biz");
+        out.setDataType(PointDataType.INT16);
+        out.setDirection(PointDirection.OUTPUT);
+        when(pointRepository.findById("out_1")).thenReturn(Optional.of(out));
+
+        MeasurementPointDTO input = point("in_1", "biz", "ch_1");   // FLOAT32
+        input.setDirection(PointDirection.INPUT);
+        input.setReferencePointId("out_1");
+
+        assertThrows(BusinessException.class, () ->
+                dataTransferService.importData(List.of(business("biz")), List.of(input)));
+        verifyNoInteractions(pointService);
+    }
+
+    @Test
+    @DisplayName("导入 INPUT 缺少 referencePointId：整批失败并点名测点")
+    void failsWhenInputHasNoReference() {
+        when(channelRepository.findById("ch_1")).thenReturn(Optional.of(new Channel()));
+
+        MeasurementPointDTO input = point("in_1", "biz", "ch_1");
+        input.setDirection(PointDirection.INPUT);
+
+        BusinessException ex = assertThrows(BusinessException.class, () ->
+                dataTransferService.importData(List.of(business("biz")), List.of(input)));
+
+        assertTrue(ex.getMessage().contains("in_1"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("referencePointId"), ex.getMessage());
+        verifyNoInteractions(pointService);
+    }
+
+    @Test
+    @DisplayName("OUTPUT 带 referencePointId：整批失败，报错点名测点与引用")
+    void failsWhenOutputCarriesReference() {
+        when(channelRepository.findById("ch_1")).thenReturn(Optional.of(new Channel()));
+
+        MeasurementPointDTO output = point("out_1", "biz", "ch_1");
+        output.setReferencePointId("other");
+
+        BusinessException ex = assertThrows(BusinessException.class, () ->
+                dataTransferService.importData(List.of(business("biz")), List.of(output)));
+
+        assertTrue(ex.getMessage().contains("out_1"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("other"), ex.getMessage());
+        verifyNoInteractions(pointService);
+    }
+
+    @Test
+    @DisplayName("INPUT 引用库里已有的 INPUT：整批失败")
+    void failsWhenReferencedPointIsNotOutput() {
+        when(channelRepository.findById("ch_1")).thenReturn(Optional.of(new Channel()));
+        MeasurementPoint target = new MeasurementPoint();
+        target.setPointId("out_1");
+        target.setBusinessId("biz");
+        target.setDataType(PointDataType.FLOAT32);
+        target.setDirection(PointDirection.INPUT);
+        when(pointRepository.findById("out_1")).thenReturn(Optional.of(target));
+
+        MeasurementPointDTO input = point("in_1", "biz", "ch_1");
+        input.setDirection(PointDirection.INPUT);
+        input.setReferencePointId("out_1");
+
+        BusinessException ex = assertThrows(BusinessException.class, () ->
+                dataTransferService.importData(List.of(business("biz")), List.of(input)));
+
+        assertTrue(ex.getMessage().contains("out_1"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("不是输出测点"), ex.getMessage());
+        verifyNoInteractions(pointService);
+    }
+
+    @Test
+    @DisplayName("一次收集全部引用问题后统一抛错：报错点名每个测点，而非首个失败即止")
+    void collectsAllReferenceProblemsBeforeThrowing() {
+        when(channelRepository.findById("ch_1")).thenReturn(Optional.of(new Channel()));
+
+        MeasurementPointDTO noRef = point("in_no_ref", "biz", "ch_1");
+        noRef.setDirection(PointDirection.INPUT);
+        MeasurementPointDTO refsInput = point("in_refs_input", "biz", "ch_1");
+        refsInput.setDirection(PointDirection.INPUT);
+        refsInput.setReferencePointId("in_no_ref");   // payload 内，但它不是输出测点
+
+        BusinessException ex = assertThrows(BusinessException.class, () ->
+                dataTransferService.importData(List.of(business("biz")), List.of(noRef, refsInput)));
+
+        assertTrue(ex.getMessage().contains("in_no_ref"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("in_refs_input"), ex.getMessage());
+        verifyNoInteractions(pointService);
+    }
+
+    @Test
+    @DisplayName("INPUT 排在它引用的 OUTPUT 之前：排序后输出点先落库，顺序依赖被解开")
+    void ordersOutputsBeforeInputs() {
+        when(channelRepository.findById("ch_1")).thenReturn(Optional.of(new Channel()));
+        when(businessSystemService.exists("biz")).thenReturn(false);
+
+        MeasurementPointDTO input = point("in_1", "biz", "ch_1");
+        input.setDirection(PointDirection.INPUT);
+        input.setReferencePointId("out_1");
+        MeasurementPointDTO output = point("out_1", "biz", "ch_1");
+
+        // 模拟 PointService.importPoints -> create -> PointDirectionValidator 的库内引用解析：
+        // 只认已落库的点（引用预检过了不代表这一刻库里就有）
+        Set<String> persisted = new HashSet<>();
+        when(pointService.importPoints(anyList())).thenAnswer(invocation -> {
+            List<MeasurementPointDTO> dtos = invocation.getArgument(0);
+            for (MeasurementPointDTO dto : dtos) {
+                if (dto.getDirection() == PointDirection.INPUT
+                        && !persisted.contains(dto.getReferencePointId())) {
+                    throw new BusinessException(400, "引用的测点不存在: " + dto.getReferencePointId());
+                }
+                persisted.add(dto.getPointId());
+            }
+            return List.of();
+        });
+
+        // 引用预检能通过（payload 内解析得到），但 importPoints 逐条 create 时输出点必须先落库
+        dataTransferService.importData(List.of(business("biz")), List.of(input, output));
+
+        assertEquals(Set.of("in_1", "out_1"), persisted);
+        ArgumentCaptor<List<MeasurementPointDTO>> captor = ArgumentCaptor.forClass(List.class);
+        verify(pointService).importPoints(captor.capture());
+        assertEquals(List.of("out_1", "in_1"),
+                captor.getValue().stream().map(MeasurementPointDTO::getPointId).toList());
+    }
+
+    @Test
+    @DisplayName("direction 为空的非法测点不被排序掩盖：仍按原样交给 pointService 报错")
+    void keepsNullDirectionPointsInPayload() {
+        when(channelRepository.findById("ch_1")).thenReturn(Optional.of(new Channel()));
+        when(businessSystemService.exists("biz")).thenReturn(false);
+
+        MeasurementPointDTO broken = point("no_dir", "biz", "ch_1");
+        broken.setDirection(null);
+        MeasurementPointDTO output = point("out_1", "biz", "ch_1");
+
+        dataTransferService.importData(List.of(business("biz")), List.of(broken, output));
+
+        ArgumentCaptor<List<MeasurementPointDTO>> captor = ArgumentCaptor.forClass(List.class);
+        verify(pointService).importPoints(captor.capture());
+        assertEquals(2, captor.getValue().size());
+        assertTrue(captor.getValue().stream().anyMatch(p -> p.getDirection() == null),
+                "direction 为空的测点必须原样传给 pointService，由 create 报错");
     }
 }
