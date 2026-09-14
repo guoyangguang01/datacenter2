@@ -24,6 +24,7 @@ logs/*
 
 # Data
 data/
+data.bak-*/
 
 # Node
 node_modules/
