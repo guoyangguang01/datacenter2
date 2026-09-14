@@ -86,6 +86,8 @@ export default function PointPage() {
     try {
       await deletePoint(id);
       message.success('已删除');
+      // store 内部的刷新是无参的，会丢掉通道/方向筛选，这里补一次带筛选的加载
+      fetchPoints(filterChannel, undefined, filterDirection);
     } catch {
       // 错误信息已通过 store.error 展示
     }
@@ -158,7 +160,8 @@ export default function PointPage() {
         message.success('已创建');
       }
       setModalOpen(false);
-      fetchPoints(filterChannel);
+      // 恢复当前筛选（含方向）——store 内部的刷新是无参的，这里必须显式带上
+      fetchPoints(filterChannel, undefined, filterDirection);
     } catch {
       // 错误信息已通过 store.error 展示；保持弹窗打开
     }
@@ -301,7 +304,14 @@ export default function PointPage() {
             </div>
           )}
           <Form.Item name="channelId" label="所属通道" rules={[{ required: true }]}>
-            <Select options={channels.map((c) => ({ label: c.channelName, value: c.channelId }))} />
+            <Select
+              options={channels.map((c) => ({ label: c.channelName, value: c.channelId }))}
+              onChange={(v) => {
+                // 换通道后旧引用可能已不在候选列表里，清掉以免提交一个选择器不会提供的配对。
+                // Form.Item 会先写入新值，故这里与上一次渲染的 mainChannelId 比较；同值重选不清。
+                if (v !== mainChannelId) form.setFieldValue('referencePointId', undefined);
+              }}
+            />
           </Form.Item>
           <Form.Item name="address" label="地址" rules={[{ required: true }]}>
             <Input placeholder="例如 40001 或 sensors/temp01" />
