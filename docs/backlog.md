@@ -1,6 +1,7 @@
 # 待办与已知问题
 
 > 2026-09-14 一轮集中排查 + 修复后的**遗留清单**。
+> 同日晚些时候的「测点方向」迭代收尾时补入 **A9 / A10 / B12**（均为该迭代新引入或新暴露的债）。
 > 分三类：还能直接做的、需要先定方案的、以及**核实过并非问题**的（写出来是为了以后不要重复讨论）。
 > 本轮已完成的部分见文末，提交 `53fb74f`。
 
@@ -24,6 +25,14 @@
 
 URL 会进代理/网关/浏览器历史与访问日志。
 → REST 端只认 `Authorization` 头；WS 握手改用子协议头或握手后首帧认证。
+
+### B12 缺少必填查询参数报 500（应为 400）
+`GET /api/points/{id}/history` 的 `startTime`/`endTime` 是必填查询参数，缺任一个时 Spring 抛
+`MissingServletRequestParameterException`；`GlobalExceptionHandler` 没有对应 handler，直接落到兜底的
+`Exception` 分支 → body `code:500 "Internal server error"`（HTTP 仍是 200）。同类还有路径变量缺失
+（`MissingPathVariableException`）与 `ServletRequestBindingException`。
+→ 按现有 4 个 handler 的写法补一个，返回 400 并点名缺失的参数。**点方向迭代明确不做**：
+这是全局错误契约的一部分，不属于该特性范围。
 
 ### 其它零散债
 - **Redis 故障时采集路径被拖慢**：`PointValueCacheRepository` 失败吞异常但每次调用要等 `spring.data.redis.timeout: 3000`，而它在采集环上；`saveBatch` 失败只 WARN。考虑本地降级缓存或异步写。
@@ -63,9 +72,34 @@ URL 会进代理/网关/浏览器历史与访问日志。
 后端 `GET /api/points/{id}/history` 可用，**前端零实现**（`api.ts` 里连 history 调用都没有）。
 → 新功能，需先过交互：时间范围、图表还是表格、分页、是否导出。
 
-### A7 无数据库迁移工具
-`sdncustom-server/src/main/resources/application.yml` 用 `ddl-auto: update`，schema 完全由实体建出——原先两个手写 migration（`BindingMigration` / `BusinessSystemMigration`）已删除，项目现在**只支持空库**，没有旧库原地升级路径（结构变更后删 `data/` 重建）。
-→ 是否引入 Flyway/Liquibase（并恢复可升级性）是工程决策。
+### A7 无数据库迁移工具，且"只支持空库"没有升级路径
+`sdncustom-server/src/main/resources/application.yml` 用 `ddl-auto: update`，schema 完全由实体建出。
+`BindingMigration` / `BusinessSystemMigration` / `DemoDataInitializer` 三个启动期 runner 已全部删除
+（见第五节），项目现在**只支持空库**——不是"暂时没写迁移"，而是**任何已部署实例都没有升级路径**：
+旧库里的 `measurement_point` 有 `writable` 列、没有 `direction`（该列可空、无回填），
+`point_source` 也不会自动补齐。唯一的走法是停服、备份、删 `sdncustom-server/data/` 重建、再按
+「先通道后数据」重新导入（H2 文件库相对后端工作目录，**不是**仓库根目录的 `data/`——删错路径不报错，
+只会拿旧库跑完整个验证）。
+→ 是否引入 Flyway/Liquibase（并恢复可升级性）是工程决策；在那之前，任何"就地升级已有部署"的需求
+都等于要求先做数据迁移。
+
+### A9 传播在采集线程上做无界设备 I/O
+`AcquisitionEngine.acquire` 在**采集调度线程**上同步调用 `InputPointPropagator.propagate`，后者对每个
+INPUT 测点的每条绑定做一次 `adapter.writePoint`（真实 socket 写）。5s 的 `allOf` 限时只覆盖**读取阶段**
+（每通道一个 future），传播不在其中——一台写超时的设备会把整轮采集拖长，而这是所有通道共用的周期。
+设计文档 §7 把"迁移到专用执行器（同 `DistributionService` 的单线程队列 + 有界缓冲）"写成缓解措施，
+但触发条件（"若实测有影响"）**从未被测量过**：本轮没有任何延迟/吞吐基线。
+→ 先量再改：给 `acquire()` 的传播段单独计时（Timer 或日志），有数据再决定是否搬走。
+搬走会引入异步顺序问题（INPUT 的值可能晚于下一轮 OUTPUT 的值落库）。
+
+### A10 写失败不降级：值分不清"意图"与"实际"
+按设计决策，传播写出失败只用 `sdncustom.propagation.failures` 记数，INPUT 的缓存与历史**照写 OUTPUT 的
+值、质量不降**。后果：消费方（前端、将来的规则引擎、历史查询）看到一个 `quality=GOOD` 的值，无法区分
+「外部设备确实收到了」与「写出失败了，这只是我们希望它有的值」。一个长期掉线的写出目标，其 INPUT 在
+监控页上与正常的一模一样。
+→ 要区分就得先定语义：失败时降 `quality`（如 `UNCERTAIN`），还是给 `PointValue` 另加 `delivered`/`intended`
+字段？两者都会改变前端展示与历史数据的含义，**需要产品决策**；改之前先确认设计文档 §1.3 的
+"无论写出成功与否都用 OUTPUT 的值更新"是否仍然成立。
 
 ### A8 环境/部署相关
 - 硬编码默认凭据：H2 `sa`/空密码、TDengine `root/taosdata`、admin `changeme`

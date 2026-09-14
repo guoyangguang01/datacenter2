@@ -164,10 +164,14 @@ INT32/FLOAT32 占 **2 个连续寄存器**、FLOAT64 占 **4 个**，起始地�
 建 TDengine 库/超级表（失败仅告警，不阻断启动）→ ② 守护线程 sleep 2s 后
 `ChannelService.autoConnectAll()`（并行连接 `autoConnect=true` 通道）。
 
-运行时产物：H2 配置库是文件库 `./data/sdncustom.mv.db`（`data/` 与 `logs/` 均被 gitignore）。
+运行时产物：H2 配置库是文件库 **`sdncustom-server/data/sdncustom.mv.db`**——路径相对后端的
+工作目录（`scripts/start-backend.bat` 会 `cd sdncustom-server`），**不是仓库根目录的 `data/`**。
+`data/` 由 `.gitignore` 的 `data/` 规则覆盖；`scripts/*.bat` 的输出日志写在仓库根目录的 `logs/`
+（同样被 gitignore，只保留 `.gitkeep`）。
 
-**只支持空库**：本项目不做旧库原地升级。结构变更后请删掉 `data/` 重启，让它按当前实体重建
-（**删掉 `data/` 即重置全部配置**，不会再有任何迁移或示例数据被回填）。
+**只支持空库**：本项目不做旧库原地升级。结构变更后请删掉 `sdncustom-server/data/` 重启，
+让它按当前实体重建（**删掉它即重置全部配置**，不会再有任何迁移或示例数据被回填）。
+删错路径不会报错，只会拿旧库跑完整个验证——这是本仓库踩过的坑。
 
 **空库引导**（顺序不能颠倒——测点绑定要求通道已存在）：
 

@@ -42,6 +42,15 @@ export default function PointPage() {
     fetchPoints(filterChannel, undefined, filterDirection);
   }, [filterChannel, filterDirection, fetchPoints, currentBusinessId]);
 
+  // 引用标注要按 pointId 查被引用的输出测点，必须用当前业务的**完整**列表：
+  // points 带通道/方向筛选，被引用的 OUTPUT 很可能不在其中（筛 INPUT 时就必然不在）
+  useEffect(() => {
+    pointApi
+      .getAll(undefined, currentBusinessId ?? undefined)
+      .then((res) => setAllPoints(res.data.data ?? []))
+      .catch(() => setAllPoints([]));
+  }, [currentBusinessId]);
+
   // 展示 store 中的错误信息；弹出后立即清空，否则重新进入本页会重复弹同一条
   useEffect(() => {
     if (error) {
@@ -108,7 +117,7 @@ export default function PointPage() {
       const text = await file.text();
       const parsed = JSON.parse(text);
       const payload: DataExportPayload = Array.isArray(parsed) ? { points: parsed } : parsed;
-      // 文件里没写归属的测点落到当前业务（不写则后端落 default 业务）
+      // 文件里没写归属的测点补成当前业务：后端已不回退默认业务，缺 businessId 会让整批导入失败
       if (currentBusinessId) {
         payload.points = payload.points?.map((p) =>
           p.businessId ? p : { ...p, businessId: currentBusinessId }
@@ -207,7 +216,25 @@ export default function PointPage() {
     { title: '类型', dataIndex: 'dataType', key: 'dataType' },
     { title: '单位', dataIndex: 'unit', key: 'unit' },
     { title: '死区', dataIndex: 'deadband', key: 'deadband', render: (v: number | null | undefined) => v != null ? v : '-' },
-    { title: '方向', dataIndex: 'direction', key: 'direction', render: (v: string) => <Tag color={v === 'INPUT' ? 'blue' : 'green'}>{v === 'INPUT' ? '输入' : '输出'}</Tag> },
+    {
+      title: '方向',
+      dataIndex: 'direction',
+      key: 'direction',
+      render: (v: PointDirection | null | undefined, r: MeasurementPoint) => {
+        // direction 可能为空（DB 列可空、无迁移回填），不猜方向——与 MonitorPage 的守卫一致
+        if (!v) return '-';
+        if (v === 'OUTPUT') return <Tag color="green">输出</Tag>;
+        // INPUT 标注它引用的输出测点（设计文档 §6.1）
+        const refName = allPoints.find((p) => p.pointId === r.referencePointId)?.pointName
+          ?? r.referencePointId;
+        return (
+          <Space size={4}>
+            <Tag color="blue">输入</Tag>
+            <span style={{ fontSize: 11, color: '#8c8c8c' }}>← {refName ?? '-'}</span>
+          </Space>
+        );
+      },
+    },
     {
       title: '操作',
       key: 'actions',
