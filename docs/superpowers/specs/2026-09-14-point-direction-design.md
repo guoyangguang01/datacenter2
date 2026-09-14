@@ -41,7 +41,8 @@
 | 写出失败 | **无论写出成功与否**，都用 OUTPUT 的值更新 INPUT 的缓存与历史 |
 | `writable` 字段 | **删除**，由 `direction` 替代 |
 | 绑定方向 | PointSource **不加方向字段**，方向由所属测点的 `direction` 推导 |
-| 向后兼容 | **不要求**。存量测点显式迁移为 OUTPUT |
+| 向后兼容 | **不要求**。不写任何启动期迁移；只支持空库（删 `data/` 重启） |
+| 启动期迁移类 | 借本次一并**全部删除**（详见 §2.3） |
 
 ---
 
@@ -65,9 +66,9 @@ public enum PointDirection { INPUT, OUTPUT }
 
 **DDL 注意事项**：
 
-- `direction` 在 DB 层**允许 NULL**。`ddl-auto: update` 向已有数据的表添加 NOT NULL 列会失败，因此实体不标 `nullable = false`，由迁移回填保证业务完整性。
+- `direction` 在 DB 层**允许 NULL**（实体不标 `nullable = false`）。**没有迁移回填**——业务完整性由 DTO 层的 `@NotNull` 保证：所有测点创建路径（API 创建/更新、数据导入）都必须提供 `direction`，因此空库上不会产生 NULL 行。这也意味着**不支持在旧库上原地升级**，必须删 `data/` 重建。
 - `referencePointId` 加**索引**（`idx_point_reference`），传播时按 `referencePointId IN (...)` 批量查询。
-- 旧的 `writable` 列会被 `ddl-auto: update` 遗留为孤儿列（Hibernate 不删列）。无害，不在本次处理范围内。
+- 旧的 `writable` 列会被 `ddl-auto: update` 遗留为孤儿列（Hibernate 不删列）。因为只支持空库，重建后该列根本不存在，无需处理。
 
 ### 2.2 PointSource 绑定表
 
@@ -76,14 +77,30 @@ public enum PointDirection { INPUT, OUTPUT }
 - OUTPUT 测点的绑定 → 采集引擎**读取**的地址
 - INPUT 测点的绑定 → 传播写出时**写入**的地址
 
-### 2.3 存量数据迁移
+### 2.3 启动期迁移类清理
 
-新增 `PointDirectionMigration`（`CommandLineRunner`，`@Order 0`）：
+既然明确不支持向后兼容，现有的三个 `CommandLineRunner` 迁移/播种类**全部删除**，不再有任何启动期 DDL 或数据回填：
 
-- 把所有 `direction IS NULL` 的测点置为 `OUTPUT`（存量测点全部是从外部采集数据的输出测点）
-- 幂等：无 NULL 行时不产生 UPDATE
+| 类 | 原 `@Order` | 原职责 | 删除理由 |
+|----|------------|--------|---------|
+| `BindingMigration` | 1 | 旧 `channel_id`/`address` 列回填 `point_source`，然后删旧列 | 纯旧模型（绑定集之前）的兼容迁移 |
+| `BusinessSystemMigration` | 2 | 加 `business_id` 列并回填默认业务；库空时建 `default` 业务 | 纯业务隔离迭代的兼容迁移 |
+| `DemoDataInitializer` | 3 | 空库播种 2 业务/4 通道/6 测点 | 由 `mock/mock-data.json` + `mock-channels.json` 导入替代 |
 
-`@Order 0` 使它在 `BindingMigration`（@Order 1）/ `BusinessSystemMigration`（@Order 2）/ `DemoDataInitializer`（@Order 3）**之前**运行，保证后续迁移与播种看到的方向已就绪。若不需要保留存量配置，删除 `data/` 目录重启亦可（会重新播种示例数据）。
+**连带改动**：
+
+1. **删除对应测试**：`BindingMigrationTest`、`BusinessSystemMigrationTest`、`DemoDataInitializerTest`。
+2. **`ImportFields.resolveBusinessId` 去掉默认回退**：删除对 `BusinessSystemMigration.DEFAULT_BUSINESS_ID` 的引用（常量随类一起消失）。导入文件**必须显式提供 `businessId`**，缺失即整批失败并点名。不再有"落默认业务 `default`"的行为，因此也不存在"`default` 业务必须存在"这一隐含前置。
+3. **`mock/mock-data.json` 补 `businesses` 段与测点的 `businessId`**（原来是靠回退落 `default`）。同时补 `direction` 字段。
+4. **更新实体注释**：`Channel.java:28` / `MeasurementPoint.java:28` 的 `businessId` 字段注释引用了 `BusinessSystemMigration` 来收紧非空约束，需改写为"业务约束由服务层校验保证"。
+
+**保留不变**：`AppStartupRunner`（`HistoryService.init()` 建 TDengine 库/超级表 + 延迟 `autoConnectAll()`）不是迁移，保持原样。
+
+**升级路径**：删 `data/` 目录后重启，`ddl-auto: update` 依实体建出全新表结构；再按 §8.3 的流程导入 mock 数据引导。
+
+### 2.4 导入格式的兼容代码清理
+
+`ImportFields.parseBindings` 目前除了新格式（`bindings` 数组）还解析旧格式（`channelId` + `address` + `additionalSources`）。既然不考虑向后兼容，**一并删除旧格式分支**，只接受 `bindings` 数组。`mock/mock-data.json` 已是 `bindings` 格式，不受影响。
 
 ---
 
@@ -227,7 +244,9 @@ INPUT 测点的推送复用现有 fan-out 逻辑：`DataWebSocketHandler.pushBat
 `GET /api/data/export` / `POST /api/data/import`：
 
 - 导出的测点 JSON 中 `writable` → `direction` + `referencePointId`
-- 导入时校验（**整体事务性**，与现有"通道不存在"的处理一致——任何一条不合法则整批回滚，不部分成功）：
+- **`businessId` 必填**：不再回退到默认业务（见 §2.3）。文件里没有 `businesses` 段或测点缺 `businessId` → 整批失败
+- **绑定只认新格式**：`bindings` 数组；旧格式（`channelId`+`address`+`additionalSources`）分支已删除（见 §2.4）
+- 其余校验（**整体事务性**，与现有"通道不存在"的处理一致——任何一条不合法则整批回滚，不部分成功）：
   - `direction` 缺失或非法 → 整批失败并点名该测点（**不默认补值**）
   - INPUT 的 `referencePointId` 必须能在**本次导入的测点集 ∪ 库中已有测点**里解析到，且解析结果为 `OUTPUT`
   - `dataType` 与引用测点不一致 → 整批失败并点名
@@ -294,7 +313,8 @@ INPUT 测点的推送复用现有 fan-out 逻辑：`DataWebSocketHandler.pushBat
 | **传播写出阻塞采集周期** | 传播在采集线程上同步执行写 I/O。慢设备（如 TCP 写超时）会拖长整轮采集，影响所有通道的采集频率 | 适配器自身的 socket 超时是第一道防线。若实测有影响，迁移到专用执行器（同 `DistributionService` 的"单线程队列 + 有界缓冲"模式），代价是引入异步顺序问题 |
 | **写失败静默** | 按决策，写出失败不降级值质量，仅记日志与指标 | 新增指标 `sdncustom.propagation.writes` / `propagation.failures`（tag=channel），前端状态卡可选展示 |
 | **INPUT 值语义是「意图」而非「实际」** | INPUT 缓存记录的是"我们希望外部设备拥有的值"，不保证外部真的收到了 | 已在 §3.3 明确；文档与 UI 提示需保持一致 |
-| **迁移遗留孤儿列** | `writable` 列不会被 `ddl-auto: update` 删除 | 无害；如介意可手工 `ALTER TABLE measurement_point DROP COLUMN writable` |
+| **空库无自动播种** | 删除 `DemoDataInitializer` 后，空库启动不再有示例数据，也没有默认业务。开发/演示需手工或脚本导入 | `mock/mock-channels.json` + `mock/mock-data.json` 是既定引导路径；README/CLAUDE.md 需写清两步顺序（先通道后数据） |
+| **旧库无法原地升级** | 三个迁移类删除后，指向旧结构的 `data/` 库不会自动补齐（如 `business_id` 非空约束、`direction` 回填） | 明确要求删 `data/` 重建；启动文档需突出这一点 |
 
 ### 7.1 新增可观测性
 
@@ -337,9 +357,17 @@ INPUT 测点的推送复用现有 fan-out 逻辑：`DataWebSocketHandler.pushBat
 | CONNECTED 通道绑定了 INPUT 与 OUTPUT 测点 | 采集只读 OUTPUT，INPUT 不产生读请求 |
 | OUTPUT 变化触发传播 | 同一批次里 Redis/历史/推送都包含 INPUT 的值 |
 
-`DataTransferServiceTest` 扩展：导入含 INPUT 测点的数据，引用可解析 / 不可解析两种路径。
+`DataTransferServiceTest` 扩展：
 
-新增 `PointDirectionMigrationTest`（参照既有 `BindingMigrationTest` 的写法）：`direction` 为 NULL 的存量测点被回填为 OUTPUT；重复运行不产生额外 UPDATE。
+| 用例 | 断言 |
+|------|------|
+| 导入含 INPUT 测点的数据，引用可解析 | 成功，INPUT 与 OUTPUT 均落库 |
+| 导入 INPUT 引用不存在的测点 | 整批失败，点名该测点 ID |
+| 导入测点缺 `businessId` | 整批失败（不再落默认业务） |
+| 导入用旧格式（`channelId`+`address`） | 整批失败（旧格式分支已删） |
+| 导入 INPUT 与引用测点 dataType 不一致 | 整批失败 |
+
+**删除的测试**：`BindingMigrationTest`、`BusinessSystemMigrationTest`、`DemoDataInitializerTest`（随三个类一并删除）。
 
 ### 8.2 前端（无测试框架）
 
@@ -349,12 +377,14 @@ INPUT 测点的推送复用现有 fan-out 逻辑：`DataWebSocketHandler.pushBat
 
 ### 8.3 端到端手工验证
 
-1. 启动 Docker 依赖 + `mock/build-and-start.bat`
-2. 导入 `mock/mock-channels.json`，连接 TCP 模拟器与 Modbus 模拟器
-3. 创建 OUTPUT 测点绑定 TCP 通道（MockTcpServer 会推送变化值）
-4. 创建 INPUT 测点绑定 Modbus 通道，引用上一步的 OUTPUT
-5. 观察：TCP 侧值变化 → Modbus 侧寄存器被写入 → 监控页两个测点同步刷新
-6. 断开 Modbus 通道 → INPUT 的值仍随 OUTPUT 更新（验证决策 §1.3 的失败处理）
+1. **删除 `data/` 目录**（本次改动只支持空库，旧库无迁移路径）
+2. 启动 Docker 依赖 + `mock/build-and-start.bat`
+3. 通道管理页「导入通道配置」选 `mock/mock-channels.json`，连接 TCP 模拟器与 Modbus 模拟器
+4. 测点管理页「导入数据」选 `mock/mock-data.json`（**顺序不能颠倒**——测点绑定要求通道已存在）
+5. 创建 OUTPUT 测点绑定 TCP 通道（MockTcpServer 会推送变化值）
+6. 创建 INPUT 测点绑定 Modbus 通道，引用上一步的 OUTPUT
+7. 观察：TCP 侧值变化 → Modbus 侧寄存器被写入 → 监控页两个测点同步刷新
+8. 断开 Modbus 通道 → INPUT 的值仍随 OUTPUT 更新（验证决策 §1.3 的失败处理）
 
 ---
 
@@ -363,20 +393,30 @@ INPUT 测点的推送复用现有 fan-out 逻辑：`DataWebSocketHandler.pushBat
 **后端 · common**
 
 - `model/MeasurementPoint.java`（改）
-- `enums/PointDirection.java`（新增）
+- `model/enums/PointDirection.java`（新增）
 - `dto/MeasurementPointDTO.java`（改）
 
 **后端 · server**
 
-- `config/PointDirectionMigration.java`（新增）
 - `service/InputPointPropagator.java`（新增）
 - `service/PointService.java`（改：删 `writeValue`，加 `findByReferencePointIdIn`）
 - `service/AcquisitionEngine.java`（改：过滤 OUTPUT + 调用传播）
 - `service/ChangeGate.java`（改：删 `recordManualWrite`）
 - `repository/MeasurementPointRepository.java`（改：加查询方法）
 - `controller/PointController.java`（改：删值写入端点，加 direction 参数）
-- `service/DataTransferService.java`（改：导入导出方向字段）
+- `controller/ImportFields.java`（改：删默认业务回退 + 删旧绑定格式分支）
+- `service/DataTransferService.java`（改：导入导出方向字段，businessId 必填）
 - `metrics/`（新增传播指标）
+
+**后端 · 删除**
+
+- `config/BindingMigration.java` + `test/.../BindingMigrationTest.java`
+- `config/BusinessSystemMigration.java` + `test/.../BusinessSystemMigrationTest.java`
+- `config/DemoDataInitializer.java` + `test/.../DemoDataInitializerTest.java`
+
+**后端 · 注释更新**
+
+- `common/model/Channel.java:28`、`common/model/MeasurementPoint.java:28`（`businessId` 注释里的 `BusinessSystemMigration` 引用）
 
 **前端 · web**
 
@@ -389,6 +429,6 @@ INPUT 测点的推送复用现有 fan-out 逻辑：`DataWebSocketHandler.pushBat
 
 **文档**
 
-- `CLAUDE.md`（核心概念、关键服务、API 端点、数据流）
+- `CLAUDE.md`（核心概念、关键服务、API 端点、数据流、**启动时序**——迁移类已删、「删 data/ 即重置」的说明需重写）
 - `docs/backlog.md`（如有相关遗留项）
-- `mock/mock-data.json`（示例数据补 `direction` 字段）
+- `mock/mock-data.json`（补 `businesses` 段、测点 `businessId` 与 `direction`）
