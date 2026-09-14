@@ -222,6 +222,30 @@ export default function MonitorPage() {
       render: (_: unknown, record: MeasurementPoint) =>
         record.bindings?.length ? record.bindings.map((b) => b.address).join(', ') : '-',
     },
+    {
+      title: '方向',
+      key: 'direction',
+      width: 140,
+      render: (_: unknown, record: MeasurementPoint) => {
+        // 存量数据 direction 可能为空（DB 列可空、无迁移回填），不猜方向
+        if (!record.direction) {
+          return '-';
+        }
+        if (record.direction === 'OUTPUT') {
+          return <Tag color="green">输出</Tag>;
+        }
+        const refName = points.find((p) => p.pointId === record.referencePointId)?.pointName
+          ?? record.referencePointId;
+        return (
+          <Space size={4}>
+            <Tag color="blue">输入</Tag>
+            <Tooltip title={`引用自 ${refName}`}>
+              <span style={{ fontSize: 11, color: '#8c8c8c' }}>← {refName}</span>
+            </Tooltip>
+          </Space>
+        );
+      },
+    },
     { title: '类型', dataIndex: 'dataType', key: 'dataType', width: 90 },
     { title: '单位', dataIndex: 'unit', key: 'unit', width: 80 },
     {

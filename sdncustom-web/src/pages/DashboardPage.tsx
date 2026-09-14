@@ -102,6 +102,9 @@ export default function DashboardPage() {
     }
   };
 
+  const inputCount = points.filter((p) => p.direction === 'INPUT').length;
+  const outputCount = points.filter((p) => p.direction === 'OUTPUT').length;
+
   const columns = [
     { title: '测点ID', dataIndex: 'pointId', key: 'pointId' },
     { title: '名称', dataIndex: 'pointName', key: 'pointName' },
@@ -190,6 +193,18 @@ export default function DashboardPage() {
               !status.tdengineEnabled ? <Tag>未启用</Tag> :
               status.historyCircuitOpen ? <Tag color="red">熔断中</Tag> : <Tag color="green">正常</Tag>
             }
+          </Card>
+        </Col>
+      </Row>
+      <Row gutter={16} style={{ marginBottom: 16 }}>
+        <Col span={12}>
+          <Card size="small">
+            <Statistic title="输出测点（从外部采集）" value={outputCount} valueStyle={{ color: '#52c41a' }} />
+          </Card>
+        </Col>
+        <Col span={12}>
+          <Card size="small">
+            <Statistic title="输入测点（写出到外部）" value={inputCount} valueStyle={{ color: '#1677ff' }} />
           </Card>
         </Col>
       </Row>
