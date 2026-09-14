@@ -77,7 +77,8 @@ public class ChannelController {
     }
 
     /**
-     * 导入通道配置——只有通道，不含业务与测点（数据走 {@code POST /api/data/import}）。
+     * 导入通道配置——只导入通道本身，不含测点（测点数据走 {@code POST /api/data/import}）。
+     * 每个通道必填 {@code businessId}；业务不存在时按 businessId 自动创建。
      * body 支持 {@code {"channels": [...]}} 或直接 {@code [...]}。
      * 已存在的通道 upsert；payload 省略 connectionConfig 时保留库中原值。
      */

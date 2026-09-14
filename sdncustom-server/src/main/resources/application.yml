@@ -58,10 +58,6 @@ sdncustom:
   acquisition:
     interval-ms: 200
 
-  # 示例数据播种（仅空库首次启动生效）；生产环境设 false 关闭
-  demo:
-    enabled: ${SDNCUSTOM_DEMO_ENABLED:true}
-
   # 断线自动重连（只管非 MQTT；MQTT 由 Paho 自带重连）
   channel:
     reconnect:

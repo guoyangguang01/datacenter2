@@ -4,7 +4,7 @@
 
 ## 核心概念
 
-- **测点 (MeasurementPoint)**：数据的最小单元，平台的一等公民
+- **测点 (MeasurementPoint)**：数据的最小单元，平台的一等公民。分方向：`OUTPUT`（绑定通道用于采集读取，数据从外部流入平台）与 `INPUT`（引用一个同业务、同数据类型的 OUTPUT，其绑定通道用于写出——输出测点的变化会传播到引用它的输入测点并写到外部）
 - **管道 (Channel)**：与外部系统的连接通道，负责数据同步
 - **数据中枢**：平台是测点数据的唯一权威源，所有客户端通过平台读写数据
 
@@ -95,12 +95,12 @@ npm run dev
 |------|------|------|
 | GET | /api/points | 查询所有测点 |
 | GET | /api/points?channelId=xxx | 按 Channel 过滤测点 |
+| GET | /api/points?direction=INPUT\|OUTPUT | 按方向过滤测点 |
 | GET | /api/points/{id} | 查询单个测点 |
 | POST | /api/points | 创建测点 |
 | PUT | /api/points/{id} | 更新测点 |
-| DELETE | /api/points/{id} | 删除测点 |
+| DELETE | /api/points/{id} | 删除测点（被输入测点引用时返回 400） |
 | GET | /api/points/{id}/value | 获取测点当前值 |
-| PUT | /api/points/{id}/value | 写入测点值 |
 | GET | /api/points/{id}/history | 查询历史数据 |
 
 ### WebSocket

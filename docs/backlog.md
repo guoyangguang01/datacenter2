@@ -28,8 +28,6 @@ URL 会进代理/网关/浏览器历史与访问日志。
 ### 其它零散债
 - **Redis 故障时采集路径被拖慢**：`PointValueCacheRepository` 失败吞异常但每次调用要等 `spring.data.redis.timeout: 3000`，而它在采集环上；`saveBatch` 失败只 WARN。考虑本地降级缓存或异步写。
 - **`markPointsCommLost` 里逐点查绑定**：`ChannelService` 中 `bindingChannelIds(pointId)` 按点循环查询（N+1）。不在 200ms 热路径上（仅断开/掉线时触发），量级不大时可不改。
-- **部分写成功的语义**：`PointService.writeValue` 现在会返回逐通道结果，但**只要有一个通道成功**，仍把值按 GOOD 写缓存并推送。是否改为「部分失败不更新权威值」需要产品判断。
-- **写值 UI 缺失**：`api.ts` 有 `writeValue`，但**没有任何页面调用**——手动写值目前只有 API。
 - **无审计日志**：写操作只有 `log.info`（含用户名），不落库，事后无法查证谁改了什么。
 
 ---
@@ -42,7 +40,7 @@ URL 会进代理/网关/浏览器历史与访问日志。
 
 ### A2 无权限模型 / 无业务归属校验
 单管理员账号（`sdncustom.security`），`anyRequest().authenticated()`，没有「用户 → 业务」映射：
-- `PointController.delete` / `writeValue` 不校验业务归属
+- `PointController.delete` 不校验业务归属
 - WS `handleSubscribe` 不校验 `channelIds` 是否可读
 
 → 要先定多用户模型（角色？业务授权？），否则加校验等于先建一套用户体系。
@@ -66,8 +64,8 @@ URL 会进代理/网关/浏览器历史与访问日志。
 → 新功能，需先过交互：时间范围、图表还是表格、分页、是否导出。
 
 ### A7 无数据库迁移工具
-`sdncustom-server/src/main/resources/application.yml` 用 `ddl-auto: update`，schema 演进靠两个手写 migration（`BindingMigration` / `BusinessSystemMigration`）。
-→ 是否引入 Flyway/Liquibase 是工程决策。
+`sdncustom-server/src/main/resources/application.yml` 用 `ddl-auto: update`，schema 完全由实体建出——原先两个手写 migration（`BindingMigration` / `BusinessSystemMigration`）已删除，项目现在**只支持空库**，没有旧库原地升级路径（结构变更后删 `data/` 重建）。
+→ 是否引入 Flyway/Liquibase（并恢复可升级性）是工程决策。
 
 ### A8 环境/部署相关
 - 硬编码默认凭据：H2 `sa`/空密码、TDengine `root/taosdata`、admin `changeme`
@@ -111,5 +109,6 @@ URL 会进代理/网关/浏览器历史与访问日志。
 - **资源泄漏**：OPC-UA/MQTT 连接失败释放半成品 client；TCP/Modbus 补连接超时
 - **MQTT 退订**：`ProtocolAdapter.onPointsRemoved` 钩子，删点/改绑定会退订并清缓存
 - **`@Transactional` 内不做远端 I/O**：新增 `TransactionHooks.afterCommit`
-- **其它**：错误请求体 400、删除不存在测点 404、加索引、历史查询参数校验+偏移溢出保护、`BindingMigration` 按具体绑定判重、tdengine 库名白名单+引导超时、demo 播种开关、通道状态推送接通、写值返回逐通道结果
+- **其它**：错误请求体 400、删除不存在测点 404、加索引、历史查询参数校验+偏移溢出保护、tdengine 库名白名单+引导超时、通道状态推送接通
+  （注：原先列在这里的「`BindingMigration` 按具体绑定判重」「demo 播种开关」「写值返回逐通道结果」三项，对应代码已在「点方向」迭代中随迁移类 / `DemoDataInitializer` / 手动写值端点一起删除）
 - **前端**：统一错误提示（保留后端 message）、JWT 过期判定、切业务清空 store、WS 重连指数退避、删除二次确认、修监控页地址列恒空、`check:types` 漂移检查脚本
