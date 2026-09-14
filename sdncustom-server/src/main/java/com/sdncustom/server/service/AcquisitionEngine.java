@@ -115,7 +115,7 @@ public class AcquisitionEngine {
                             .increment(publishable.size());
 
                     // 输入测点传播：同步写出到各自绑定通道，值并入本轮批次
-                    List<PointValue> inputValues = inputPointPropagator.propagate(publishable);
+                    List<PointValue> inputValues = propagateSafely(publishable);
 
                     List<PointValue> allValues = new ArrayList<>(publishable);
                     allValues.addAll(inputValues);
@@ -170,6 +170,21 @@ public class AcquisitionEngine {
             pointsById.put(point.getPointId(), point);
         }
         return changeGate.filter(values, pointsById);
+    }
+
+    /**
+     * 传播必须就地失败：{@code changeGate.filter} 已经推进了本轮的变更基线，异常若从这里逃出去，
+     * 这一轮（含所有通道）的变化值就永久丢了——Redis、历史、推送三处都不会再见到它们。
+     * 传播只影响 INPUT 测点，不该连累 OUTPUT 值的落库，所以吞掉异常、记指标、按"没有输入测点"继续。
+     */
+    private List<PointValue> propagateSafely(List<PointValue> publishable) {
+        try {
+            return inputPointPropagator.propagate(publishable);
+        } catch (Exception e) {
+            meterRegistry.counter("sdncustom.propagation.errors").increment();
+            log.error("Input point propagation failed; committing output values only", e);
+            return List.of();
+        }
     }
 
     /**

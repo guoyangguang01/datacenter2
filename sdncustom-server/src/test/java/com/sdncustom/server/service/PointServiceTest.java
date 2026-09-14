@@ -49,9 +49,6 @@ class PointServiceTest {
     private PointValueCacheRepository pointValueCache;
 
     @Mock
-    private ChannelService channelService;
-
-    @Mock
     private ChangeGate changeGate;
 
     @Mock
@@ -65,9 +62,6 @@ class PointServiceTest {
 
     @Mock
     private PointBindingRegistry pointBindingRegistry;
-
-    @Mock
-    private DistributionService distributionService;
 
     @Mock
     private BusinessSystemService businessSystemService;
@@ -252,6 +246,58 @@ class PointServiceTest {
     }
 
     @Test
+    @DisplayName("创建 INPUT 测点不触发订阅：订阅是读路径，INPUT 的绑定是写出目标")
+    void createInputPointDoesNotSubscribe() {
+        ProtocolAdapter adapter = mock(ProtocolAdapter.class);
+        // lenient：本用例断言的是"压根不查适配器"，若把它当必需 stub 会先被 strict stubs 判失败
+        lenient().when(protocolRegistry.get("ch_001")).thenReturn(Optional.of(adapter));
+        when(pointRepository.save(any(MeasurementPoint.class))).thenReturn(inputPoint("in_1"));
+
+        testDto.setPointId("in_1");
+        testDto.setDirection(PointDirection.INPUT);
+        testDto.setReferencePointId("test_point_001");
+
+        pointService.create(testDto);
+
+        verify(protocolRegistry, never()).get("ch_001");
+        verifyNoInteractions(adapter);
+    }
+
+    @Test
+    @DisplayName("更新 INPUT 测点不触发订阅")
+    void updateInputPointDoesNotSubscribe() {
+        ProtocolAdapter adapter = mock(ProtocolAdapter.class);
+        lenient().when(protocolRegistry.get("ch_001")).thenReturn(Optional.of(adapter));
+        when(pointRepository.findById("in_1")).thenReturn(Optional.of(inputPoint("in_1")));
+        when(pointRepository.save(any(MeasurementPoint.class))).thenReturn(inputPoint("in_1"));
+
+        testDto.setPointId("in_1");
+        pointService.update("in_1", testDto);
+
+        verify(protocolRegistry, never()).get("ch_001");
+        verifyNoInteractions(adapter);
+    }
+
+    @Test
+    @DisplayName("给 INPUT 测点加绑定不触发订阅")
+    void addBindingOnInputPointDoesNotSubscribe() {
+        ProtocolAdapter adapter = mock(ProtocolAdapter.class);
+        lenient().when(protocolRegistry.get("ch_002")).thenReturn(Optional.of(adapter));
+        when(pointRepository.findById("in_1")).thenReturn(Optional.of(inputPoint("in_1")));
+        when(pointSourceService.bindingChannelIds("in_1")).thenReturn(java.util.Set.of("ch_002"));
+        // 绑定视图：真实路径由 PointSourceService 生成，方向随实体拷贝
+        MeasurementPoint view = inputPoint("in_1");
+        view.setChannelId("ch_002");
+        view.setAddress("reg2");
+        when(pointSourceService.viewForBinding(any(), any(), any())).thenReturn(view);
+
+        pointService.addBinding("in_1", "ch_002", "reg2");
+
+        verify(protocolRegistry, never()).get("ch_002");
+        verifyNoInteractions(adapter);
+    }
+
+    @Test
     @DisplayName("更新测点")
     void update() {
         when(pointRepository.findById("test_point_001")).thenReturn(Optional.of(testPoint));
@@ -350,7 +396,13 @@ class PointServiceTest {
         when(pointRepository.findById("test_point_001")).thenReturn(Optional.of(testPoint));
         when(pointSourceRepository.findByPointId("test_point_001")).thenReturn(List.of());
         when(pointSourceService.bindingChannelIds("test_point_001")).thenReturn(java.util.Set.of("ch_001", "ch_002"));
-        when(pointSourceService.viewForBinding(any(), any(), any())).thenReturn(testPoint);
+        // 绑定视图：新绑定的通道是 ch_002（生产路径由 viewForBinding 把绑定值盖到视图上）
+        MeasurementPoint view = new MeasurementPoint();
+        view.setPointId("test_point_001");
+        view.setDirection(PointDirection.OUTPUT);
+        view.setChannelId("ch_002");
+        view.setAddress("reg2");
+        when(pointSourceService.viewForBinding(any(), any(), any())).thenReturn(view);
         ProtocolAdapter adapter = mock(ProtocolAdapter.class);
         when(protocolRegistry.get("ch_002")).thenReturn(Optional.of(adapter));
 

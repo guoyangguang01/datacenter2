@@ -7,6 +7,7 @@ import com.sdncustom.common.exception.ResourceNotFoundException;
 import com.sdncustom.common.model.MeasurementPoint;
 import com.sdncustom.common.model.PointSource;
 import com.sdncustom.common.model.PointValue;
+import com.sdncustom.common.model.enums.PointDirection;
 import com.sdncustom.protocol.ProtocolRegistry;
 import com.sdncustom.server.repository.MeasurementPointRepository;
 import com.sdncustom.server.repository.PointSourceRepository;
@@ -30,12 +31,10 @@ public class PointService {
     private final MeasurementPointRepository pointRepository;
     private final PointValueCacheRepository pointValueCache;
     private final PointSourceRepository pointSourceRepository;
-    private final ChannelService channelService;
     private final ChangeGate changeGate;
     private final ProtocolRegistry protocolRegistry;
     private final PointSourceService pointSourceService;
     private final PointBindingRegistry pointBindingRegistry;
-    private final DistributionService distributionService;
     private final BusinessSystemService businessSystemService;
     private final PointDirectionValidator pointDirectionValidator;
 
@@ -202,7 +201,7 @@ public class PointService {
         changeGate.syncPointBindings(pointId, pointSourceService.bindingChannelIds(pointId));
 
         MeasurementPoint view = pointSourceService.viewForBinding(point, channelId, address);
-        TransactionHooks.afterCommit(() -> subscribeConnectedChannel(channelId, List.of(view)));
+        TransactionHooks.afterCommit(() -> subscribeConnectedBinding(view));
         return findById(pointId);
     }
 
@@ -243,22 +242,32 @@ public class PointService {
     }
 
     private void subscribeConnectedBindings(MeasurementPoint point, List<PointSourceDTO> bindings) {
-        if (bindings == null) {
+        if (bindings == null || point.getDirection() != PointDirection.OUTPUT) {
             return;
         }
         for (PointSourceDTO binding : bindings) {
-            subscribeConnectedChannel(binding.getChannelId(),
-                    List.of(pointSourceService.viewForBinding(point, binding.getChannelId(), binding.getAddress())));
+            subscribeConnectedBinding(
+                    pointSourceService.viewForBinding(point, binding.getChannelId(), binding.getAddress()));
         }
     }
 
-    private void subscribeConnectedChannel(String channelId, List<MeasurementPoint> views) {
-        protocolRegistry.get(channelId).ifPresent(adapter -> {
+    /**
+     * 通知适配器一条绑定可供**读取/订阅**。
+     *
+     * <p>只对 OUTPUT 生效：订阅是读路径，而 INPUT 的绑定是写出目标——订阅它等于去订阅
+     * 自己即将发布的那个 topic（MQTT 适配器会真的订阅 view.getAddress()）。
+     * 采集路径由 {@code findOutputPointsForChannel} 把关，这里是同一规则的另一半。
+     */
+    private void subscribeConnectedBinding(MeasurementPoint view) {
+        if (view.getDirection() != PointDirection.OUTPUT) {
+            return;
+        }
+        protocolRegistry.get(view.getChannelId()).ifPresent(adapter -> {
             try {
-                adapter.onConnected(views);
+                adapter.onConnected(List.of(view));
             } catch (Exception e) {
                 log.warn("Failed to subscribe point {} on connected channel {}",
-                        views.isEmpty() ? "?" : views.get(0).getPointId(), channelId, e);
+                        view.getPointId(), view.getChannelId(), e);
             }
         });
     }

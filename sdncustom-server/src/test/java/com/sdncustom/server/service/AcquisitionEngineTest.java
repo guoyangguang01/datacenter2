@@ -9,7 +9,6 @@ import com.sdncustom.common.model.enums.PointQuality;
 import com.sdncustom.protocol.ProtocolAdapter;
 import com.sdncustom.protocol.ProtocolRegistry;
 import com.sdncustom.server.repository.ChannelRepository;
-import com.sdncustom.server.repository.MeasurementPointRepository;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -34,9 +33,6 @@ class AcquisitionEngineTest {
 
     @Mock
     private ChannelRepository channelRepository;
-
-    @Mock
-    private MeasurementPointRepository pointRepository;
 
     @Mock
     private ChannelService channelService;
@@ -202,6 +198,28 @@ class AcquisitionEngineTest {
         engine.acquire();
 
         verifyNoInteractions(inputPointPropagator);
+    }
+
+    @Test
+    @DisplayName("传播抛异常：不逃出采集周期，本轮 OUTPUT 值照常落库/推送")
+    void propagationFailureDoesNotLoseTheCycle() {
+        when(channelRepository.findByStatus(ChannelStatus.CONNECTED)).thenReturn(List.of(channel));
+        when(pointSourceService.findOutputPointsForChannel("ch_001")).thenReturn(List.of(point));
+        ProtocolAdapter adapter = mock(ProtocolAdapter.class);
+        when(protocolRegistry.getOrCreate(channel)).thenReturn(adapter);
+        when(adapter.isConnected()).thenReturn(true);
+        List<PointValue> read = List.of(value("p1", 25.0));
+        when(adapter.readPoints(anyList())).thenReturn(read);
+        when(changeGate.filter(read, java.util.Map.of("p1", point))).thenReturn(read);
+        when(inputPointPropagator.propagate(read)).thenThrow(new RuntimeException("propagation exploded"));
+
+        // changeGate 已经推进过基线：异常若逃出 acquire()，这一轮的变化值就永久丢了
+        engine.acquire();
+
+        verify(pointService).updateBatch(read);
+        verify(historyService).saveBatch(read);
+        verify(distributionService).pushBatch(read);
+        assertEquals(1.0, meterRegistry.get("sdncustom.propagation.errors").counter().count());
     }
 
     @Test
