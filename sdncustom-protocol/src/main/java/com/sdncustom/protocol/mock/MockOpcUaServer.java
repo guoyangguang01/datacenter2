@@ -11,9 +11,11 @@ import org.eclipse.milo.opcua.sdk.server.api.MonitoredItem;
 import org.eclipse.milo.opcua.sdk.server.api.config.OpcUaServerConfig;
 import org.eclipse.milo.opcua.sdk.server.api.services.AttributeServices;
 import org.eclipse.milo.opcua.sdk.server.api.services.ViewServices;
+import org.eclipse.milo.opcua.sdk.server.util.SubscriptionModel;
 import org.eclipse.milo.opcua.sdk.server.nodes.UaFolderNode;
 import org.eclipse.milo.opcua.sdk.server.nodes.UaNodeContext;
 import org.eclipse.milo.opcua.sdk.server.nodes.UaVariableNode;
+import org.eclipse.milo.opcua.stack.core.AttributeId;
 import org.eclipse.milo.opcua.stack.core.Identifiers;
 import org.eclipse.milo.opcua.stack.core.types.builtin.*;
 import org.eclipse.milo.opcua.stack.core.types.builtin.unsigned.UByte;
@@ -171,6 +173,7 @@ public class MockOpcUaServer {
             server = new OpcUaServer(config);
             namespace = new MockNamespace(server, "urn:sdncustom:mock:opcua:namespace");
             namespace.startup();
+            namespace.verifyNodes();
             server.startup().get();
             running = true;
             log.info("Mock OPC-UA Server started on port {}", port);
@@ -335,9 +338,12 @@ public class MockOpcUaServer {
     private class MockNamespace extends ManagedNamespaceWithLifecycle {
 
         private final Map<String, UaVariableNode> variableNodes = new HashMap<>();
+        private final SubscriptionModel subscriptionModel;
 
         public MockNamespace(OpcUaServer server, String namespaceUri) {
             super(server, namespaceUri);
+            subscriptionModel = new SubscriptionModel(server, this);
+            getLifecycleManager().addLifecycle(subscriptionModel);
             // 注册启动任务，在启动时创建节点
             getLifecycleManager().addStartupTask(this::createNodes);
         }
@@ -397,22 +403,22 @@ public class MockOpcUaServer {
 
         @Override
         public void onDataItemsCreated(List<DataItem> dataItems) {
-            // 订阅创建时的回调
+            subscriptionModel.onDataItemsCreated(dataItems);
         }
 
         @Override
         public void onDataItemsModified(List<DataItem> dataItems) {
-            // 订阅修改时的回调
+            subscriptionModel.onDataItemsModified(dataItems);
         }
 
         @Override
         public void onDataItemsDeleted(List<DataItem> dataItems) {
-            // 订阅删除时的回调
+            subscriptionModel.onDataItemsDeleted(dataItems);
         }
 
         @Override
         public void onMonitoringModeChanged(List<MonitoredItem> monitoredItems) {
-            // 监控模式变更时的回调
+            subscriptionModel.onMonitoringModeChanged(monitoredItems);
         }
 
         @Override
@@ -570,23 +576,40 @@ public class MockOpcUaServer {
                     true
             ));
 
-            log.info("Created {} mock nodes in OPC-UA server", variableNodes.size());
+            log.info("Created {} mock nodes in OPC-UA server (namespace index={})", variableNodes.size(), getNamespaceIndex());
+        }
+
+        void verifyNodes() {
+            String[] testPaths = {"Power/Voltage", "Temperature/Room1", "Status/Pump01"};
+            for (String path : testPaths) {
+                NodeId nid = new NodeId(getNamespaceIndex(), path);
+                getNodeManager().getNode(nid).ifPresent(node -> {
+                    if (node instanceof UaVariableNode) {
+                        UaVariableNode vn = (UaVariableNode) node;
+                        log.info("Verify {}: dataType={} value={}", nid, vn.getDataType(),
+                                vn.getValue() != null ? vn.getValue().getValue() : "null");
+                    }
+                });
+            }
         }
 
         private UaFolderNode createFolder(UaNodeContext context, String name, String description) {
             NodeId nodeId = new NodeId(getNamespaceIndex(), name);
-            return new UaFolderNode(
+            UaFolderNode folder = new UaFolderNode(
                     context,
                     nodeId,
                     new org.eclipse.milo.opcua.stack.core.types.builtin.QualifiedName(getNamespaceIndex(), name),
                     LocalizedText.english(name)
             );
+            getNodeManager().addNode(folder);
+            return folder;
         }
 
         private void createVariableNode(UaNodeContext context, UaFolderNode parent, String name, String description, Object value) {
             String path = parent.getNodeId().getIdentifier().toString() + "/" + name;
             NodeId nodeId = new NodeId(getNamespaceIndex(), path);
             Variant variant = convertToVariant(value);
+            NodeId dataType = getDataTypeNodeId(value);
 
             UaVariableNode variableNode = new UaVariableNode(
                     context,
@@ -595,7 +618,7 @@ public class MockOpcUaServer {
                     LocalizedText.english(name)
             );
             variableNode.setValue(new DataValue(variant));
-            variableNode.setDataType(getDataTypeNodeId(value));
+            variableNode.setDataType(dataType);
             variableNode.setAccessLevel(UByte.valueOf(3)); // READ_WRITE
             variableNode.setUserAccessLevel(UByte.valueOf(3)); // READ_WRITE
 
@@ -608,7 +631,9 @@ public class MockOpcUaServer {
             UaVariableNode node = variableNodes.get(path);
             if (node != null) {
                 Variant variant = convertToVariant(value);
-                node.setValue(new DataValue(variant));
+                DataValue dataValue = new DataValue(variant);
+                node.setValue(dataValue);
+                node.fireAttributeChanged(AttributeId.Value, dataValue);
             }
         }
 
