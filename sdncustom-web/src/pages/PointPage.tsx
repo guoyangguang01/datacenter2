@@ -30,6 +30,7 @@ export default function PointPage() {
   const [form] = Form.useForm();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mainChannelId = Form.useWatch('channelId', form);
+  const referenceChannelId = Form.useWatch('referenceChannelId', form);
   const watchedDirection = Form.useWatch('direction', form);
 
   useEffect(() => {
@@ -146,6 +147,8 @@ export default function PointPage() {
         await pointApi.addBinding(linkPointId, { channelId: values.channelId, address: values.address });
         message.success(`已关联到测点 ${linkPointId}`);
       } else {
+        // 显式白名单：以下字段是提交给后端的全部内容。UI 专用的检索维度（如 referenceChannelId
+        // ——来源通道）不在其中，MeasurementPointDTO 也没有该字段，故不会随请求发出。
         await createPoint({
           pointId: values.pointId,
           businessId: currentBusinessId ?? undefined,
@@ -173,10 +176,13 @@ export default function PointPage() {
     .filter((p) => !(p.bindings ?? []).some((x) => x.channelId === mainChannelId))
     .map((p) => ({ label: `${p.pointName} (${p.pointId})`, value: p.pointId }));
 
-  // 输入测点只能引用「绑定到所选通道」的输出测点
+  // 输入测点只能引用「绑定到来源通道」的输出测点。
+  // 来源通道是被引用 OUTPUT 所在的通道，与 INPUT 自己的写出通道（所属通道）无关——
+  // 跨管道路由正是本特性的目的（先选管道再选测点），故这里用 referenceChannelId 而非 mainChannelId。
+  // 未选来源通道时 referenceChannelId 为 undefined，没有任何绑定能匹配上，列表自然为空。
   const referenceOptions = allPoints
     .filter((p) => p.direction === 'OUTPUT')
-    .filter((p) => (p.bindings ?? []).some((b) => b.channelId === mainChannelId))
+    .filter((p) => (p.bindings ?? []).some((b) => b.channelId === referenceChannelId))
     .map((p) => ({
       label: `${p.pointName} (${p.pointId}) · ${p.dataType}`,
       value: p.pointId,
@@ -304,34 +310,47 @@ export default function PointPage() {
             </div>
           )}
           <Form.Item name="channelId" label="所属通道" rules={[{ required: true }]}>
-            <Select
-              options={channels.map((c) => ({ label: c.channelName, value: c.channelId }))}
-              onChange={(v) => {
-                // 换通道后旧引用可能已不在候选列表里，清掉以免提交一个选择器不会提供的配对。
-                // Form.Item 会先写入新值，故这里与上一次渲染的 mainChannelId 比较；同值重选不清。
-                if (v !== mainChannelId) form.setFieldValue('referencePointId', undefined);
-              }}
-            />
+            <Select options={channels.map((c) => ({ label: c.channelName, value: c.channelId }))} />
           </Form.Item>
           <Form.Item name="address" label="地址" rules={[{ required: true }]}>
             <Input placeholder="例如 40001 或 sensors/temp01" />
           </Form.Item>
 
           {watchedDirection === 'INPUT' && !editing && !linkPointId && (
-            <Form.Item
-              name="referencePointId"
-              label="引用的输出测点"
-              tooltip="仅列出绑定到你上面所选通道的输出测点"
-              rules={[{ required: true, message: '请选择引用的输出测点' }]}
-            >
-              <Select
-                disabled={!mainChannelId}
-                placeholder={mainChannelId ? '选择输出测点' : '请先选择所属通道'}
-                showSearch
-                optionFilterProp="label"
-                options={referenceOptions}
-              />
-            </Form.Item>
+            <>
+              {/* 来源通道：被引用 OUTPUT 所在的通道，与上面的「所属通道」（INPUT 自己的写出通道）是两个不同的东西。
+                  纯 UI 检索维度——后端没有这个字段也不校验它，故不随 payload 提交（见 handleSubmit）。 */}
+              <Form.Item
+                name="referenceChannelId"
+                label="来源通道"
+                tooltip="被引用的输出测点所在的通道。与上面的「所属通道」无关——跨管道路由正是本特性的目的；仅用于筛选下面的候选测点，不会提交到后端"
+                rules={[{ required: true, message: '请选择来源通道' }]}
+              >
+                <Select
+                  placeholder="选择输出测点所在的通道"
+                  options={channels.map((c) => ({ label: c.channelName, value: c.channelId }))}
+                  onChange={(v) => {
+                    // 换来源通道后旧引用可能已不在候选列表里，清掉以免提交一个选择器不会提供的配对。
+                    // Form.Item 会先写入新值，故这里与上一次渲染的 referenceChannelId 比较；同值重选不清。
+                    if (v !== referenceChannelId) form.setFieldValue('referencePointId', undefined);
+                  }}
+                />
+              </Form.Item>
+              <Form.Item
+                name="referencePointId"
+                label="引用的输出测点"
+                tooltip="仅列出绑定到「来源通道」的输出测点"
+                rules={[{ required: true, message: '请选择引用的输出测点' }]}
+              >
+                <Select
+                  disabled={!referenceChannelId}
+                  placeholder={referenceChannelId ? '选择输出测点' : '请先选择来源通道'}
+                  showSearch
+                  optionFilterProp="label"
+                  options={referenceOptions}
+                />
+              </Form.Item>
+            </>
           )}
 
           {!editing && (
