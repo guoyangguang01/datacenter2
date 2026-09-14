@@ -66,6 +66,15 @@ npm run dev
 
 前端访问 http://localhost:3000
 
+### 默认登录凭据
+
+| 项目 | 值 |
+|------|-----|
+| 用户名 | `admin` |
+| 密码 | `changeme` |
+
+> 生产环境请通过环境变量 `SDNCUSTOM_SECURITY_USERNAME` / `SDNCUSTOM_SECURITY_PASSWORD` 覆盖默认凭据，并设置 `SDNCUSTOM_JWT_SECRET`（至少 32 字节）。
+
 ## API 文档
 
 ### Channel API

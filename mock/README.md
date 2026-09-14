@@ -104,21 +104,63 @@ chmod +x start-mock-servers.sh
 
 ## 单独启动模拟服务器
 
-如果需要单独启动某个模拟服务器，可以使用以下命令：
+### 前提：构建 Fat JAR
+
+单独启动前需先构建 protocol 模块，生成包含所有依赖的 fat JAR：
 
 ```bash
-# 自定义 TCP 模拟服务器
-java -cp <classpath> com.sdncustom.protocol.mock.MockTcpServer [port]
-
-# Modbus TCP 模拟服务器
-java -cp <classpath> com.sdncustom.protocol.mock.MockModbusTcpServer [port]
-
-# MQTT 模拟客户端
-java -cp <classpath> com.sdncustom.protocol.mock.MockMqttClient [broker_url]
-
-# OPC-UA 模拟服务器
-java -cp <classpath> com.sdncustom.protocol.mock.MockOpcUaServer [port]
+cd /path/to/SDNCustom
+mvn clean package -pl sdncustom-protocol -am -DskipTests
 ```
+
+> JAR 路径：`sdncustom-protocol/target/sdncustom-protocol-1.0.0-SNAPSHOT-jar-with-dependencies.jar`
+
+### 启动命令
+
+**Windows：**
+
+```bat
+set JAVA_HOME=C:\Users\guoya\.jdks\openjdk-23.0.2
+
+REM 自定义 TCP 模拟服务器（默认端口 9002）
+java -cp sdncustom-protocol\target\sdncustom-protocol-1.0.0-SNAPSHOT-jar-with-dependencies.jar com.sdncustom.protocol.mock.MockTcpServer 9002
+
+REM Modbus TCP 模拟服务器（默认端口 5020）
+java -cp sdncustom-protocol\target\sdncustom-protocol-1.0.0-SNAPSHOT-jar-with-dependencies.jar com.sdncustom.protocol.mock.MockModbusTcpServer 5020
+
+REM MQTT 模拟客户端（需先启动 Mosquitto）
+java -cp sdncustom-protocol\target\sdncustom-protocol-1.0.0-SNAPSHOT-jar-with-dependencies.jar com.sdncustom.protocol.mock.MockMqttClient tcp://localhost:1883
+
+REM OPC-UA 模拟服务器（默认端口 4840）
+java -cp sdncustom-protocol\target\sdncustom-protocol-1.0.0-SNAPSHOT-jar-with-dependencies.jar com.sdncustom.protocol.mock.MockOpcUaServer 4840
+```
+
+**Linux/Mac：**
+
+```bash
+export JAVA_HOME=/path/to/jdk-23
+
+# 自定义 TCP 模拟服务器（默认端口 9002）
+java -cp sdncustom-protocol/target/sdncustom-protocol-1.0.0-SNAPSHOT-jar-with-dependencies.jar com.sdncustom.protocol.mock.MockTcpServer 9002
+
+# Modbus TCP 模拟服务器（默认端口 5020）
+java -cp sdncustom-protocol/target/sdncustom-protocol-1.0.0-SNAPSHOT-jar-with-dependencies.jar com.sdncustom.protocol.mock.MockModbusTcpServer 5020
+
+# MQTT 模拟客户端（需先启动 Mosquitto）
+java -cp sdncustom-protocol/target/sdncustom-protocol-1.0.0-SNAPSHOT-jar-with-dependencies.jar com.sdncustom.protocol.mock.MockMqttClient tcp://localhost:1883
+
+# OPC-UA 模拟服务器（默认端口 4840）
+java -cp sdncustom-protocol/target/sdncustom-protocol-1.0.0-SNAPSHOT-jar-with-dependencies.jar com.sdncustom.protocol.mock.MockOpcUaServer 4840
+```
+
+### 参数说明
+
+| 模拟器 | 参数 | 默认值 | 说明 |
+|--------|------|--------|------|
+| MockTcpServer | port | 9002 | TCP 监听端口 |
+| MockModbusTcpServer | port | 5020 | Modbus TCP 监听端口 |
+| MockMqttClient | broker_url | tcp://localhost:1883 | MQTT Broker 地址 |
+| MockOpcUaServer | port | 4840 | OPC-UA 监听端口 |
 
 ## 注意事项
 
