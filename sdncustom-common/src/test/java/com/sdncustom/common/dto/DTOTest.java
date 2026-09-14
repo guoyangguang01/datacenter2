@@ -62,7 +62,7 @@ class DTOTest {
 
         Set<ConstraintViolation<MeasurementPointDTO>> violations = validator.validate(dto);
         assertFalse(violations.isEmpty());
-        assertTrue(violations.size() >= 4); // pointId, pointName, dataType, direction, bindings
+        assertTrue(violations.size() >= 4); // pointId, pointName, dataType, bindings
     }
 
     @Test
@@ -70,9 +70,29 @@ class DTOTest {
     void measurementPointDTODefaults() {
         MeasurementPointDTO dto = new MeasurementPointDTO();
 
-        // direction 无默认值：缺失即被 @NotNull 拦下，referencePointId 仅 INPUT 使用
+        // direction 无默认值；referencePointId 仅 INPUT 使用
         assertNull(dto.getDirection());
         assertNull(dto.getReferencePointId());
+    }
+
+    /**
+     * direction 与 businessId 同规：创建时必填、更新时静默忽略，因此 DTO 上不能有 @NotNull
+     * ——PUT /api/points/{id} 的编辑请求不会重传该字段，bean validation 会先把请求拦成 400，
+     * 让 service 层的"静默忽略"永远走不到。必填由 PointDirectionValidator 与 ImportFields 保证。
+     */
+    @Test
+    @DisplayName("MeasurementPointDTO 缺 direction 时 bean validation 放行（必填由服务层把关）")
+    void measurementPointDTOWithoutDirectionPassesBeanValidation() {
+        MeasurementPointDTO dto = new MeasurementPointDTO();
+        dto.setPointId("point_001");
+        dto.setPointName("测试测点");
+        dto.setBindings(List.of(binding("ch_001", "40001")));
+        dto.setDataType(PointDataType.INT16);
+        dto.setDirection(null);
+
+        assertTrue(validator.validate(dto).isEmpty(),
+                "direction 是创建必填、更新忽略的字段：DTO 上加 @NotNull 会让编辑请求全部 400");
+        assertNull(dto.getDirection());
     }
 
     @Test

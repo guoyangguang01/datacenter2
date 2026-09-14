@@ -54,7 +54,8 @@ public class MeasurementPoint {
     @Column(name = "unit", length = 32)
     private String unit;
 
-    /** 数据流向：OUTPUT 从外部采集，INPUT 写出到外部。DB 层可空（无迁移回填），业务必填由 DTO @NotNull 保证 */
+    /** 数据流向：OUTPUT 从外部采集，INPUT 写出到外部。DB 层可空（无迁移回填），业务必填由服务层校验保证
+     * （创建走 PointDirectionValidator，导入走 ImportFields） */
     @Enumerated(EnumType.STRING)
     @Column(name = "direction", length = 16)
     private PointDirection direction;

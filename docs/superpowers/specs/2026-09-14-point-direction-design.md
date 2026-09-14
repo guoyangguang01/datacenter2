@@ -66,7 +66,7 @@ public enum PointDirection { INPUT, OUTPUT }
 
 **DDL 注意事项**：
 
-- `direction` 在 DB 层**允许 NULL**（实体不标 `nullable = false`）。**没有迁移回填**——业务完整性由 DTO 层的 `@NotNull` 保证：所有测点创建路径（API 创建/更新、数据导入）都必须提供 `direction`，因此空库上不会产生 NULL 行。这也意味着**不支持在旧库上原地升级**，必须删 `data/` 重建。
+- `direction` 在 DB 层**允许 NULL**（实体不标 `nullable = false`）。**没有迁移回填**——业务完整性由**服务层**保证：所有测点创建路径（API 创建、数据导入）都必须提供 `direction`，因此空库上不会产生 NULL 行（DTO 上刻意不加 `@NotNull`，理由见 §5.2）。这也意味着**不支持在旧库上原地升级**，必须删 `sdncustom-server/data/` 重建。
 - `referencePointId` 加**索引**（`idx_point_reference`），传播时按 `referencePointId IN (...)` 批量查询。
 - 旧的 `writable` 列会被 `ddl-auto: update` 遗留为孤儿列（Hibernate 不删列）。因为只支持空库，重建后该列根本不存在，无需处理。
 
@@ -188,7 +188,7 @@ INPUT 测点的推送复用现有 fan-out 逻辑：`DataWebSocketHandler.pushBat
 
 | # | 规则 |
 |---|------|
-| 1 | `direction` 必填（`@NotNull`） |
+| 1 | `direction` 必填。**创建路径**由 `PointDirectionValidator.validate`（API）与 `ImportFields.parsePoint`（导入）把关；**更新**静默忽略（见 §4.1、§5.2）。DTO 上不加 `@NotNull` |
 | 2 | OUTPUT：`referencePointId` 必须为 null |
 | 3 | INPUT：`referencePointId` 必填（`@NotBlank`） |
 | 4 | INPUT 引用的测点必须**存在** |
@@ -219,7 +219,7 @@ INPUT 测点的推送复用现有 fan-out 逻辑：`DataWebSocketHandler.pushBat
 | 端点 | 变更 |
 |------|------|
 | `POST /api/points` | body 新增 `direction`（必填）、`referencePointId`（INPUT 必填）；移除 `writable` |
-| `PUT /api/points/{id}` | 同上；`direction` / `referencePointId` 静默忽略 |
+| `PUT /api/points/{id}` | body **不必携带** `direction` / `referencePointId`——两者静默忽略（见 §5.2） |
 | `GET /api/points` | 新增可选 `?direction=INPUT\|OUTPUT` 过滤参数，可与 `channelId` / `businessId` / 分页叠加 |
 | `PUT /api/points/{id}/value` | **删除**——不再有"手动写值"概念 |
 | `GET /api/points/{id}/value` | 保留。OUTPUT 读采集值；INPUT 读其缓存中的引用同步副本 |
@@ -232,10 +232,15 @@ INPUT 测点的推送复用现有 fan-out 逻辑：`DataWebSocketHandler.pushBat
 `MeasurementPointDTO`：
 
 ```java
-@NotNull  private PointDirection direction;
+          private PointDirection direction;  // 创建必填、更新忽略 —— 因此**不加 @NotNull**
           private String referencePointId;   // INPUT 必填，OUTPUT 必须为 null
 // writable 字段删除
 ```
+
+> `direction` 与 `businessId` 同规：**创建时必填、更新时静默忽略**，所以 DTO 上不能有 `@NotNull`。
+> 加了它，`PointController` 的 `@Valid` 会先于 `PointService.update()` 把请求拒成 400——而前端
+> 编辑测点时本就（正确地）不重传这个字段，于是"静默忽略"永远走不到、任何编辑都存不下去。
+> 必填由创建路径把关：API 走 `PointDirectionValidator.validate`，导入走 `ImportFields.parsePoint`。
 
 前端类型同步（`sdncustom-web/src/types/index.ts`）——`npm run check:types` 会比对漂移。
 
@@ -251,6 +256,10 @@ INPUT 测点的推送复用现有 fan-out 逻辑：`DataWebSocketHandler.pushBat
   - INPUT 的 `referencePointId` 必须能在**本次导入的测点集 ∪ 库中已有测点**里解析到，且解析结果为 `OUTPUT`
   - `dataType` 与引用测点不一致 → 整批失败并点名
   - 错误信息沿用现有格式：列出所有不合格的测点 ID 与原因，而不是只报第一条
+    （实现分两层：`ImportFields.parsePoints` 逐条累积解析问题并点名记录，
+    `DataTransferService` 的预检把它与引用问题合并成**一条**消息。注意这条路径上
+    DTO 的 bean validation **不生效**——`DataTransferController` 绑的是裸 `Map`，
+    字段是手工解析的，所以"必填"只能靠解析层与预检）
 
 ### 5.4 服务层
 
@@ -286,7 +295,13 @@ INPUT 测点的推送复用现有 fan-out 逻辑：`DataWebSocketHandler.pushBat
 3. **来源通道**：被引用的 OUTPUT 测点**所在**的通道
 4. **引用的输出测点**——下拉列表**仅展示绑定了「来源通道」的 OUTPUT 测点**
 5. 未选来源通道前，「引用测点」下拉处于禁用状态
-6. 选中后展示引用测点的信息（名称、数据类型、当前值）作为确认
+6. 选中后展示引用测点的信息（名称、数据类型）作为确认
+
+> 计划里的"**当前值**"已去掉：创建弹窗要显示当前值就得先加载候选测点的 Redis 缓存值，
+> 而本特性支持的引导路径是**空库 + 导入**（`mock/mock-data.json`），那一刻候选测点还没有任何
+> 缓存值可展示；为它在创建弹窗里拉一轮值查询，付出的是每次打开弹窗的额外往返与一套
+> 只有首次部署才看得见的空状态。名称 + 数据类型 + 测点 ID 足以确认选对了对象，
+> 当前值在测点列表与监控页随时可看。
 
 > 该顺序来自需求方明确要求：先管道、再测点。**此处的「管道」指被引用 OUTPUT 所在的通道（来源通道），不是 INPUT 自己的写出通道**——两者通常是不同的通道，而跨管道路由正是本特性的目的（"不是指的业务系统，指的是不同管道"）。表单因此需要**两个**通道选择器，不可合并。
 >
@@ -323,6 +338,9 @@ INPUT 测点的推送复用现有 fan-out 逻辑：`DataWebSocketHandler.pushBat
 
 - `sdncustom.propagation.writes`（Counter，tag=channel）——传播写出次数
 - `sdncustom.propagation.failures`（Counter，tag=channel）——传播写出失败次数
+- `sdncustom.propagation.errors`（Counter，无 tag）——`propagate()` 整体抛异常的次数。
+  传播在采集线程上同步执行，异常逃出去会让**本轮（含所有通道）**的变化值永久丢失
+  （变更基线已在 ChangeGate 里推进过），故必须就地吞掉并记数
 
 ---
 
@@ -380,7 +398,9 @@ INPUT 测点的推送复用现有 fan-out 逻辑：`DataWebSocketHandler.pushBat
 
 ### 8.3 端到端手工验证
 
-1. **删除 `data/` 目录**（本次改动只支持空库，旧库无迁移路径）
+1. **删除 `sdncustom-server/data/` 目录**（本次改动只支持空库，旧库无迁移路径）。
+   注意不是仓库根目录的 `data/`——H2 文件库相对于后端的工作目录（`scripts/start-backend.bat`
+   会 `cd sdncustom-server`），删错路径不会报错，只会拿旧库跑完整个验证
 2. 启动 Docker 依赖 + `mock/build-and-start.bat`
 3. 通道管理页「导入通道配置」选 `mock/mock-channels.json`，连接 TCP 模拟器与 Modbus 模拟器
 4. 测点管理页「导入数据」选 `mock/mock-data.json`（**顺序不能颠倒**——测点绑定要求通道已存在）

@@ -28,7 +28,13 @@ public class MeasurementPointDTO {
 
     private String unit;
 
-    @NotNull(message = "direction 不能为空")
+    /**
+     * 数据流向。**创建时必填、更新时静默忽略**（方向创建后不可变更），
+     * 因此与 {@link #businessId} 同规：DTO 上不加 {@code @NotNull}——
+     * 加了它 {@code @Valid} 会先于 service 拒掉"不重传该字段"的编辑请求。
+     * 必填由 {@code PointDirectionValidator.validate}（创建）与
+     * {@code ImportFields.parsePoint}（导入）保证。
+     */
     private PointDirection direction;
 
     /** 仅 INPUT 必填：所引用的 OUTPUT 测点 ID */
