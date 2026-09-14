@@ -62,7 +62,7 @@ mvn test -Dtest=ChannelServiceTest              # 运行单个测试类
 mvn test -Dtest=ChannelServiceTest#testMethod   # 运行单个测试方法
 ```
 
-测试只在 Java 模块里（`sdncustom-common` / `sdncustom-protocol` / `sdncustom-server`，27 个测试类、238 个 `@Test`，集中在 service/controller/security/config/monitor/repository）。`sdncustom-web` **没有测试框架**——`package.json` 无 `test` 脚本、无 vitest/jest，前端改动只能靠 `npm run build`（含 `tsc` 类型检查）、`npm run check:types`（比对后端 DTO/枚举与手写类型是否漂移）与手工验证。
+测试只在 Java 模块里（`sdncustom-common` / `sdncustom-protocol` / `sdncustom-server`，28 个测试类、250 个 `@Test`，集中在 service/controller/security/config/monitor/repository）。`sdncustom-web` **没有测试框架**——`package.json` 无 `test` 脚本、无 vitest/jest，前端改动只能靠 `npm run build`（含 `tsc` 类型检查）、`npm run check:types`（比对后端 DTO/枚举与手写类型是否漂移）与手工验证。
 
 ### 前端 (Vite)
 
