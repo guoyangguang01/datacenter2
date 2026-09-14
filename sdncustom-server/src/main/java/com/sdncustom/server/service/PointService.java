@@ -127,8 +127,8 @@ public class PointService {
         point.setPointName(dto.getPointName());
         point.setDataType(dto.getDataType());
         point.setUnit(dto.getUnit());
-        point.setDirection(dto.getDirection());
-        point.setReferencePointId(dto.getReferencePointId());
+        // 方向与引用创建后不可变更：DTO 中的 direction/referencePointId 被忽略（静默，
+        // 与 businessId 同规）。若在此写入，缺 referencePointId 的编辑请求会把它清成 null。
         point.setDeadband(dto.getDeadband());
         MeasurementPoint saved = pointRepository.save(point);
         pointSourceService.replaceBindings(pointId, dto.getBindings());

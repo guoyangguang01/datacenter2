@@ -202,6 +202,26 @@ class PointServiceTest {
     }
 
     @Test
+    @DisplayName("更新测点 - 方向与引用创建后不可变更（DTO 中的 direction/referencePointId 被忽略）")
+    void updateDoesNotChangeDirectionOrReference() {
+        // 已存测点：OUTPUT、无引用；DTO 却声称改成 INPUT 并引用 out_1
+        testPoint.setDirection(PointDirection.OUTPUT);
+        testPoint.setReferencePointId(null);
+        testDto.setDirection(PointDirection.INPUT);
+        testDto.setReferencePointId("out_1");
+
+        when(pointRepository.findById("test_point_001")).thenReturn(Optional.of(testPoint));
+        when(pointRepository.save(any(MeasurementPoint.class))).thenReturn(testPoint);
+        when(pointSourceService.viewForBinding(any(), any(), any())).thenReturn(testPoint);
+
+        pointService.update("test_point_001", testDto);
+
+        // 若 update() 照写 DTO，这里会变成 INPUT/"out_1"——缺 referencePointId 的编辑请求会把它清成 null
+        assertEquals(PointDirection.OUTPUT, testPoint.getDirection());
+        assertNull(testPoint.getReferencePointId());
+    }
+
+    @Test
     @DisplayName("在已连接通道新增测点 - 触发 onConnected 增量订阅")
     void createOnConnectedChannelSubscribes() {
         ProtocolAdapter adapter = mock(ProtocolAdapter.class);
