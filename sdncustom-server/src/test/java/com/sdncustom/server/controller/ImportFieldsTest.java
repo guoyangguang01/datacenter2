@@ -1,6 +1,7 @@
 package com.sdncustom.server.controller;
 
 import com.sdncustom.common.exception.BusinessException;
+import com.sdncustom.common.model.enums.PointDirection;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -63,5 +64,39 @@ class ImportFieldsTest {
         assertEquals(1, bindings.size());
         assertEquals("ch_1", bindings.get(0).getChannelId());
         assertEquals("40001", bindings.get(0).getAddress());
+    }
+
+    @Test
+    @DisplayName("测点缺 direction：整条解析失败")
+    void directionRequired() {
+        Map<String, Object> pt = Map.of(
+                "pointId", "p1",
+                "businessId", "default",
+                "pointName", "P1",
+                "dataType", "FLOAT32",
+                "bindings", List.of(Map.of("channelId", "ch_1", "address", "40001")));
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> ImportFields.parsePoint(pt));
+
+        assertTrue(ex.getMessage().contains("direction"), ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("INPUT 测点的 referencePointId 被解析")
+    void referencePointIdParsed() {
+        Map<String, Object> pt = Map.of(
+                "pointId", "in_1",
+                "businessId", "default",
+                "pointName", "IN1",
+                "dataType", "FLOAT32",
+                "direction", "INPUT",
+                "referencePointId", "out_1",
+                "bindings", List.of(Map.of("channelId", "ch_1", "address", "40001")));
+
+        var dto = ImportFields.parsePoint(pt);
+
+        assertEquals(PointDirection.INPUT, dto.getDirection());
+        assertEquals("out_1", dto.getReferencePointId());
     }
 }

@@ -9,6 +9,7 @@ import com.sdncustom.common.model.PointSource;
 import com.sdncustom.common.model.PointValue;
 import com.sdncustom.common.model.enums.ChannelStatus;
 import com.sdncustom.common.model.enums.PointDataType;
+import com.sdncustom.common.model.enums.PointDirection;
 import com.sdncustom.common.model.enums.PointQuality;
 import com.sdncustom.protocol.ProtocolAdapter;
 import com.sdncustom.protocol.ProtocolRegistry;
@@ -91,7 +92,7 @@ class PointServiceTest {
         testPoint.setAddress("40001");
         testPoint.setDataType(PointDataType.INT16);
         testPoint.setUnit("°C");
-        testPoint.setWritable(false);
+        testPoint.setDirection(PointDirection.OUTPUT);
 
         testDto = new MeasurementPointDTO();
         testDto.setPointId("test_point_001");
@@ -100,7 +101,7 @@ class PointServiceTest {
         testDto.setBindings(List.of(binding("ch_001", "40001")));
         testDto.setDataType(PointDataType.INT16);
         testDto.setUnit("°C");
-        testDto.setWritable(false);
+        testDto.setDirection(PointDirection.OUTPUT);
     }
 
     private static PointSourceDTO binding(String channelId, String address) {

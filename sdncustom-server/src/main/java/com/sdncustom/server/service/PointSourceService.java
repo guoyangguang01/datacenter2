@@ -86,7 +86,8 @@ public class PointSourceService {
         view.setAddress(address);
         view.setDataType(point.getDataType());
         view.setUnit(point.getUnit());
-        view.setWritable(point.isWritable());
+        view.setDirection(point.getDirection());
+        view.setReferencePointId(point.getReferencePointId());
         view.setDeadband(point.getDeadband());
         view.setCreateTime(point.getCreateTime());
         view.setUpdateTime(point.getUpdateTime());

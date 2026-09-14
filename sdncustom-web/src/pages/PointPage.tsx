@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { Table, Button, Modal, Form, Input, InputNumber, Select, Switch, Space, message, Popconfirm } from 'antd';
+import { Table, Button, Modal, Form, Input, InputNumber, Select, Tag, Space, message, Popconfirm } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, DownloadOutlined, UploadOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import { usePointStore } from '../stores/pointStore';
 import { useChannelStore } from '../stores/channelStore';
@@ -51,7 +51,7 @@ export default function PointPage() {
     setEditing(null);
     setLinkPointId(undefined);
     form.resetFields();
-    form.setFieldsValue({ channelId: filterChannel, writable: false });
+    form.setFieldsValue({ channelId: filterChannel, direction: 'OUTPUT' });
     try {
       const res = await pointApi.getAll(undefined, currentBusinessId ?? undefined);
       setAllPoints(res.data.data ?? []);
@@ -73,7 +73,8 @@ export default function PointPage() {
       dataType: record.dataType,
       unit: record.unit,
       deadband: record.deadband,
-      writable: record.writable,
+      direction: record.direction,
+      referencePointId: record.referencePointId,
       additionalBindings: b.slice(1).map((x) => ({ channelId: x.channelId, address: x.address })),
     });
     setModalOpen(true);
@@ -133,7 +134,7 @@ export default function PointPage() {
           dataType: values.dataType,
           unit: values.unit,
           deadband: values.deadband,
-          writable: values.writable,
+          direction: values.direction,
           bindings,
         });
         message.success('已更新');
@@ -149,7 +150,7 @@ export default function PointPage() {
           dataType: values.dataType,
           unit: values.unit,
           deadband: values.deadband,
-          writable: values.writable,
+          direction: values.direction,
           bindings: [{ channelId: values.channelId, address: values.address }],
         });
         message.success('已创建');
@@ -186,7 +187,7 @@ export default function PointPage() {
     { title: '类型', dataIndex: 'dataType', key: 'dataType' },
     { title: '单位', dataIndex: 'unit', key: 'unit' },
     { title: '死区', dataIndex: 'deadband', key: 'deadband', render: (v: number | null | undefined) => v != null ? v : '-' },
-    { title: '可写', dataIndex: 'writable', key: 'writable', render: (v: boolean) => v ? '是' : '否' },
+    { title: '方向', dataIndex: 'direction', key: 'direction', render: (v: string) => <Tag color={v === 'INPUT' ? 'blue' : 'green'}>{v === 'INPUT' ? '输入' : '输出'}</Tag> },
     {
       title: '操作',
       key: 'actions',
@@ -261,6 +262,15 @@ export default function PointPage() {
         width={720}
       >
         <Form form={form} layout="vertical">
+          <Form.Item name="direction" label="方向" rules={[{ required: true }]}>
+            <Select
+              disabled={!!editing}
+              options={[
+                { label: '输出测点（从外部采集）', value: 'OUTPUT' },
+                { label: '输入测点（写出到外部）', value: 'INPUT' },
+              ]}
+            />
+          </Form.Item>
           <Form.Item name="channelId" label="所属通道" rules={[{ required: true }]}>
             <Select options={channels.map((c) => ({ label: c.channelName, value: c.channelId }))} />
           </Form.Item>
@@ -302,9 +312,6 @@ export default function PointPage() {
               </Form.Item>
               <Form.Item name="deadband" label="死区" tooltip="数值变化超过死区才上报历史与推送；0 表示任何变化都上报">
                 <InputNumber min={0} step={0.01} placeholder="0 = 任何变化都上报" style={{ width: '100%' }} />
-              </Form.Item>
-              <Form.Item name="writable" label="可写" valuePropName="checked">
-                <Switch />
               </Form.Item>
             </>
           )}

@@ -8,6 +8,8 @@ export type PointDataType = 'BOOL' | 'INT16' | 'INT32' | 'FLOAT32' | 'FLOAT64' |
 
 export type PointQuality = 'GOOD' | 'BAD' | 'UNCERTAIN' | 'COMM_LOST';
 
+export type PointDirection = 'INPUT' | 'OUTPUT';
+
 export interface BusinessSystem {
   businessId: string;
   businessName: string;
@@ -40,7 +42,8 @@ export interface MeasurementPoint {
   pointName: string;
   dataType: PointDataType;
   unit: string;
-  writable: boolean;
+  direction: PointDirection;
+  referencePointId?: string;
   deadband?: number;
   bindings: PointSourceDTO[];
   createTime: string;

@@ -4,6 +4,7 @@ import com.sdncustom.common.dto.MeasurementPointDTO;
 import com.sdncustom.common.dto.PointSourceDTO;
 import com.sdncustom.common.exception.BusinessException;
 import com.sdncustom.common.model.enums.PointDataType;
+import com.sdncustom.common.model.enums.PointDirection;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -81,7 +82,8 @@ final class ImportFields {
         dto.setPointName(requireString(pt, "pointName"));
         dto.setDataType(parseEnum(PointDataType.class, pt.get("dataType"), "dataType"));
         dto.setUnit(optionalString(pt, "unit"));
-        dto.setWritable(optionalBoolean(pt, "writable", false));
+        dto.setDirection(parseEnum(PointDirection.class, pt.get("direction"), "direction"));
+        dto.setReferencePointId(optionalString(pt, "referencePointId"));
         dto.setDeadband(optionalDouble(pt, "deadband", null));
         dto.setBindings(parseBindings(pt));
         return dto;

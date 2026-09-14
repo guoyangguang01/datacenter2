@@ -24,7 +24,8 @@ class ModelTest {
         point.setAddress("40001");
         point.setDataType(PointDataType.INT16);
         point.setUnit("°C");
-        point.setWritable(true);
+        point.setDirection(PointDirection.INPUT);
+        point.setReferencePointId("out_001");
 
         assertEquals("point_001", point.getPointId());
         assertEquals("测试测点", point.getPointName());
@@ -32,7 +33,8 @@ class ModelTest {
         assertEquals("40001", point.getAddress());
         assertEquals(PointDataType.INT16, point.getDataType());
         assertEquals("°C", point.getUnit());
-        assertTrue(point.isWritable());
+        assertEquals(PointDirection.INPUT, point.getDirection());
+        assertEquals("out_001", point.getReferencePointId());
     }
 
     @Test
@@ -163,7 +165,7 @@ class ModelTest {
         LocalDateTime now = LocalDateTime.now();
         MeasurementPoint point = new MeasurementPoint(
                 "point_001", "default", "测试测点", "ch_001", "40001",
-                PointDataType.INT16, "°C", true, 0.5, now, now, null
+                PointDataType.INT16, "°C", PointDirection.OUTPUT, null, 0.5, now, now, null
         );
 
         assertEquals("point_001", point.getPointId());
@@ -173,7 +175,8 @@ class ModelTest {
         assertEquals("40001", point.getAddress());
         assertEquals(PointDataType.INT16, point.getDataType());
         assertEquals("°C", point.getUnit());
-        assertTrue(point.isWritable());
+        assertEquals(PointDirection.OUTPUT, point.getDirection());
+        assertNull(point.getReferencePointId());
         assertEquals(0.5, point.getDeadband());
         assertEquals(now, point.getCreateTime());
         assertEquals(now, point.getUpdateTime());

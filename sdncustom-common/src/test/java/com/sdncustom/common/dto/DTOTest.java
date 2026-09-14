@@ -2,6 +2,7 @@ package com.sdncustom.common.dto;
 
 import com.sdncustom.common.model.enums.ChannelDirection;
 import com.sdncustom.common.model.enums.PointDataType;
+import com.sdncustom.common.model.enums.PointDirection;
 import com.sdncustom.common.model.enums.PointQuality;
 import com.sdncustom.common.model.enums.ProtocolType;
 import jakarta.validation.ConstraintViolation;
@@ -47,7 +48,7 @@ class DTOTest {
         dto.setBindings(List.of(binding("ch_001", "40001")));
         dto.setDataType(PointDataType.INT16);
         dto.setUnit("°C");
-        dto.setWritable(true);
+        dto.setDirection(PointDirection.OUTPUT);
 
         Set<ConstraintViolation<MeasurementPointDTO>> violations = validator.validate(dto);
         assertTrue(violations.isEmpty());
@@ -61,7 +62,7 @@ class DTOTest {
 
         Set<ConstraintViolation<MeasurementPointDTO>> violations = validator.validate(dto);
         assertFalse(violations.isEmpty());
-        assertTrue(violations.size() >= 4); // pointId, pointName, dataType, bindings
+        assertTrue(violations.size() >= 4); // pointId, pointName, dataType, direction, bindings
     }
 
     @Test
@@ -69,7 +70,9 @@ class DTOTest {
     void measurementPointDTODefaults() {
         MeasurementPointDTO dto = new MeasurementPointDTO();
 
-        assertFalse(dto.isWritable());
+        // direction 无默认值：缺失即被 @NotNull 拦下，referencePointId 仅 INPUT 使用
+        assertNull(dto.getDirection());
+        assertNull(dto.getReferencePointId());
     }
 
     @Test
@@ -165,6 +168,7 @@ class DTOTest {
         boolDto.setPointName("Bool Point");
         boolDto.setBindings(List.of(binding("ch_001", "00001")));
         boolDto.setDataType(PointDataType.BOOL);
+        boolDto.setDirection(PointDirection.OUTPUT);
         assertTrue(validator.validate(boolDto).isEmpty());
 
         // INT16
@@ -173,6 +177,7 @@ class DTOTest {
         int16Dto.setPointName("Int16 Point");
         int16Dto.setBindings(List.of(binding("ch_001", "40001")));
         int16Dto.setDataType(PointDataType.INT16);
+        int16Dto.setDirection(PointDirection.OUTPUT);
         assertTrue(validator.validate(int16Dto).isEmpty());
 
         // FLOAT64
@@ -181,6 +186,7 @@ class DTOTest {
         float64Dto.setPointName("Float64 Point");
         float64Dto.setBindings(List.of(binding("ch_001", "ns=2;s=Temperature")));
         float64Dto.setDataType(PointDataType.FLOAT64);
+        float64Dto.setDirection(PointDirection.OUTPUT);
         assertTrue(validator.validate(float64Dto).isEmpty());
 
         // STRING
@@ -189,6 +195,7 @@ class DTOTest {
         stringDto.setPointName("String Point");
         stringDto.setBindings(List.of(binding("ch_001", "status")));
         stringDto.setDataType(PointDataType.STRING);
+        stringDto.setDirection(PointDirection.OUTPUT);
         assertTrue(validator.validate(stringDto).isEmpty());
     }
 

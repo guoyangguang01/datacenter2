@@ -1,6 +1,7 @@
 package com.sdncustom.common.dto;
 
 import com.sdncustom.common.model.enums.PointDataType;
+import com.sdncustom.common.model.enums.PointDirection;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
@@ -27,7 +28,11 @@ public class MeasurementPointDTO {
 
     private String unit;
 
-    private boolean writable = false;
+    @NotNull(message = "direction 不能为空")
+    private PointDirection direction;
+
+    /** 仅 INPUT 必填：所引用的 OUTPUT 测点 ID */
+    private String referencePointId;
 
     @PositiveOrZero(message = "deadband 不能为负")
     private Double deadband;

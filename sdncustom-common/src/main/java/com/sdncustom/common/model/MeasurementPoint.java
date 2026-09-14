@@ -2,6 +2,7 @@ package com.sdncustom.common.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.sdncustom.common.model.enums.PointDataType;
+import com.sdncustom.common.model.enums.PointDirection;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -17,7 +18,8 @@ import java.util.List;
 @AllArgsConstructor
 @Entity
 @Table(name = "measurement_point", indexes = {
-        @Index(name = "idx_point_business", columnList = "business_id")
+        @Index(name = "idx_point_business", columnList = "business_id"),
+        @Index(name = "idx_point_reference", columnList = "reference_point_id")
 })
 public class MeasurementPoint {
 
@@ -52,8 +54,14 @@ public class MeasurementPoint {
     @Column(name = "unit", length = 32)
     private String unit;
 
-    @Column(name = "writable")
-    private boolean writable = false;
+    /** 数据流向：OUTPUT 从外部采集，INPUT 写出到外部。DB 层可空（无迁移回填），业务必填由 DTO @NotNull 保证 */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "direction", length = 16)
+    private PointDirection direction;
+
+    /** 仅 INPUT 使用：所引用的 OUTPUT 测点 ID；OUTPUT 时必须为 null */
+    @Column(name = "reference_point_id", length = 64)
+    private String referencePointId;
 
     /** 死区：|新值-旧值| > deadband 才视为有效变化；null 等价于 0（任何变化都上报） */
     @Column(name = "deadband")

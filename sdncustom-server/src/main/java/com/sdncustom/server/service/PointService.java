@@ -95,7 +95,8 @@ public class PointService {
         point.setPointName(dto.getPointName());
         point.setDataType(dto.getDataType());
         point.setUnit(dto.getUnit());
-        point.setWritable(dto.isWritable());
+        point.setDirection(dto.getDirection());
+        point.setReferencePointId(dto.getReferencePointId());
         point.setDeadband(dto.getDeadband());
         MeasurementPoint saved = pointRepository.save(point);
         pointSourceService.replaceBindings(dto.getPointId(), dto.getBindings());
@@ -126,7 +127,8 @@ public class PointService {
         point.setPointName(dto.getPointName());
         point.setDataType(dto.getDataType());
         point.setUnit(dto.getUnit());
-        point.setWritable(dto.isWritable());
+        point.setDirection(dto.getDirection());
+        point.setReferencePointId(dto.getReferencePointId());
         point.setDeadband(dto.getDeadband());
         MeasurementPoint saved = pointRepository.save(point);
         pointSourceService.replaceBindings(pointId, dto.getBindings());
