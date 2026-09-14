@@ -2,6 +2,7 @@ package com.sdncustom.server.service;
 
 import com.sdncustom.common.dto.MeasurementPointDTO;
 import com.sdncustom.common.dto.PointSourceDTO;
+import com.sdncustom.common.exception.BusinessException;
 import com.sdncustom.common.exception.ResourceNotFoundException;
 import com.sdncustom.common.model.Channel;
 import com.sdncustom.common.model.MeasurementPoint;
@@ -112,6 +113,15 @@ class PointServiceTest {
         dto.setChannelId(channelId);
         dto.setAddress(address);
         return dto;
+    }
+
+    /** 引用 test_point_001 的输入测点（删除保护用例用） */
+    private static MeasurementPoint inputPoint(String pointId) {
+        MeasurementPoint input = new MeasurementPoint();
+        input.setPointId(pointId);
+        input.setDirection(PointDirection.INPUT);
+        input.setReferencePointId("test_point_001");
+        return input;
     }
 
     @Test
@@ -278,13 +288,18 @@ class PointServiceTest {
     }
 
     @Test
-    @DisplayName("删除被输入测点引用的输出测点 -> 400")
+    @DisplayName("删除被输入测点引用的输出测点 -> 400，并点名引用它的测点")
     void deleteReferencedPointRejected() {
         when(pointRepository.findById("test_point_001")).thenReturn(Optional.of(testPoint));
-        when(pointRepository.existsByReferencePointId("test_point_001")).thenReturn(true);
+        when(pointRepository.findByReferencePointId("test_point_001"))
+                .thenReturn(List.of(inputPoint("in_1"), inputPoint("in_2")));
 
-        assertThrows(com.sdncustom.common.exception.BusinessException.class,
+        BusinessException ex = assertThrows(BusinessException.class,
                 () -> pointService.delete("test_point_001"));
+
+        // 只说"被引用"用户不知道该删谁：消息必须点名引用者
+        assertTrue(ex.getMessage().contains("in_1"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("in_2"), ex.getMessage());
         verify(pointRepository, never()).deleteById(anyString());
     }
 

@@ -10,6 +10,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -103,5 +104,27 @@ class SecurityIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.channelsTotal").exists())
                 .andExpect(jsonPath("$.data.uptimeSeconds").exists());
+    }
+
+    /** 端到端钉住错误契约：枚举查询参数的非法值必须走 400，而不是兜底的 500 */
+    @Test
+    void invalidDirectionQueryParam_returnsBadRequestNot500() throws Exception {
+        String token = login("testadmin", "testpass");
+
+        mockMvc.perform(get("/api/points").param("direction", "FOO")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.message").value(containsString("direction")));
+    }
+
+    @Test
+    void validDirectionQueryParam_returns200() throws Exception {
+        String token = login("testadmin", "testpass");
+
+        mockMvc.perform(get("/api/points").param("direction", "INPUT")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
     }
 }

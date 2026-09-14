@@ -11,6 +11,6 @@ public interface MeasurementPointRepository extends JpaRepository<MeasurementPoi
 
     List<MeasurementPoint> findByBusinessId(String businessId);
 
-    /** 是否有输入测点引用该测点（删除保护） */
-    boolean existsByReferencePointId(String referencePointId);
+    /** 引用了该测点的输入测点（删除保护：报错时点名，告诉用户先删哪些点） */
+    List<MeasurementPoint> findByReferencePointId(String referencePointId);
 }

@@ -7,6 +7,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 @Slf4j
 @RestControllerAdvice
@@ -23,6 +24,13 @@ public class GlobalExceptionHandler {
     public ApiResponse<Void> handleUnreadableBody(HttpMessageNotReadableException e) {
         log.warn("Malformed request body: {}", e.getMessage());
         return ApiResponse.error(400, "请求体格式错误：不是合法的 JSON（或编码非 UTF-8）");
+    }
+
+    /** 查询参数/路径变量无法转换为目标类型（如 ?direction=FOO）——同样是调用方的问题，不该报 500 */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ApiResponse<Void> handleTypeMismatch(MethodArgumentTypeMismatchException e) {
+        log.warn("Invalid request parameter: {}={}", e.getName(), e.getValue());
+        return ApiResponse.error(400, "参数类型不合法: " + e.getName() + "=" + e.getValue());
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

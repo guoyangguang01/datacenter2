@@ -155,9 +155,14 @@ public class PointService {
         MeasurementPoint point = pointRepository.findById(pointId)
                 .orElseThrow(() -> new ResourceNotFoundException("MeasurementPoint", pointId));
 
-        // 被输入测点引用的输出测点不能删：留下悬空引用，输入测点会失去数据来源
-        if (pointRepository.existsByReferencePointId(pointId)) {
-            throw new BusinessException(400, "该测点被输入测点引用，请先删除引用它的测点: " + pointId);
+        // 被输入测点引用的输出测点不能删：留下悬空引用，输入测点会失去数据来源。
+        // 报错点名引用者——只说"被引用"用户不知道该删谁
+        List<MeasurementPoint> referencingPoints = pointRepository.findByReferencePointId(pointId);
+        if (!referencingPoints.isEmpty()) {
+            String referencingIds = referencingPoints.stream()
+                    .map(MeasurementPoint::getPointId)
+                    .collect(Collectors.joining(", "));
+            throw new BusinessException(400, "该测点被以下输入测点引用，请先删除它们: " + referencingIds);
         }
 
         // 退订是远端调用，放到提交之后（订阅型协议否则会把 topic 订阅与缓存一直留着）
