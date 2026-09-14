@@ -7,7 +7,6 @@ import com.sdncustom.common.model.Channel;
 import com.sdncustom.common.model.MeasurementPoint;
 import com.sdncustom.common.model.PointSource;
 import com.sdncustom.common.model.PointValue;
-import com.sdncustom.common.model.enums.ChannelDirection;
 import com.sdncustom.common.model.enums.ChannelStatus;
 import com.sdncustom.common.model.enums.PointDataType;
 import com.sdncustom.common.model.enums.PointQuality;
@@ -296,57 +295,6 @@ class PointServiceTest {
     }
 
     @Test
-    @DisplayName("手动写值后同步变更门状态")
-    void writeValueRecordsChangeGate() {
-        testPoint.setWritable(true);
-        when(pointRepository.findById("test_point_001")).thenReturn(Optional.of(testPoint));
-        Channel channel = new Channel();
-        channel.setChannelId("ch_001");
-        channel.setStatus(ChannelStatus.CONNECTED);
-        channel.setDirection(ChannelDirection.READ_WRITE);
-        when(channelService.findByIdOrNull("ch_001")).thenReturn(channel);
-        when(pointSourceService.allBindingViews(testPoint)).thenReturn(List.of(testPoint));
-        ProtocolAdapter adapter = mock(ProtocolAdapter.class);
-        when(protocolRegistry.getOrCreate(channel)).thenReturn(adapter);
-
-        pointService.writeValue("test_point_001", 42.0);
-
-        verify(adapter).writePoint(testPoint, 42.0);
-        verify(pointValueCache).save(any(PointValue.class));
-        verify(changeGate).recordManualWrite("test_point_001", 42.0, PointQuality.GOOD, "ch_001");
-    }
-
-    @Test
-    @DisplayName("写值广播到所有绑定通道（主绑定 + 附加来源），各自用各自地址")
-    void writeValueBroadcastsToAllBindings() {
-        testPoint.setWritable(true);
-        MeasurementPoint sourceView = new MeasurementPoint();
-        sourceView.setPointId("test_point_001");
-        sourceView.setChannelId("ch_002");
-        sourceView.setAddress("reg2");
-        when(pointRepository.findById("test_point_001")).thenReturn(Optional.of(testPoint));
-        Channel mainCh = new Channel();
-        mainCh.setChannelId("ch_001");
-        mainCh.setStatus(ChannelStatus.CONNECTED);
-        mainCh.setDirection(ChannelDirection.READ_WRITE);
-        Channel srcCh = new Channel();
-        srcCh.setChannelId("ch_002");
-        srcCh.setStatus(ChannelStatus.CONNECTED);
-        srcCh.setDirection(ChannelDirection.READ_WRITE);
-        when(channelService.findByIdOrNull("ch_001")).thenReturn(mainCh);
-        when(channelService.findByIdOrNull("ch_002")).thenReturn(srcCh);
-        when(pointSourceService.allBindingViews(testPoint)).thenReturn(List.of(testPoint, sourceView));
-        ProtocolAdapter adapter = mock(ProtocolAdapter.class);
-        when(protocolRegistry.getOrCreate(mainCh)).thenReturn(adapter);
-        when(protocolRegistry.getOrCreate(srcCh)).thenReturn(adapter);
-
-        pointService.writeValue("test_point_001", 99.0);
-
-        verify(adapter).writePoint(testPoint, 99.0);
-        verify(adapter).writePoint(sourceView, 99.0);
-    }
-
-    @Test
     @DisplayName("addBinding 给既有测点加绑定并触发订阅")
     void addBinding() {
         when(pointRepository.findById("test_point_001")).thenReturn(Optional.of(testPoint));
@@ -363,20 +311,6 @@ class PointServiceTest {
         verify(pointBindingRegistry).invalidate("test_point_001");
         verify(changeGate).syncPointBindings(eq("test_point_001"), anySet());
         assertNotNull(result);
-    }
-
-    @Test
-    @DisplayName("所有绑定通道都不可写/未连接时写值抛异常")
-    void writeValueAllBindingsFailThrows() {
-        testPoint.setWritable(true);
-        when(pointRepository.findById("test_point_001")).thenReturn(Optional.of(testPoint));
-        when(pointSourceService.allBindingViews(testPoint)).thenReturn(List.of(testPoint));
-        Channel disconnected = new Channel();
-        disconnected.setChannelId("ch_001");
-        disconnected.setStatus(ChannelStatus.DISCONNECTED);
-        when(channelService.findByIdOrNull("ch_001")).thenReturn(disconnected);
-
-        assertThrows(RuntimeException.class, () -> pointService.writeValue("test_point_001", 1.0));
     }
 
     @Test

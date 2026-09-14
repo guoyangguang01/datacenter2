@@ -156,15 +156,6 @@ class ChangeGateTest {
     }
 
     @Test
-    @DisplayName("手动写后相同采集值不再上报")
-    void recordManualWritePreventsReEmission() {
-        Map<String, MeasurementPoint> points = Map.of("p1", point("p1", PointDataType.FLOAT32, null));
-        gate.recordManualWrite("p1", 42.0, PointQuality.GOOD, "ch_001");
-        var result = gate.filter(List.of(value("p1", 42.0, PointQuality.GOOD)), points);
-        assertTrue(result.isEmpty());
-    }
-
-    @Test
     @DisplayName("removePoints 后重新视为首值")
     void removePointsClearsState() {
         Map<String, MeasurementPoint> points = Map.of("p1", point("p1", PointDataType.FLOAT32, null));

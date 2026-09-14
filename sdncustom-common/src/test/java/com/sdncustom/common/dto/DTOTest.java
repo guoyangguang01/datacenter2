@@ -140,15 +140,6 @@ class DTOTest {
     }
 
     @Test
-    @DisplayName("WriteValueRequest 创建")
-    void writeValueRequest() {
-        WriteValueRequest request = new WriteValueRequest();
-        request.setValue(25.6);
-
-        assertEquals(25.6, request.getValue());
-    }
-
-    @Test
     @DisplayName("PointValueDTO 创建")
     void pointValueDTO() {
         PointValueDTO dto = new PointValueDTO();

@@ -2,16 +2,10 @@ package com.sdncustom.server.service;
 
 import com.sdncustom.common.dto.MeasurementPointDTO;
 import com.sdncustom.common.dto.PointSourceDTO;
-import com.sdncustom.common.exception.BusinessException;
 import com.sdncustom.common.exception.ResourceNotFoundException;
-import com.sdncustom.common.model.Channel;
 import com.sdncustom.common.model.MeasurementPoint;
 import com.sdncustom.common.model.PointSource;
 import com.sdncustom.common.model.PointValue;
-import com.sdncustom.common.model.enums.ChannelDirection;
-import com.sdncustom.common.model.enums.ChannelStatus;
-import com.sdncustom.common.model.enums.PointQuality;
-import com.sdncustom.protocol.ProtocolAdapter;
 import com.sdncustom.protocol.ProtocolRegistry;
 import com.sdncustom.server.repository.MeasurementPointRepository;
 import com.sdncustom.server.repository.PointSourceRepository;
@@ -22,7 +16,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -211,82 +204,6 @@ public class PointService {
      */
     public List<PointValue> getValues(List<String> pointIds) {
         return pointValueCache.findByPointIds(pointIds);
-    }
-
-    /** 手动写值结果：逐通道结果，供调用方判断是否只写成功了一部分 */
-    public record WriteResult(int targetCount, int successCount,
-                              List<String> skippedChannels, List<String> failedChannels) {
-        public boolean partial() {
-            return successCount > 0 && successCount < targetCount;
-        }
-    }
-
-    /**
-     * 写入测点值：广播到所有绑定通道（各通道用各自 address），
-     * 跳过未连接/只读通道，单个来源失败不中断，全部失败才抛异常。
-     * 返回逐通道结果——部分成功不再被静默吞掉。
-     */
-    public WriteResult writeValue(String pointId, Object value) {
-        MeasurementPoint point = findById(pointId);
-
-        // 不可写测点禁止写入
-        if (!point.isWritable()) {
-            throw new IllegalArgumentException("Point is not writable: " + pointId);
-        }
-
-        List<MeasurementPoint> bindings = pointSourceService.allBindingViews(point);
-        int success = 0;
-        String writtenChannel = null;
-        List<String> skipped = new ArrayList<>();
-        List<String> failed = new ArrayList<>();
-        for (MeasurementPoint view : bindings) {
-            Channel channel = channelService.findByIdOrNull(view.getChannelId());
-            if (channel == null) {
-                skipped.add(view.getChannelId());
-                log.warn("Write skipped: channel not found {} for point {}", view.getChannelId(), pointId);
-                continue;
-            }
-            if (channel.getStatus() != ChannelStatus.CONNECTED) {
-                skipped.add(channel.getChannelId());
-                log.warn("Write skipped: channel not connected {} for point {}", channel.getChannelId(), pointId);
-                continue;
-            }
-            if (channel.getDirection() == ChannelDirection.READ_ONLY) {
-                skipped.add(channel.getChannelId());
-                log.warn("Write skipped: channel read-only {} for point {}", channel.getChannelId(), pointId);
-                continue;
-            }
-            try {
-                ProtocolAdapter adapter = protocolRegistry.getOrCreate(channel);
-                adapter.writePoint(view, value);
-                success++;
-                if (writtenChannel == null) {
-                    writtenChannel = channel.getChannelId();
-                }
-            } catch (Exception e) {
-                failed.add(channel.getChannelId());
-                log.error("Write failed to channel {} for point {}: {}",
-                        channel.getChannelId(), pointId, e.getMessage());
-            }
-        }
-        if (success == 0) {
-            throw new BusinessException(400, "没有可写的已连接通道，写值失败: " + pointId
-                    + "（跳过 " + skipped + "，失败 " + failed + "）");
-        }
-
-        // 更新缓存（来源 = 首个实际写入通道）
-        String fallbackChannel = pointSourceService.bindingChannelIds(pointId).stream().findFirst().orElse(null);
-        PointValue pv = new PointValue();
-        pv.setPointId(pointId);
-        pv.setValue(value);
-        pv.setQuality(PointQuality.GOOD);
-        pv.setSourceChannelId(writtenChannel != null ? writtenChannel : fallbackChannel);
-        pv.setTimestamp(System.currentTimeMillis());
-        pointValueCache.save(pv);
-        changeGate.recordManualWrite(pointId, value, PointQuality.GOOD, pv.getSourceChannelId());
-        distributionService.pushBatch(List.of(pv));
-
-        return new WriteResult(bindings.size(), success, List.copyOf(skipped), List.copyOf(failed));
     }
 
     /**

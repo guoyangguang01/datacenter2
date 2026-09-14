@@ -74,24 +74,6 @@ public class ChangeGate {
         return changed;
     }
 
-    /**
-     * 手动写值成功后同步门状态：写入来源基线并把权威值置为写入值，
-     * 避免下一轮采集把相同值当作变化重复上报。
-     */
-    public void recordManualWrite(String pointId, Object value, PointQuality quality, String sourceChannelId) {
-        String channelId = sourceChannelId != null ? sourceChannelId : "";
-        String sourceKey = sourceKey(pointId, channelId);
-        PointValue pv = new PointValue();
-        pv.setPointId(pointId);
-        pv.setValue(value);
-        pv.setQuality(quality);
-        pv.setSourceChannelId(channelId);
-        pv.setTimestamp(System.currentTimeMillis());
-        sourceLast.put(sourceKey, pv);
-        pointSourceKeys.computeIfAbsent(pointId, k -> ConcurrentHashMap.newKeySet()).add(sourceKey);
-        authority.compute(pointId, (k, prev) -> copy(pv));
-    }
-
     /** 测点删除/通道断连时清理该点状态（含权威基线），避免陈旧值滞留 */
     public void removePoints(Collection<String> pointIds) {
         for (String pointId : pointIds) {

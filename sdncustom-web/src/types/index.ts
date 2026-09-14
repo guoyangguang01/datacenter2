@@ -55,14 +55,6 @@ export interface PointValue {
   timestamp: number;
 }
 
-// 手动写值结果：successCount 可能小于 targetCount（部分通道被跳过或写入失败）
-export interface WriteResult {
-  targetCount: number;
-  successCount: number;
-  skippedChannels: string[];
-  failedChannels: string[];
-}
-
 // 数据导入导出 payload：只含业务与测点，通道（连接配置）不在其中
 export interface DataExportPayload {
   businesses?: BusinessSystem[];

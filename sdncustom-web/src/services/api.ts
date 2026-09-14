@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { ApiResponse, BusinessSystem, Channel, ChannelImportResult, DataExportPayload, DataImportResult, MeasurementPoint, PointSourceDTO, PointValue, SystemStatus, WriteResult } from '../types';
+import type { ApiResponse, BusinessSystem, Channel, ChannelImportResult, DataExportPayload, DataImportResult, MeasurementPoint, PointSourceDTO, PointValue, SystemStatus } from '../types';
 import { authUtil } from '../utils/auth';
 
 const api = axios.create({
@@ -88,6 +88,5 @@ export const pointApi = {
   update: (id: string, data: Partial<MeasurementPoint>) => api.put<ApiResponse<MeasurementPoint>>(`/points/${id}`, data),
   delete: (id: string) => api.delete<ApiResponse<void>>(`/points/${id}`),
   getValue: (id: string) => api.get<ApiResponse<PointValue>>(`/points/${id}/value`),
-  writeValue: (id: string, value: unknown) => api.put<ApiResponse<WriteResult>>(`/points/${id}/value`, { value }),
   addBinding: (id: string, binding: PointSourceDTO) => api.post<ApiResponse<MeasurementPoint>>(`/points/${id}/bindings`, binding),
 };

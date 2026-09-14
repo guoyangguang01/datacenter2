@@ -111,16 +111,6 @@ class ChangeGateMergeTest {
     }
 
     @Test
-    @DisplayName("手动写值作为权威基线，同值不重复上报")
-    void recordManualWriteSuppressesRepeat() {
-        MeasurementPoint p = numericPoint("p1", 0.0);
-        gate.recordManualWrite("p1", 42.0, PointQuality.GOOD, "ch_a");
-        List<PointValue> out = gate.filter(
-                List.of(v("p1", "ch_a", 42.0, PointQuality.GOOD, 5000L)), Map.of("p1", p));
-        assertTrue(out.isEmpty());
-    }
-
-    @Test
     @DisplayName("removePoints 清基线后同值重新上报")
     void removePointsClearsBaseline() {
         MeasurementPoint p = numericPoint("p1", 0.0);

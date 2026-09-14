@@ -4,7 +4,6 @@ import com.sdncustom.common.dto.ApiResponse;
 import com.sdncustom.common.dto.MeasurementPointDTO;
 import com.sdncustom.common.dto.PageResult;
 import com.sdncustom.common.dto.PointSourceDTO;
-import com.sdncustom.common.dto.WriteValueRequest;
 import com.sdncustom.common.exception.BusinessException;
 import com.sdncustom.common.model.MeasurementPoint;
 import com.sdncustom.common.model.PointHistory;
@@ -14,7 +13,6 @@ import com.sdncustom.server.service.PointService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -85,18 +83,6 @@ public class PointController {
     @GetMapping("/{id}/value")
     public ApiResponse<PointValue> getValue(@PathVariable String id) {
         return ApiResponse.success(pointService.getValue(id));
-    }
-
-    /**
-     * 写入值并广播到所有绑定通道。返回逐通道结果——部分成功时
-     * {@code successCount < targetCount}，调用方据此提示而不是当作完全成功。
-     */
-    @PutMapping("/{id}/value")
-    public ApiResponse<PointService.WriteResult> writeValue(@PathVariable String id,
-                                                            @Valid @RequestBody WriteValueRequest request,
-                                                            Authentication authentication) {
-        log.info("User {} writing value to point {}: {}", authentication.getName(), id, request.getValue());
-        return ApiResponse.success(pointService.writeValue(id, request.getValue()));
     }
 
     /** 单次历史查询最多返回的条数，防止 size 被拉到很大 */
