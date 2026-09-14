@@ -41,7 +41,7 @@
 | 写出失败 | **无论写出成功与否**，都用 OUTPUT 的值更新 INPUT 的缓存与历史 |
 | `writable` 字段 | **删除**，由 `direction` 替代 |
 | 绑定方向 | PointSource **不加方向字段**，方向由所属测点的 `direction` 推导 |
-| 向后兼容 | **不要求**。不写任何启动期迁移；只支持空库（删 `data/` 重启） |
+| 向后兼容 | **不要求**。不写任何启动期迁移；只支持空库（删 `sdncustom-server/data/` 重启） |
 | 启动期迁移类 | 借本次一并**全部删除**（详见 §2.3） |
 
 ---
@@ -96,7 +96,7 @@ public enum PointDirection { INPUT, OUTPUT }
 
 **保留不变**：`AppStartupRunner`（`HistoryService.init()` 建 TDengine 库/超级表 + 延迟 `autoConnectAll()`）不是迁移，保持原样。
 
-**升级路径**：删 `data/` 目录后重启，`ddl-auto: update` 依实体建出全新表结构；再按 §8.3 的流程导入 mock 数据引导。
+**升级路径**：删 `sdncustom-server/data/` 目录后重启，`ddl-auto: update` 依实体建出全新表结构；再按 §8.3 的流程导入 mock 数据引导。
 
 ### 2.4 导入格式的兼容代码清理
 
@@ -332,7 +332,7 @@ INPUT 测点的推送复用现有 fan-out 逻辑：`DataWebSocketHandler.pushBat
 | **写失败静默** | 按决策，写出失败不降级值质量，仅记日志与指标 | 新增指标 `sdncustom.propagation.writes` / `propagation.failures`（tag=channel），前端状态卡可选展示 |
 | **INPUT 值语义是「意图」而非「实际」** | INPUT 缓存记录的是"我们希望外部设备拥有的值"，不保证外部真的收到了 | 已在 §3.3 明确；文档与 UI 提示需保持一致 |
 | **空库无自动播种** | 删除 `DemoDataInitializer` 后，空库启动不再有示例数据，也没有默认业务。开发/演示需手工或脚本导入 | `mock/mock-channels.json` + `mock/mock-data.json` 是既定引导路径；README/CLAUDE.md 需写清两步顺序（先通道后数据） |
-| **旧库无法原地升级** | 三个迁移类删除后，指向旧结构的 `data/` 库不会自动补齐（如 `business_id` 非空约束、`direction` 回填） | 明确要求删 `data/` 重建；启动文档需突出这一点 |
+| **旧库无法原地升级** | 三个迁移类删除后，指向旧结构的 `sdncustom-server/data/` 库不会自动补齐（如 `business_id` 非空约束、`direction` 回填） | 明确要求删 `sdncustom-server/data/` 重建；启动文档需突出这一点 |
 
 ### 7.1 新增可观测性
 
