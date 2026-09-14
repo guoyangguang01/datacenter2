@@ -28,6 +28,8 @@ SDNCustom/
 ```
 
 > 原始设计文档：`docs/superpowers/specs/2026-08-26-sdncustom-design.md`（数据模型/协议层/存储设计的完整背景）。注意其中"多 Channel 写冲突"、第一期范围等章节已被后续绑定集模型与业务隔离迭代**取代**，以本文件为准。
+>
+> 未处理的问题与需要决策的事项集中在 **`docs/backlog.md`**（含「核实后确认不是问题」一节，避免重复讨论）。
 
 ## 核心概念
 
@@ -311,3 +313,5 @@ cd mock
 | Redis | 6379 |
 | TDengine | 6041 |
 | Mosquitto | 1883 |
+
+> **Windows 上 8080 可能起不来**：8080/8090 等端口可能落在 Hyper-V/Docker 预留的排除端口段内（`netsh interface ipv4 show excludedportrange protocol=tcp` 可见 `8057-8156` 这类区段），报错是 `Port 8080 was already in use`，但 `netstat` 上根本看不到占用。换端口，或 `net stop winnat && net start winnat` 让它重排。
