@@ -283,15 +283,18 @@ export default function PointPage() {
         width={720}
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="direction" label="方向" rules={[{ required: true }]}>
-            <Select
-              disabled={!!editing}
-              options={[
-                { label: '输出测点（从外部采集）', value: 'OUTPUT' },
-                { label: '输入测点（写出到外部）', value: 'INPUT' },
-              ]}
-            />
-          </Form.Item>
+          {/* 关联既有测点时不新建测点，方向/引用都不适用，故一并隐藏（编辑态 linkPointId 恒为 undefined） */}
+          {!linkPointId && (
+            <Form.Item name="direction" label="方向" rules={[{ required: true }]}>
+              <Select
+                disabled={!!editing}
+                options={[
+                  { label: '输出测点（从外部采集）', value: 'OUTPUT' },
+                  { label: '输入测点（写出到外部）', value: 'INPUT' },
+                ]}
+              />
+            </Form.Item>
+          )}
           {editing && editing.direction === 'INPUT' && (
             <div style={{ marginBottom: 16, color: '#8c8c8c' }}>
               输入测点，引用自 <b>{allPoints.find((p) => p.pointId === editing.referencePointId)?.pointName ?? editing.referencePointId}</b>（创建后不可变更）
@@ -304,7 +307,7 @@ export default function PointPage() {
             <Input placeholder="例如 40001 或 sensors/temp01" />
           </Form.Item>
 
-          {watchedDirection === 'INPUT' && !editing && (
+          {watchedDirection === 'INPUT' && !editing && !linkPointId && (
             <Form.Item
               name="referencePointId"
               label="引用的输出测点"
