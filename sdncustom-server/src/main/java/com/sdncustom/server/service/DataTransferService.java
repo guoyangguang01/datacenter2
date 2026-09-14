@@ -76,8 +76,10 @@ public class DataTransferService {
     }
 
     /**
-     * 引用预检：INPUT 的 referencePointId 必须能在「本次导入的测点集 ∪ 库中已有测点」里
-     * 解析到且为 OUTPUT，并且 dataType 一致。与通道预检一样在任何写库之前完成。
+     * 引用预检：direction 必须存在，INPUT 的 referencePointId 必须能在「本次导入的测点集 ∪
+     * 库中已有测点」里解析到且为 OUTPUT，并且 dataType 一致
+     * （payload 内的引用也在此判定，不留给 create 的晚校验——那条路径报的是被引用方，点不出该改哪条记录）。
+     * 与通道预检一样在任何写库之前完成。
      *
      * <p>之所以不复用 {@link PointDirectionValidator}：那个校验的是「单个测点对库」，
      * 而导入的 INPUT 可以合法引用同一份文件里、尚未落库的 OUTPUT。
@@ -89,35 +91,44 @@ public class DataTransferService {
         }
         List<String> problems = new ArrayList<>();
         for (MeasurementPointDTO dto : points) {
+            String who = describe(dto);
+            if (dto.getDirection() == null) {
+                // 方向缺失的测点在这里就点名，别让它掉到晚校验去报无主语的「direction 不能为空」
+                problems.add(who + " 缺少 direction");
+                continue;
+            }
             if (dto.getDirection() != PointDirection.INPUT) {
                 if (dto.getReferencePointId() != null && !dto.getReferencePointId().isBlank()) {
-                    problems.add(dto.getPointId() + " 方向为 " + dto.getDirection()
+                    problems.add(who + " 方向为 " + dto.getDirection()
                             + "，不应带有 referencePointId: " + dto.getReferencePointId());
                 }
                 continue;
             }
             String refId = dto.getReferencePointId();
             if (refId == null || refId.isBlank()) {
-                problems.add(dto.getPointId() + " 缺少 referencePointId");
+                problems.add(who + " 缺少 referencePointId");
                 continue;
             }
             // 本次 payload 内的引用：先按 payload 里的方向判定，避免与库中旧状态混淆
             if (inPayload.contains(refId)) {
+                // refId 非空白，故用 refId.equals(...)：pointId 缺失（手工编辑的导入文件）时不会 NPE
                 MeasurementPointDTO inPayloadTarget = points.stream()
-                        .filter(p -> p.getPointId().equals(refId))
+                        .filter(p -> refId.equals(p.getPointId()))
                         .findFirst().orElse(null);
                 if (inPayloadTarget == null || inPayloadTarget.getDirection() != PointDirection.OUTPUT) {
-                    problems.add(dto.getPointId() + " 引用的 " + refId + " 不是输出测点");
+                    problems.add(who + " 引用的 " + refId + " 不是输出测点");
+                } else if (inPayloadTarget.getDataType() != dto.getDataType()) {
+                    problems.add(who + " 与 " + refId + " 数据类型不一致");
                 }
                 continue;
             }
             MeasurementPoint target = pointRepository.findById(refId).orElse(null);
             if (target == null) {
-                problems.add(dto.getPointId() + " 引用的 " + refId + " 不存在");
+                problems.add(who + " 引用的 " + refId + " 不存在");
             } else if (target.getDirection() != PointDirection.OUTPUT) {
-                problems.add(dto.getPointId() + " 引用的 " + refId + " 不是输出测点");
+                problems.add(who + " 引用的 " + refId + " 不是输出测点");
             } else if (target.getDataType() != dto.getDataType()) {
-                problems.add(dto.getPointId() + " 与 " + refId + " 数据类型不一致");
+                problems.add(who + " 与 " + refId + " 数据类型不一致");
             }
         }
         if (!problems.isEmpty()) {
@@ -126,12 +137,22 @@ public class DataTransferService {
     }
 
     /**
+     * 报错里的测点标识。手工编辑的导入文件可能整条缺 pointId，此时拼出裸 "null" 等于没点名，
+     * 换成能让人定位到那条记录的占位说法。
+     */
+    private String describe(MeasurementPointDTO dto) {
+        return dto.getPointId() == null || dto.getPointId().isBlank()
+                ? "<缺少 pointId 的测点>"
+                : dto.getPointId();
+    }
+
+    /**
      * 预检通过还不够：{@code PointService.importPoints} 按顺序逐条 create，而 create 的引用校验
      * 只查库——INPUT 若排在它引用的 OUTPUT 之前，那一刻 OUTPUT 尚未落库，会被判成「引用的测点不存在」。
      * 引用严格单向（INPUT -> OUTPUT，不可能反向），所以按方向分组即可解开顺序依赖。
      *
-     * <p>稳定排序，组内保持原相对顺序（报错点名、幂等推理都可预期）。direction 为空（非法）
-     * 的测点留在非输出组原样下传，由 create 照常报「direction 不能为空」，不被排序掩盖。
+     * <p>稳定排序，组内保持原相对顺序（报错点名、幂等推理都可预期）。direction 为空的测点在预检里
+     * 就被判不合格，走不到这里，故只有「OUTPUT 组」与「其余」两级。
      * 入参可能是不可变 List，先复制再排。
      */
     private List<MeasurementPointDTO> orderOutputsFirst(List<MeasurementPointDTO> points) {

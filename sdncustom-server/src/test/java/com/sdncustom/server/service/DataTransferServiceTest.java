@@ -297,21 +297,78 @@ class DataTransferServiceTest {
     }
 
     @Test
-    @DisplayName("direction 为空的非法测点不被排序掩盖：仍按原样交给 pointService 报错")
-    void keepsNullDirectionPointsInPayload() {
+    @DisplayName("导入 direction 缺失的测点：整批失败并点名该测点，不留给晚校验报无主语错误")
+    void rejectsPointsWithoutDirection() {
         when(channelRepository.findById("ch_1")).thenReturn(Optional.of(new Channel()));
-        when(businessSystemService.exists("biz")).thenReturn(false);
 
         MeasurementPointDTO broken = point("no_dir", "biz", "ch_1");
         broken.setDirection(null);
         MeasurementPointDTO output = point("out_1", "biz", "ch_1");
 
-        dataTransferService.importData(List.of(business("biz")), List.of(broken, output));
+        BusinessException ex = assertThrows(BusinessException.class, () ->
+                dataTransferService.importData(List.of(business("biz")), List.of(broken, output)));
 
-        ArgumentCaptor<List<MeasurementPointDTO>> captor = ArgumentCaptor.forClass(List.class);
-        verify(pointService).importPoints(captor.capture());
-        assertEquals(2, captor.getValue().size());
-        assertTrue(captor.getValue().stream().anyMatch(p -> p.getDirection() == null),
-                "direction 为空的测点必须原样传给 pointService，由 create 报错");
+        assertTrue(ex.getMessage().contains("no_dir"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("direction"), ex.getMessage());
+        verifyNoInteractions(pointService);
+    }
+
+    @Test
+    @DisplayName("导入 INPUT 引用 payload 内 dataType 不一致的 OUTPUT：整批失败并点名请求方")
+    void failsOnInPayloadDataTypeMismatch() {
+        when(channelRepository.findById("ch_1")).thenReturn(Optional.of(new Channel()));
+
+        MeasurementPointDTO output = point("out_1", "biz", "ch_1");
+        output.setDataType(PointDataType.INT16);
+        MeasurementPointDTO input = point("in_1", "biz", "ch_1");   // FLOAT32
+        input.setDirection(PointDirection.INPUT);
+        input.setReferencePointId("out_1");
+
+        BusinessException ex = assertThrows(BusinessException.class, () ->
+                dataTransferService.importData(List.of(business("biz")), List.of(output, input)));
+
+        // 报错必须点出要改的那条记录（INPUT），而不只是被引用方
+        assertTrue(ex.getMessage().contains("in_1"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("out_1"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("数据类型不一致"), ex.getMessage());
+        verifyNoInteractions(pointService);
+    }
+
+    @Test
+    @DisplayName("pointId 缺失的手工导入文件：预检判不合格并报 400，而不是从预检里抛 NPE")
+    void doesNotCrashOnMissingPointId() {
+        when(channelRepository.findById("ch_1")).thenReturn(Optional.of(new Channel()));
+
+        MeasurementPointDTO input = point("in_1", "biz", "ch_1");
+        input.setDirection(PointDirection.INPUT);
+        input.setReferencePointId("in_1");
+        MeasurementPointDTO noId = point("x", "biz", "ch_1");
+        noId.setPointId(null);
+        noId.setDirection(PointDirection.INPUT);   // 这条记录自身也不合格，才会被点名
+
+        BusinessException ex = assertThrows(BusinessException.class, () ->
+                dataTransferService.importData(List.of(business("biz")), List.of(input, noId)));
+
+        assertTrue(ex.getMessage().contains("in_1"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("<缺少 pointId 的测点>"), ex.getMessage());
+        verifyNoInteractions(pointService);
+    }
+
+    @Test
+    @DisplayName("direction 缺失与引用不合法一次报全：每个不合格测点都被点名")
+    void collectsDirectionAndReferenceProblemsTogether() {
+        when(channelRepository.findById("ch_1")).thenReturn(Optional.of(new Channel()));
+
+        MeasurementPointDTO noDirection = point("no_dir", "biz", "ch_1");
+        noDirection.setDirection(null);
+        MeasurementPointDTO noRef = point("in_no_ref", "biz", "ch_1");
+        noRef.setDirection(PointDirection.INPUT);
+
+        BusinessException ex = assertThrows(BusinessException.class, () ->
+                dataTransferService.importData(List.of(business("biz")), List.of(noDirection, noRef)));
+
+        assertTrue(ex.getMessage().contains("no_dir"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("in_no_ref"), ex.getMessage());
+        verifyNoInteractions(pointService);
     }
 }
