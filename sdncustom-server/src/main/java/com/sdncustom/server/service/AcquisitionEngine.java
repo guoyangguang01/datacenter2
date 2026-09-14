@@ -8,7 +8,6 @@ import com.sdncustom.common.model.enums.ProtocolType;
 import com.sdncustom.protocol.ProtocolAdapter;
 import com.sdncustom.protocol.ProtocolRegistry;
 import com.sdncustom.server.repository.ChannelRepository;
-import com.sdncustom.server.repository.MeasurementPointRepository;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.annotation.PostConstruct;
@@ -18,6 +17,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -35,13 +35,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class AcquisitionEngine {
 
     private final ChannelRepository channelRepository;
-    private final MeasurementPointRepository pointRepository;
     private final PointSourceService pointSourceService;
     private final ChannelService channelService;
     private final PointService pointService;
     private final HistoryService historyService;
     private final DistributionService distributionService;
     private final ChangeGate changeGate;
+    private final InputPointPropagator inputPointPropagator;
     private final ProtocolRegistry protocolRegistry;
     private final MeterRegistry meterRegistry;
 
@@ -113,13 +113,23 @@ public class AcquisitionEngine {
                 if (!publishable.isEmpty()) {
                     meterRegistry.counter("sdncustom.acquisition.changed.values")
                             .increment(publishable.size());
-                    pointService.updateBatch(publishable);
-                    historyService.saveBatch(publishable);
+
+                    // 输入测点传播：同步写出到各自绑定通道，值并入本轮批次
+                    List<PointValue> inputValues = inputPointPropagator.propagate(publishable);
+
+                    List<PointValue> allValues = new ArrayList<>(publishable);
+                    allValues.addAll(inputValues);
+
+                    pointService.updateBatch(allValues);
+                    historyService.saveBatch(allValues);
 
                     // 推送前再复核一次：上面两次落库可能很慢（Redis 超时会阻塞数秒），
                     // 期间用户若断开，迟到的 GOOD 会在 COMM_LOST 之后把前端刷回正常。
                     // 过滤放在推送前一刻，窗口就只剩一次查询的距离。
-                    List<PointValue> pushable = onlyLiveSources(publishable);
+                    // 输入测点值不过这道滤网：它们的来源通道是**写出目标**，
+                    // 目标掉线只代表没送达，不代表这个值本身失效（决策 A）。
+                    List<PointValue> pushable = new ArrayList<>(onlyLiveSources(publishable));
+                    pushable.addAll(inputValues);
                     if (!pushable.isEmpty()) {
                         distributionService.pushBatch(pushable);
                     }
@@ -134,7 +144,8 @@ public class AcquisitionEngine {
      * 采集单个 Channel 的数据，返回通过变更检测的值
      */
     private List<PointValue> acquireChannel(Channel channel) {
-        List<MeasurementPoint> points = pointSourceService.findPointsForChannel(channel.getChannelId());
+        // 只读 OUTPUT：INPUT 测点的值由传播写出，不从通道读
+        List<MeasurementPoint> points = pointSourceService.findOutputPointsForChannel(channel.getChannelId());
 
         if (points.isEmpty()) {
             log.debug("No points configured for channel: {}", channel.getChannelId());

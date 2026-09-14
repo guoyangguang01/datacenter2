@@ -259,7 +259,7 @@ public class ChannelService {
             try {
                 adapter.connect(channel);
                 // 统一连接后钩子：订阅型协议（MQTT）在此建立测点订阅（主绑定 + 附加来源）
-                adapter.onConnected(pointSourceService.findPointsForChannel(channelId));
+                adapter.onConnected(pointSourceService.findOutputPointsForChannel(channelId));
                 channel.setStatus(ChannelStatus.CONNECTED);
                 channelRepository.save(channel);
                 distributionService.pushChannelStatus(channelId, ChannelStatus.CONNECTED.name());
@@ -341,7 +341,9 @@ public class ChannelService {
 
     private void markPointsCommLost(String channelId) {
         try {
-            List<MeasurementPoint> boundPoints = pointSourceService.findPointsForChannel(channelId);
+            // 只标 OUTPUT：INPUT 的值由传播驱动、与目标通道能否送达无关，
+            // 标 COMM_LOST 会在下一轮传播中被 GOOD 覆盖，产生无意义的抖动
+            List<MeasurementPoint> boundPoints = pointSourceService.findOutputPointsForChannel(channelId);
             List<String> pointIds = boundPoints.stream().map(MeasurementPoint::getPointId).distinct().toList();
             List<PointValue> commLost = new ArrayList<>();
             for (String pointId : pointIds) {

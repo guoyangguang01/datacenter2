@@ -5,6 +5,7 @@ import com.sdncustom.common.exception.BusinessException;
 import com.sdncustom.common.model.Channel;
 import com.sdncustom.common.model.MeasurementPoint;
 import com.sdncustom.common.model.PointSource;
+import com.sdncustom.common.model.enums.PointDirection;
 import com.sdncustom.server.repository.ChannelRepository;
 import com.sdncustom.server.repository.MeasurementPointRepository;
 import com.sdncustom.server.repository.PointSourceRepository;
@@ -36,8 +37,11 @@ public class PointSourceService {
     private final ChannelRepository channelRepository;
 
     /**
-     * 该通道应读取的所有测点视图：绑定表命中该通道的每个点，按该通道的绑定地址生成视图。
-     * 视图保留 pointId（合并与路由的锚点），覆盖 channelId/address 为该通道绑定值。
+     * 该通道绑定的**全部**测点视图（不分方向）。删通道、WS refresh 需要全量；
+     * 采集与订阅路径请改用 {@link #findOutputPointsForChannel(String)}。
+     *
+     * 视图：绑定表命中该通道的每个点，按该通道的绑定地址生成。
+     * 保留 pointId（合并与路由的锚点），覆盖 channelId/address 为该通道绑定值。
      */
     public List<MeasurementPoint> findPointsForChannel(String channelId) {
         List<PointSource> bindings = pointSourceRepository.findByChannelId(channelId);
@@ -57,6 +61,16 @@ public class PointSourceService {
             }
         }
         return result;
+    }
+
+    /**
+     * 该通道应**读取/订阅**的测点视图：只含 OUTPUT 测点。
+     * INPUT 测点的值是传播写出的，不是从通道读来的，不能进采集与订阅路径。
+     */
+    public List<MeasurementPoint> findOutputPointsForChannel(String channelId) {
+        return findPointsForChannel(channelId).stream()
+                .filter(p -> p.getDirection() == PointDirection.OUTPUT)
+                .toList();
     }
 
     /** 测点的所有绑定视图：每个绑定生成一个视图（供写广播、订阅）。 */

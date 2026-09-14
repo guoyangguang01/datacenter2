@@ -15,6 +15,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
@@ -54,6 +55,9 @@ class AcquisitionEngineTest {
 
     @Mock
     private ChangeGate changeGate;
+
+    @Mock
+    private InputPointPropagator inputPointPropagator;
 
     @Mock
     private ProtocolRegistry protocolRegistry;
@@ -105,7 +109,7 @@ class AcquisitionEngineTest {
     @DisplayName("通过变更检测的值被批量写入三处下游")
     void changedValuesFlushedInBatch() {
         when(channelRepository.findByStatus(ChannelStatus.CONNECTED)).thenReturn(List.of(channel));
-        when(pointSourceService.findPointsForChannel("ch_001")).thenReturn(List.of(point));
+        when(pointSourceService.findOutputPointsForChannel("ch_001")).thenReturn(List.of(point));
         ProtocolAdapter adapter = mock(ProtocolAdapter.class);
         when(protocolRegistry.getOrCreate(channel)).thenReturn(adapter);
         when(adapter.isConnected()).thenReturn(true);
@@ -126,7 +130,7 @@ class AcquisitionEngineTest {
     @DisplayName("无有效变化时零写入")
     void noChangesMeansNoWrites() {
         when(channelRepository.findByStatus(ChannelStatus.CONNECTED)).thenReturn(List.of(channel));
-        when(pointSourceService.findPointsForChannel("ch_001")).thenReturn(List.of(point));
+        when(pointSourceService.findOutputPointsForChannel("ch_001")).thenReturn(List.of(point));
         ProtocolAdapter adapter = mock(ProtocolAdapter.class);
         when(protocolRegistry.getOrCreate(channel)).thenReturn(adapter);
         when(adapter.isConnected()).thenReturn(true);
@@ -144,7 +148,7 @@ class AcquisitionEngineTest {
     @DisplayName("适配器断开时修正通道状态（非 MQTT）")
     void disconnectedAdapterTriggersChannelDisconnect() {
         when(channelRepository.findByStatus(ChannelStatus.CONNECTED)).thenReturn(List.of(channel));
-        when(pointSourceService.findPointsForChannel("ch_001")).thenReturn(List.of(point));
+        when(pointSourceService.findOutputPointsForChannel("ch_001")).thenReturn(List.of(point));
         ProtocolAdapter adapter = mock(ProtocolAdapter.class);
         when(protocolRegistry.getOrCreate(channel)).thenReturn(adapter);
         when(adapter.isConnected()).thenReturn(false);
@@ -153,5 +157,79 @@ class AcquisitionEngineTest {
 
         verify(channelService).syncDisconnected("ch_001");
         verifyNoInteractions(historyService, distributionService);
+    }
+
+    @Test
+    @DisplayName("输出测点变化触发传播，输入测点值并入同一批次")
+    void propagationValuesJoinTheSameBatch() {
+        when(channelRepository.findByStatus(ChannelStatus.CONNECTED)).thenReturn(List.of(channel));
+        when(pointSourceService.findOutputPointsForChannel("ch_001")).thenReturn(List.of(point));
+        ProtocolAdapter adapter = mock(ProtocolAdapter.class);
+        when(protocolRegistry.getOrCreate(channel)).thenReturn(adapter);
+        when(adapter.isConnected()).thenReturn(true);
+        List<PointValue> read = List.of(value("p1", 25.0));
+        when(adapter.readPoints(anyList())).thenReturn(read);
+        when(changeGate.filter(read, java.util.Map.of("p1", point))).thenReturn(read);
+
+        PointValue inputValue = new PointValue();
+        inputValue.setPointId("in_1");
+        inputValue.setValue(25.0);
+        inputValue.setQuality(PointQuality.GOOD);
+        inputValue.setSourceChannelId("ch_002");
+        inputValue.setTimestamp(System.currentTimeMillis());
+        when(inputPointPropagator.propagate(read)).thenReturn(List.of(inputValue));
+
+        engine.acquire();
+
+        List<PointValue> expected = List.of(read.get(0), inputValue);
+        verify(pointService).updateBatch(expected);
+        verify(historyService).saveBatch(expected);
+        verify(distributionService).pushBatch(expected);
+    }
+
+    @Test
+    @DisplayName("无有效变化时不触发传播")
+    void noChangesMeansNoPropagation() {
+        when(channelRepository.findByStatus(ChannelStatus.CONNECTED)).thenReturn(List.of(channel));
+        when(pointSourceService.findOutputPointsForChannel("ch_001")).thenReturn(List.of(point));
+        ProtocolAdapter adapter = mock(ProtocolAdapter.class);
+        when(protocolRegistry.getOrCreate(channel)).thenReturn(adapter);
+        when(adapter.isConnected()).thenReturn(true);
+        List<PointValue> read = List.of(value("p1", 25.0));
+        when(adapter.readPoints(anyList())).thenReturn(read);
+        when(changeGate.filter(read, java.util.Map.of("p1", point))).thenReturn(List.of());
+
+        engine.acquire();
+
+        verifyNoInteractions(inputPointPropagator);
+    }
+
+    @Test
+    @DisplayName("输入测点的来源通道掉线不影响传播值推送")
+    void inputValuesBypassLivenessFilter() {
+        when(channelRepository.findByStatus(ChannelStatus.CONNECTED)).thenReturn(List.of(channel));
+        when(pointSourceService.findOutputPointsForChannel("ch_001")).thenReturn(List.of(point));
+        ProtocolAdapter adapter = mock(ProtocolAdapter.class);
+        when(protocolRegistry.getOrCreate(channel)).thenReturn(adapter);
+        when(adapter.isConnected()).thenReturn(true);
+        List<PointValue> read = List.of(value("p1", 25.0));
+        when(adapter.readPoints(anyList())).thenReturn(read);
+        when(changeGate.filter(read, java.util.Map.of("p1", point))).thenReturn(read);
+
+        // 输入测点写出目标通道 ch_dead 不在 CONNECTED 集合里
+        PointValue inputValue = new PointValue();
+        inputValue.setPointId("in_1");
+        inputValue.setValue(25.0);
+        inputValue.setQuality(PointQuality.GOOD);
+        inputValue.setSourceChannelId("ch_dead");
+        inputValue.setTimestamp(System.currentTimeMillis());
+        when(inputPointPropagator.propagate(read)).thenReturn(List.of(inputValue));
+
+        engine.acquire();
+
+        ArgumentCaptor<List<PointValue>> captor = ArgumentCaptor.forClass(List.class);
+        verify(distributionService).pushBatch(captor.capture());
+        assertTrue(captor.getValue().stream().anyMatch(pv -> pv.getPointId().equals("in_1")),
+                "输入测点值不应被来源存活过滤丢掉");
     }
 }

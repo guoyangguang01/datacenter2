@@ -203,7 +203,7 @@ class ChannelServiceTest {
         testChannel.setAutoConnect(false);
         when(channelRepository.findById("ch_001")).thenReturn(Optional.of(testChannel));
         when(channelRepository.save(any(Channel.class))).thenReturn(testChannel);
-        when(pointSourceService.findPointsForChannel("ch_001")).thenReturn(List.of());
+        when(pointSourceService.findOutputPointsForChannel("ch_001")).thenReturn(List.of());
 
         testDto.setConnectionConfig("{\"host\":\"localhost\",\"port\":9999}");
         channelService.update("ch_001", testDto);
@@ -225,7 +225,7 @@ class ChannelServiceTest {
         testChannel.setAutoConnect(true);
         when(channelRepository.findById("ch_001")).thenReturn(Optional.of(testChannel));
         when(channelRepository.save(any(Channel.class))).thenReturn(testChannel);
-        when(pointSourceService.findPointsForChannel("ch_001")).thenReturn(List.of());
+        when(pointSourceService.findOutputPointsForChannel("ch_001")).thenReturn(List.of());
         when(protocolRegistry.getOrCreate(any(Channel.class))).thenReturn(adapter);
 
         testDto.setConnectionConfig("{\"host\":\"localhost\",\"port\":9999}");
@@ -243,7 +243,7 @@ class ChannelServiceTest {
         testChannel.setAutoConnect(true);
         when(channelRepository.findById("ch_001")).thenReturn(Optional.of(testChannel));
         when(channelRepository.save(any(Channel.class))).thenReturn(testChannel);
-        when(pointSourceService.findPointsForChannel("ch_001")).thenReturn(List.of());
+        when(pointSourceService.findOutputPointsForChannel("ch_001")).thenReturn(List.of());
         when(protocolRegistry.getOrCreate(any(Channel.class))).thenReturn(adapter);
         doThrow(new RuntimeException("Connection refused")).when(adapter).connect(any(Channel.class));
 
@@ -314,7 +314,7 @@ class ChannelServiceTest {
     void connectSuccess() {
         when(channelRepository.findById("ch_001")).thenReturn(Optional.of(testChannel));
         when(channelRepository.save(any(Channel.class))).thenReturn(testChannel);
-        when(pointSourceService.findPointsForChannel("ch_001")).thenReturn(List.of());
+        when(pointSourceService.findOutputPointsForChannel("ch_001")).thenReturn(List.of());
         when(protocolRegistry.getOrCreate(testChannel)).thenReturn(adapter);
         when(adapter.isConnected()).thenReturn(false);
 
@@ -360,7 +360,7 @@ class ChannelServiceTest {
     void disconnect() {
         testChannel.setStatus(ChannelStatus.CONNECTED);
         when(channelRepository.findById("ch_001")).thenReturn(Optional.of(testChannel));
-        when(pointSourceService.findPointsForChannel("ch_001")).thenReturn(Arrays.asList());
+        when(pointSourceService.findOutputPointsForChannel("ch_001")).thenReturn(Arrays.asList());
         when(channelRepository.save(any(Channel.class))).thenReturn(testChannel);
 
         channelService.disconnect("ch_001");
@@ -374,7 +374,7 @@ class ChannelServiceTest {
     void syncDisconnectedAlignsState() {
         testChannel.setStatus(ChannelStatus.CONNECTED);
         when(channelRepository.findById("ch_001")).thenReturn(Optional.of(testChannel));
-        when(pointSourceService.findPointsForChannel("ch_001")).thenReturn(Arrays.asList());
+        when(pointSourceService.findOutputPointsForChannel("ch_001")).thenReturn(Arrays.asList());
         when(channelRepository.save(any(Channel.class))).thenReturn(testChannel);
 
         channelService.syncDisconnected("ch_001");
@@ -401,7 +401,7 @@ class ChannelServiceTest {
         when(channelRepository.findByAutoConnect(true)).thenReturn(Arrays.asList(testChannel));
         when(channelRepository.findById("ch_001")).thenReturn(Optional.of(testChannel));
         when(channelRepository.save(any(Channel.class))).thenReturn(testChannel);
-        when(pointSourceService.findPointsForChannel("ch_001")).thenReturn(List.of());
+        when(pointSourceService.findOutputPointsForChannel("ch_001")).thenReturn(List.of());
         when(protocolRegistry.getOrCreate(any())).thenReturn(adapter);
         when(adapter.isConnected()).thenReturn(false);
 
@@ -419,7 +419,7 @@ class ChannelServiceTest {
         when(channelRepository.save(any(Channel.class))).thenReturn(testChannel);
         MeasurementPoint point = new MeasurementPoint();
         point.setPointId("p1");
-        when(pointSourceService.findPointsForChannel("ch_001")).thenReturn(List.of(point));
+        when(pointSourceService.findOutputPointsForChannel("ch_001")).thenReturn(List.of(point));
         when(pointSourceService.bindingChannelIds("p1")).thenReturn(new LinkedHashSet<>(List.of("ch_001")));
 
         channelService.disconnect("ch_001");
@@ -436,7 +436,7 @@ class ChannelServiceTest {
         when(channelRepository.save(any(Channel.class))).thenReturn(testChannel);
         MeasurementPoint point = new MeasurementPoint();
         point.setPointId("p1");
-        when(pointSourceService.findPointsForChannel("ch_001")).thenReturn(List.of(point));
+        when(pointSourceService.findOutputPointsForChannel("ch_001")).thenReturn(List.of(point));
         when(pointSourceService.bindingChannelIds("p1"))
                 .thenReturn(new LinkedHashSet<>(List.of("ch_001", "ch_002")));
 
