@@ -71,6 +71,9 @@ class PointServiceTest {
     @Mock
     private BusinessSystemService businessSystemService;
 
+    @Mock
+    private PointDirectionValidator pointDirectionValidator;
+
     @InjectMocks
     private PointService pointService;
 
@@ -271,6 +274,17 @@ class PointServiceTest {
         when(pointRepository.findById("missing")).thenReturn(Optional.empty());
 
         assertThrows(ResourceNotFoundException.class, () -> pointService.delete("missing"));
+        verify(pointRepository, never()).deleteById(anyString());
+    }
+
+    @Test
+    @DisplayName("删除被输入测点引用的输出测点 -> 400")
+    void deleteReferencedPointRejected() {
+        when(pointRepository.findById("test_point_001")).thenReturn(Optional.of(testPoint));
+        when(pointRepository.existsByReferencePointId("test_point_001")).thenReturn(true);
+
+        assertThrows(com.sdncustom.common.exception.BusinessException.class,
+                () -> pointService.delete("test_point_001"));
         verify(pointRepository, never()).deleteById(anyString());
     }
 

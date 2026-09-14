@@ -2,6 +2,7 @@ package com.sdncustom.server.service;
 
 import com.sdncustom.common.dto.MeasurementPointDTO;
 import com.sdncustom.common.dto.PointSourceDTO;
+import com.sdncustom.common.exception.BusinessException;
 import com.sdncustom.common.exception.ResourceNotFoundException;
 import com.sdncustom.common.model.MeasurementPoint;
 import com.sdncustom.common.model.PointSource;
@@ -36,6 +37,7 @@ public class PointService {
     private final PointBindingRegistry pointBindingRegistry;
     private final DistributionService distributionService;
     private final BusinessSystemService businessSystemService;
+    private final PointDirectionValidator pointDirectionValidator;
 
     /**
      * 查询所有测点
@@ -87,6 +89,7 @@ public class PointService {
     @Transactional
     public MeasurementPoint create(MeasurementPointDTO dto) {
         businessSystemService.requireExists(dto.getBusinessId());
+        pointDirectionValidator.validate(dto, dto.getBusinessId());
         pointSourceService.validateBindings(dto.getBindings(), dto.getBusinessId());
 
         MeasurementPoint point = new MeasurementPoint();
@@ -151,6 +154,11 @@ public class PointService {
         // 不存在就别静默成功——调用方需要知道删的是什么
         MeasurementPoint point = pointRepository.findById(pointId)
                 .orElseThrow(() -> new ResourceNotFoundException("MeasurementPoint", pointId));
+
+        // 被输入测点引用的输出测点不能删：留下悬空引用，输入测点会失去数据来源
+        if (pointRepository.existsByReferencePointId(pointId)) {
+            throw new BusinessException(400, "该测点被输入测点引用，请先删除引用它的测点: " + pointId);
+        }
 
         // 退订是远端调用，放到提交之后（订阅型协议否则会把 topic 订阅与缓存一直留着）
         List<MeasurementPoint> removedViews = pointSourceService.allBindingViews(point);

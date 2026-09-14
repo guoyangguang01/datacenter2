@@ -10,4 +10,7 @@ import java.util.List;
 public interface MeasurementPointRepository extends JpaRepository<MeasurementPoint, String> {
 
     List<MeasurementPoint> findByBusinessId(String businessId);
+
+    /** 是否有输入测点引用该测点（删除保护） */
+    boolean existsByReferencePointId(String referencePointId);
 }

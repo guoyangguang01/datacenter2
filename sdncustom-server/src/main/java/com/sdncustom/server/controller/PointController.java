@@ -8,6 +8,7 @@ import com.sdncustom.common.exception.BusinessException;
 import com.sdncustom.common.model.MeasurementPoint;
 import com.sdncustom.common.model.PointHistory;
 import com.sdncustom.common.model.PointValue;
+import com.sdncustom.common.model.enums.PointDirection;
 import com.sdncustom.server.service.HistoryService;
 import com.sdncustom.server.service.PointService;
 import jakarta.validation.Valid;
@@ -32,6 +33,7 @@ public class PointController {
     @GetMapping
     public ApiResponse<?> findAll(@RequestParam(required = false) String channelId,
                                   @RequestParam(required = false) String businessId,
+                                  @RequestParam(required = false) PointDirection direction,
                                   @RequestParam(required = false) Integer page,
                                   @RequestParam(required = false) Integer size) {
         List<MeasurementPoint> points;
@@ -47,6 +49,9 @@ public class PointController {
             points = pointService.findByChannelId(channelId);
         } else {
             points = pointService.findAll();
+        }
+        if (direction != null) {
+            points = points.stream().filter(p -> p.getDirection() == direction).toList();
         }
         return ApiResponse.success(PageResult.of(points, page, size));
     }
