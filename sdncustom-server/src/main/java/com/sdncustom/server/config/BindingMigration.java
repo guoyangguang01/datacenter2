@@ -35,12 +35,19 @@ public class BindingMigration implements CommandLineRunner {
                 log.info("BindingMigration: no legacy channel_id column, skip");
                 return;
             }
+            // 去重必须按「具体这条绑定」判断，不能只按 point_id：
+            // 否则已有一条绑定的点会整条被跳过，旧绑定随删列永久丢失。
             int backfilled = jdbc.update("""
                     INSERT INTO point_source (point_id, channel_id, address, create_time)
                     SELECT mp.point_id, mp.channel_id, mp.address, CURRENT_TIMESTAMP
                     FROM measurement_point mp
                     WHERE mp.channel_id IS NOT NULL AND mp.address IS NOT NULL
-                      AND NOT EXISTS (SELECT 1 FROM point_source ps WHERE ps.point_id = mp.point_id)
+                      AND NOT EXISTS (
+                          SELECT 1 FROM point_source ps
+                          WHERE ps.point_id = mp.point_id
+                            AND ps.channel_id = mp.channel_id
+                            AND ps.address = mp.address
+                      )
                     """);
             jdbc.execute("ALTER TABLE measurement_point DROP COLUMN IF EXISTS channel_id");
             jdbc.execute("ALTER TABLE measurement_point DROP COLUMN IF EXISTS address");

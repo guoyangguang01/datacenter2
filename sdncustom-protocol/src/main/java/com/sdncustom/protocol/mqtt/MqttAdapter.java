@@ -114,8 +114,25 @@ public class MqttAdapter implements ProtocolAdapter {
             log.info("Connected to MQTT broker: {}", broker);
         } catch (Exception e) {
             connected = false;
+            // 失败路径必须自己收尾：上层 connect 失败走的是 registry.remove()，不会调 disconnect()
+            cleanupAfterFailedConnect();
             log.error("Failed to connect to MQTT broker: {}", e.getMessage());
             throw new RuntimeException("MQTT connection failed", e);
+        }
+    }
+
+    /** 连接失败时释放半成品客户端，避免泄漏 Paho 客户端及其线程 */
+    private void cleanupAfterFailedConnect() {
+        try {
+            if (client != null && client.isConnected()) {
+                client.disconnect();
+            }
+        } catch (Exception e) {
+            log.debug("MQTT client cleanup after failed connect: {}", e.getMessage());
+        } finally {
+            client = null;
+            valueCache.clear();
+            subscribedTopics.clear();
         }
     }
 
@@ -231,6 +248,37 @@ public class MqttAdapter implements ProtocolAdapter {
     public void subscribeAll(List<String> topics) {
         for (String topic : topics) {
             subscribe(topic);
+        }
+    }
+
+    /**
+     * 测点删除/解绑时由生命周期层调用：退订 topic 并清掉缓存值，
+     * 否则 broker 上的订阅与 valueCache 条目会一直残留（此前只有整条断开才清）
+     */
+    @Override
+    public void onPointsRemoved(List<MeasurementPoint> points) {
+        for (MeasurementPoint point : points) {
+            unsubscribe(point.getAddress());
+        }
+    }
+
+    /**
+     * 取消订阅并清除该 topic 的缓存值。即使当前未连接也要清本地状态。
+     */
+    public void unsubscribe(String topic) {
+        if (topic == null || topic.isBlank()) {
+            return;
+        }
+        boolean wasSubscribed = subscribedTopics.remove(topic);
+        valueCache.remove(topic);
+        if (!wasSubscribed || client == null || !client.isConnected()) {
+            return;
+        }
+        try {
+            client.unsubscribe(topic);
+            log.info("Unsubscribed MQTT topic: {}", topic);
+        } catch (MqttException e) {
+            log.error("Failed to unsubscribe topic: {}", topic, e);
         }
     }
 

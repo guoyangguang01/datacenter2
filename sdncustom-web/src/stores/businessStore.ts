@@ -1,11 +1,6 @@
 import { create } from 'zustand';
 import type { BusinessSystem } from '../types';
-import { businessApi } from '../services/api';
-
-function toErrorMessage(e: unknown, fallback: string): string {
-  if (e instanceof Error) return e.message;
-  return fallback;
-}
+import { businessApi, toErrorMessage } from '../services/api';
 
 const STORAGE_KEY = 'sdncustom_business';
 
@@ -14,6 +9,7 @@ interface BusinessStore {
   currentBusinessId: string | null;
   loading: boolean;
   error: string | null;
+  clearError: () => void;
   fetchBusinesses: () => Promise<void>;
   setCurrentBusiness: (businessId: string) => void;
   createBusiness: (data: Partial<BusinessSystem>) => Promise<void>;
@@ -26,6 +22,8 @@ export const useBusinessStore = create<BusinessStore>((set, get) => ({
   currentBusinessId: localStorage.getItem(STORAGE_KEY),
   loading: false,
   error: null,
+
+  clearError: () => set({ error: null }),
 
   fetchBusinesses: async () => {
     set({ loading: true, error: null });

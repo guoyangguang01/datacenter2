@@ -2,6 +2,7 @@ package com.sdncustom.server.service;
 
 import com.sdncustom.common.dto.MeasurementPointDTO;
 import com.sdncustom.common.dto.PointSourceDTO;
+import com.sdncustom.common.exception.BusinessException;
 import com.sdncustom.common.exception.ResourceNotFoundException;
 import com.sdncustom.common.model.Channel;
 import com.sdncustom.common.model.MeasurementPoint;
@@ -15,13 +16,16 @@ import com.sdncustom.protocol.ProtocolRegistry;
 import com.sdncustom.server.repository.MeasurementPointRepository;
 import com.sdncustom.server.repository.PointSourceRepository;
 import com.sdncustom.server.repository.PointValueCacheRepository;
+import com.sdncustom.server.support.TransactionHooks;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -102,11 +106,10 @@ public class PointService {
         point.setDeadband(dto.getDeadband());
         MeasurementPoint saved = pointRepository.save(point);
         pointSourceService.replaceBindings(dto.getPointId(), dto.getBindings());
-
-        // 已连接通道为订阅型协议增量订阅（各绑定通道）；失败不影响测点保存
-        subscribeConnectedBindings(saved, dto.getBindings());
-
         pointBindingRegistry.invalidate(saved.getPointId());
+
+        // 订阅是远端调用：放到事务提交之后，别占着 DB 连接做网络 I/O（失败不影响测点保存）
+        TransactionHooks.afterCommit(() -> subscribeConnectedBindings(saved, dto.getBindings()));
         return saved;
     }
 
@@ -119,6 +122,14 @@ public class PointService {
         // 归属不可变更：绑定校验以测点现有业务为准，DTO 中的 businessId 被忽略
         pointSourceService.validateBindings(dto.getBindings(), point.getBusinessId());
 
+        // 整体替换前先记下被移除的绑定，替换后通知订阅型协议退订
+        Set<String> keptKeys = dto.getBindings() == null ? Set.of() : dto.getBindings().stream()
+                .map(b -> b.getChannelId() + "|" + b.getAddress())
+                .collect(Collectors.toSet());
+        List<MeasurementPoint> removedViews = pointSourceService.allBindingViews(point).stream()
+                .filter(view -> !keptKeys.contains(view.getChannelId() + "|" + view.getAddress()))
+                .toList();
+
         point.setPointName(dto.getPointName());
         point.setDataType(dto.getDataType());
         point.setUnit(dto.getUnit());
@@ -126,10 +137,14 @@ public class PointService {
         point.setDeadband(dto.getDeadband());
         MeasurementPoint saved = pointRepository.save(point);
         pointSourceService.replaceBindings(pointId, dto.getBindings());
-        subscribeConnectedBindings(saved, dto.getBindings());
-
         pointBindingRegistry.invalidate(pointId);
         changeGate.syncPointBindings(pointId, pointSourceService.bindingChannelIds(pointId));
+
+        // 远端订阅/退订放到提交之后
+        TransactionHooks.afterCommit(() -> {
+            subscribeConnectedBindings(saved, dto.getBindings());
+            notifyBindingsRemoved(removedViews);
+        });
         return saved;
     }
 
@@ -138,11 +153,34 @@ public class PointService {
      */
     @Transactional
     public void delete(String pointId) {
+        // 不存在就别静默成功——调用方需要知道删的是什么
+        MeasurementPoint point = pointRepository.findById(pointId)
+                .orElseThrow(() -> new ResourceNotFoundException("MeasurementPoint", pointId));
+
+        // 退订是远端调用，放到提交之后（订阅型协议否则会把 topic 订阅与缓存一直留着）
+        List<MeasurementPoint> removedViews = pointSourceService.allBindingViews(point);
+
         pointRepository.deleteById(pointId);
         pointValueCache.delete(pointId);
         changeGate.removePoints(List.of(pointId));
         pointSourceService.deleteByPointId(pointId);
         pointBindingRegistry.invalidate(pointId);
+
+        TransactionHooks.afterCommit(() -> notifyBindingsRemoved(removedViews));
+    }
+
+    /** 通知订阅型协议退订这些绑定（MQTT 实现为退订 topic + 清缓存），逐个容错 */
+    private void notifyBindingsRemoved(List<MeasurementPoint> views) {
+        for (MeasurementPoint view : views) {
+            protocolRegistry.get(view.getChannelId()).ifPresent(adapter -> {
+                try {
+                    adapter.onPointsRemoved(List.of(view));
+                } catch (Exception e) {
+                    log.warn("Failed to remove subscription for point {} on channel {}",
+                            view.getPointId(), view.getChannelId(), e);
+                }
+            });
+        }
     }
 
     /**
@@ -152,10 +190,11 @@ public class PointService {
     public MeasurementPoint addBinding(String pointId, String channelId, String address) {
         MeasurementPoint point = findById(pointId);
         pointSourceService.addBinding(pointId, channelId, address, point.getBusinessId());
-        subscribeConnectedChannel(channelId,
-                List.of(pointSourceService.viewForBinding(point, channelId, address)));
         pointBindingRegistry.invalidate(pointId);
         changeGate.syncPointBindings(pointId, pointSourceService.bindingChannelIds(pointId));
+
+        MeasurementPoint view = pointSourceService.viewForBinding(point, channelId, address);
+        TransactionHooks.afterCommit(() -> subscribeConnectedChannel(channelId, List.of(view)));
         return findById(pointId);
     }
 
@@ -174,11 +213,20 @@ public class PointService {
         return pointValueCache.findByPointIds(pointIds);
     }
 
+    /** 手动写值结果：逐通道结果，供调用方判断是否只写成功了一部分 */
+    public record WriteResult(int targetCount, int successCount,
+                              List<String> skippedChannels, List<String> failedChannels) {
+        public boolean partial() {
+            return successCount > 0 && successCount < targetCount;
+        }
+    }
+
     /**
      * 写入测点值：广播到所有绑定通道（各通道用各自 address），
      * 跳过未连接/只读通道，单个来源失败不中断，全部失败才抛异常。
+     * 返回逐通道结果——部分成功不再被静默吞掉。
      */
-    public void writeValue(String pointId, Object value) {
+    public WriteResult writeValue(String pointId, Object value) {
         MeasurementPoint point = findById(pointId);
 
         // 不可写测点禁止写入
@@ -189,17 +237,22 @@ public class PointService {
         List<MeasurementPoint> bindings = pointSourceService.allBindingViews(point);
         int success = 0;
         String writtenChannel = null;
+        List<String> skipped = new ArrayList<>();
+        List<String> failed = new ArrayList<>();
         for (MeasurementPoint view : bindings) {
             Channel channel = channelService.findByIdOrNull(view.getChannelId());
             if (channel == null) {
+                skipped.add(view.getChannelId());
                 log.warn("Write skipped: channel not found {} for point {}", view.getChannelId(), pointId);
                 continue;
             }
             if (channel.getStatus() != ChannelStatus.CONNECTED) {
+                skipped.add(channel.getChannelId());
                 log.warn("Write skipped: channel not connected {} for point {}", channel.getChannelId(), pointId);
                 continue;
             }
             if (channel.getDirection() == ChannelDirection.READ_ONLY) {
+                skipped.add(channel.getChannelId());
                 log.warn("Write skipped: channel read-only {} for point {}", channel.getChannelId(), pointId);
                 continue;
             }
@@ -211,12 +264,14 @@ public class PointService {
                     writtenChannel = channel.getChannelId();
                 }
             } catch (Exception e) {
+                failed.add(channel.getChannelId());
                 log.error("Write failed to channel {} for point {}: {}",
                         channel.getChannelId(), pointId, e.getMessage());
             }
         }
         if (success == 0) {
-            throw new RuntimeException("No writable connected channel for point " + pointId);
+            throw new BusinessException(400, "没有可写的已连接通道，写值失败: " + pointId
+                    + "（跳过 " + skipped + "，失败 " + failed + "）");
         }
 
         // 更新缓存（来源 = 首个实际写入通道）
@@ -230,6 +285,8 @@ public class PointService {
         pointValueCache.save(pv);
         changeGate.recordManualWrite(pointId, value, PointQuality.GOOD, pv.getSourceChannelId());
         distributionService.pushBatch(List.of(pv));
+
+        return new WriteResult(bindings.size(), success, List.copyOf(skipped), List.copyOf(failed));
     }
 
     /**

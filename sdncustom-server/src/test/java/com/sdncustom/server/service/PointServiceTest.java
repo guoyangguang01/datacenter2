@@ -31,6 +31,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 /**
@@ -234,6 +235,7 @@ class PointServiceTest {
     @Test
     @DisplayName("删除测点")
     void delete() {
+        when(pointRepository.findById("test_point_001")).thenReturn(Optional.of(testPoint));
         doNothing().when(pointRepository).deleteById("test_point_001");
         doNothing().when(pointValueCache).delete("test_point_001");
 
@@ -241,6 +243,15 @@ class PointServiceTest {
 
         verify(pointRepository).deleteById("test_point_001");
         verify(pointValueCache).delete("test_point_001");
+    }
+
+    @Test
+    @DisplayName("删除不存在的测点 -> ResourceNotFoundException，不静默成功")
+    void deleteMissingPoint() {
+        when(pointRepository.findById("missing")).thenReturn(Optional.empty());
+
+        assertThrows(ResourceNotFoundException.class, () -> pointService.delete("missing"));
+        verify(pointRepository, never()).deleteById(anyString());
     }
 
     @Test

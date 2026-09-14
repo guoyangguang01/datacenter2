@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { ApiResponse, BusinessSystem, Channel, MeasurementPoint, PointSourceDTO, PointValue, SystemStatus } from '../types';
+import type { ApiResponse, BusinessSystem, Channel, ChannelImportResult, DataExportPayload, DataImportResult, MeasurementPoint, PointSourceDTO, PointValue, SystemStatus, WriteResult } from '../types';
 import { authUtil } from '../utils/auth';
 
 const api = axios.create({
@@ -25,6 +25,20 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+/**
+ * 取错误里对用户有意义的信息。后端业务错误走 HTTP 200 + body.message（由各 store 判断 code），
+ * 传输层/5xx 错误走 catch —— 那种情况下 e.message 只有 "Request failed with status code 500"，
+ * 真正的原因在 response.data.message 里，这里把它取出来。
+ */
+export function toErrorMessage(e: unknown, fallback: string): string {
+  if (axios.isAxiosError(e)) {
+    const body = e.response?.data as { message?: string } | undefined;
+    if (body?.message) return body.message;
+  }
+  if (e instanceof Error && e.message) return e.message;
+  return fallback;
+}
 
 // Auth API
 export const authApi = {
@@ -55,9 +69,14 @@ export const channelApi = {
   delete: (id: string) => api.delete<ApiResponse<void>>(`/channels/${id}`),
   connect: (id: string) => api.post<ApiResponse<void>>(`/channels/${id}/connect`),
   disconnect: (id: string) => api.post<ApiResponse<void>>(`/channels/${id}/disconnect`),
-  exportAll: () => api.get('/channels/export', { responseType: 'blob' }),
-  importAll: (data: { channels?: Partial<Channel>[]; points?: Partial<MeasurementPoint>[] }) =>
-    api.post<{ channelCount: number; pointCount: number }>('/channels/import', data),
+  importConfig: (data: { channels: Partial<Channel>[] }) =>
+    api.post<ApiResponse<ChannelImportResult>>('/channels/import', data),
+};
+
+// Data API — 只承载业务与测点；连接配置走 channelApi.importConfig
+export const dataApi = {
+  export: () => api.get('/data/export', { responseType: 'blob' }),
+  import: (data: DataExportPayload) => api.post<ApiResponse<DataImportResult>>('/data/import', data),
 };
 
 // MeasurementPoint API
@@ -69,8 +88,6 @@ export const pointApi = {
   update: (id: string, data: Partial<MeasurementPoint>) => api.put<ApiResponse<MeasurementPoint>>(`/points/${id}`, data),
   delete: (id: string) => api.delete<ApiResponse<void>>(`/points/${id}`),
   getValue: (id: string) => api.get<ApiResponse<PointValue>>(`/points/${id}/value`),
-  writeValue: (id: string, value: unknown) => api.put<ApiResponse<void>>(`/points/${id}/value`, { value }),
+  writeValue: (id: string, value: unknown) => api.put<ApiResponse<WriteResult>>(`/points/${id}/value`, { value }),
   addBinding: (id: string, binding: PointSourceDTO) => api.post<ApiResponse<MeasurementPoint>>(`/points/${id}/bindings`, binding),
-  exportPoints: () => api.get('/points/export', { responseType: 'blob' }),
-  importPoints: (data: Partial<MeasurementPoint>[]) => api.post<ApiResponse<MeasurementPoint[]>>('/points/import', data),
 };

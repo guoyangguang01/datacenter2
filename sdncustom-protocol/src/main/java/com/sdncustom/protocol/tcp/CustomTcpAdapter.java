@@ -10,6 +10,7 @@ import com.sdncustom.protocol.ProtocolAdapter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.*;
+import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -19,6 +20,10 @@ import java.util.*;
  */
 @Slf4j
 public class CustomTcpAdapter implements ProtocolAdapter {
+
+    /** 连接/读超时：不设连接超时的话，黑洞地址会把调用线程永久挂住 */
+    private static final int CONNECT_TIMEOUT_MS = 5000;
+    private static final int READ_TIMEOUT_MS = 5000;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -39,8 +44,9 @@ public class CustomTcpAdapter implements ProtocolAdapter {
             String host = (String) config.get("host");
             int port = (int) config.get("port");
 
-            socket = new Socket(host, port);
-            socket.setSoTimeout(5000);
+            socket = new Socket();
+            socket.connect(new InetSocketAddress(host, port), CONNECT_TIMEOUT_MS);
+            socket.setSoTimeout(READ_TIMEOUT_MS);
 
             // 验证 socket 是否真正建立连接
             if (socket.isClosed() || !socket.isConnected()) {
@@ -129,6 +135,9 @@ public class CustomTcpAdapter implements ProtocolAdapter {
                 }
             } catch (Exception e) {
                 log.error("Failed to write point: {}", point.getPointId(), e);
+                // 收发失败同样视为链路已断，让 isConnected() 如实反映
+                connected = false;
+                closeConnection();
                 throw new RuntimeException("Write failed", e);
             }
         }
@@ -171,6 +180,10 @@ public class CustomTcpAdapter implements ProtocolAdapter {
                 return result;
             } catch (Exception e) {
                 log.error("Failed to read points", e);
+                // 读失败通常意味着链路已死。关掉连接让 isConnected() 如实反映，
+                // 否则上层会一直以为通道还连着（"假连接"），断线重连也就无从触发
+                connected = false;
+                closeConnection();
                 throw new RuntimeException("Read failed", e);
             }
         }

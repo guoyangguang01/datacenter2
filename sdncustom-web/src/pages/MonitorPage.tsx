@@ -12,7 +12,7 @@ import { useChannelStore } from '../stores/channelStore';
 import { usePointStore } from '../stores/pointStore';
 import { useBusinessStore } from '../stores/businessStore';
 import { wsService } from '../services/websocket';
-import type { PointValue, PointQuality, ChannelStatus } from '../types';
+import type { MeasurementPoint, PointValue, PointQuality, ChannelStatus } from '../types';
 
 const qualityColors: Record<PointQuality, string> = {
   GOOD: 'green',
@@ -214,7 +214,14 @@ export default function MonitorPage() {
         return pt?.pointName ?? record.pointId;
       },
     },
-    { title: '地址', dataIndex: 'address', key: 'address', width: 120 },
+    {
+      title: '地址',
+      key: 'address',
+      width: 160,
+      // 地址不在测点实体上，只存在于 bindings[]（多绑定时逐个列出）
+      render: (_: unknown, record: MeasurementPoint) =>
+        record.bindings?.length ? record.bindings.map((b) => b.address).join(', ') : '-',
+    },
     { title: '类型', dataIndex: 'dataType', key: 'dataType', width: 90 },
     { title: '单位', dataIndex: 'unit', key: 'unit', width: 80 },
     {

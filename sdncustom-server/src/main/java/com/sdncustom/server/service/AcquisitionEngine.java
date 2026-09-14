@@ -18,11 +18,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -44,6 +44,9 @@ public class AcquisitionEngine {
     private final ChangeGate changeGate;
     private final ProtocolRegistry protocolRegistry;
     private final MeterRegistry meterRegistry;
+
+    /** 等待本轮采集完成的上限；超时后未完成的任务不再等，其数据归入下一轮 */
+    private static final long CYCLE_WAIT_SECONDS = 5;
 
     // 每通道独立线程并行采集，避免一个慢通道拖垮整个采集周期
     private final ExecutorService executor = Executors.newFixedThreadPool(8);
@@ -76,35 +79,51 @@ public class AcquisitionEngine {
 
             log.debug("Acquiring data from {} connected channels", channels.size());
 
-            List<PointValue> changedValues = Collections.synchronizedList(new ArrayList<>());
-
-            List<CompletableFuture<Void>> futures = channels.stream()
-                    .map(channel -> CompletableFuture.runAsync(() -> {
-                        try {
-                            changedValues.addAll(acquireChannel(channel));
-                        } catch (Exception e) {
-                            meterRegistry.counter("sdncustom.acquisition.failures",
-                                    "channel", channel.getChannelId()).increment();
-                            log.error("Acquisition failed for channel: {}", channel.getChannelId(), e);
-                        }
-                    }, executor))
+            List<CompletableFuture<List<PointValue>>> futures = channels.stream()
+                    .map(channel -> CompletableFuture
+                            .supplyAsync(() -> acquireChannel(channel), executor)
+                            .exceptionally(e -> {
+                                meterRegistry.counter("sdncustom.acquisition.failures",
+                                        "channel", channel.getChannelId()).increment();
+                                log.error("Acquisition failed for channel: {}", channel.getChannelId(), e);
+                                return List.of();
+                            }))
                     .toList();
 
             // 等待本轮全部完成（限时），防止慢通道无限拖长周期
             try {
                 CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
-                        .get(5, TimeUnit.SECONDS);
+                        .get(CYCLE_WAIT_SECONDS, TimeUnit.SECONDS);
             } catch (Exception e) {
-                log.warn("Acquisition cycle timed out waiting for channels");
+                log.warn("Acquisition cycle timed out waiting for channels ({} of {} finished)",
+                        futures.stream().filter(CompletableFuture::isDone).count(), futures.size());
             }
+
+            // 只消费已完成任务的结果：超时后仍在跑的任务归属下一轮，
+            // 不跨周期共享可变列表（旧实现会让迟到结果与本轮读取竞争）
+            List<PointValue> changedValues = futures.stream()
+                    .filter(CompletableFuture::isDone)
+                    .flatMap(f -> f.join().stream())
+                    .toList();
 
             // 本轮无有效变化则零写入，避免重复数据打爆存储与推送通道
             if (!changedValues.isEmpty()) {
-                meterRegistry.counter("sdncustom.acquisition.changed.values")
-                        .increment(changedValues.size());
-                pointService.updateBatch(changedValues);
-                historyService.saveBatch(changedValues);
-                distributionService.pushBatch(changedValues);
+                // 读取期间用户可能已断开通道：断开来源的迟到值不写缓存/历史
+                List<PointValue> publishable = onlyLiveSources(changedValues);
+                if (!publishable.isEmpty()) {
+                    meterRegistry.counter("sdncustom.acquisition.changed.values")
+                            .increment(publishable.size());
+                    pointService.updateBatch(publishable);
+                    historyService.saveBatch(publishable);
+
+                    // 推送前再复核一次：上面两次落库可能很慢（Redis 超时会阻塞数秒），
+                    // 期间用户若断开，迟到的 GOOD 会在 COMM_LOST 之后把前端刷回正常。
+                    // 过滤放在推送前一刻，窗口就只剩一次查询的距离。
+                    List<PointValue> pushable = onlyLiveSources(publishable);
+                    if (!pushable.isEmpty()) {
+                        distributionService.pushBatch(pushable);
+                    }
+                }
             }
         } finally {
             meterRegistry.timer("sdncustom.acquisition.cycle").record(System.nanoTime() - start, TimeUnit.NANOSECONDS);
@@ -140,6 +159,19 @@ public class AcquisitionEngine {
             pointsById.put(point.getPointId(), point);
         }
         return changeGate.filter(values, pointsById);
+    }
+
+    /**
+     * 丢弃来源通道已不在 CONNECTED 的迟到值。通道断开时 markPointsCommLost 会推 COMM_LOST，
+     * 若这些迟到值随后再推送，客户端会被刷回 GOOD——按 DB 状态（客户端看到的状态投影）过滤。
+     */
+    private List<PointValue> onlyLiveSources(List<PointValue> values) {
+        Set<String> live = channelRepository.findByStatus(ChannelStatus.CONNECTED).stream()
+                .map(Channel::getChannelId)
+                .collect(Collectors.toSet());
+        return values.stream()
+                .filter(pv -> pv.getSourceChannelId() == null || live.contains(pv.getSourceChannelId()))
+                .toList();
     }
 
     @PreDestroy

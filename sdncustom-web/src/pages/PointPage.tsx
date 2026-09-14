@@ -1,11 +1,11 @@
 import { useEffect, useState, useRef } from 'react';
-import { Table, Button, Modal, Form, Input, InputNumber, Select, Switch, Space, message } from 'antd';
+import { Table, Button, Modal, Form, Input, InputNumber, Select, Switch, Space, message, Popconfirm } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, DownloadOutlined, UploadOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import { usePointStore } from '../stores/pointStore';
 import { useChannelStore } from '../stores/channelStore';
 import { useBusinessStore } from '../stores/businessStore';
 import { pointApi } from '../services/api';
-import type { MeasurementPoint } from '../types';
+import type { DataExportPayload, MeasurementPoint } from '../types';
 
 const dataTypeOptions = [
   { label: 'BOOL', value: 'BOOL' },
@@ -17,7 +17,7 @@ const dataTypeOptions = [
 ];
 
 export default function PointPage() {
-  const { points, loading, error, fetchPoints, createPoint, updatePoint, deletePoint, importPoints } = usePointStore();
+  const { points, loading, error, clearError, fetchPoints, createPoint, updatePoint, deletePoint, exportData, importData } = usePointStore();
   const { channels, fetchChannels } = useChannelStore();
   const currentBusinessId = useBusinessStore((s) => s.currentBusinessId);
   const businessesLoaded = useBusinessStore((s) => s.businesses.length > 0);
@@ -39,10 +39,13 @@ export default function PointPage() {
     fetchPoints(filterChannel);
   }, [filterChannel, fetchPoints, currentBusinessId]);
 
-  // 展示 store 中的错误信息
+  // 展示 store 中的错误信息；弹出后立即清空，否则重新进入本页会重复弹同一条
   useEffect(() => {
-    if (error) message.error(error);
-  }, [error]);
+    if (error) {
+      message.error(error);
+      clearError();
+    }
+  }, [error, clearError]);
 
   const showCreateModal = async () => {
     setEditing(null);
@@ -87,14 +90,7 @@ export default function PointPage() {
 
   const handleExport = async () => {
     try {
-      const res = await pointApi.exportPoints();
-      const blob = new Blob([res.data as BlobPart], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `points_export_${new Date().toISOString().slice(0, 10)}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
+      await exportData();
       message.success('导出成功');
     } catch {
       message.error('导出失败');
@@ -105,11 +101,14 @@ export default function PointPage() {
     try {
       const text = await file.text();
       const parsed = JSON.parse(text);
-      const raw: Partial<MeasurementPoint>[] = Array.isArray(parsed) ? parsed : [parsed];
-      const data = raw.map((p) =>
-        p.businessId ? p : { ...p, businessId: currentBusinessId ?? undefined }
-      );
-      const count = await importPoints(data);
+      const payload: DataExportPayload = Array.isArray(parsed) ? { points: parsed } : parsed;
+      // 文件里没写归属的测点落到当前业务（不写则后端落 default 业务）
+      if (currentBusinessId) {
+        payload.points = payload.points?.map((p) =>
+          p.businessId ? p : { ...p, businessId: currentBusinessId }
+        );
+      }
+      const count = await importData(payload);
       message.success(`导入成功，共导入 ${count} 个测点`);
     } catch {
       if (!usePointStore.getState().error) {
@@ -119,7 +118,9 @@ export default function PointPage() {
   };
 
   const handleSubmit = async () => {
-    const values = await form.validateFields();
+    // 校验失败时 antd 已在表单上标红；这里吞掉 rejection，避免未处理的 promise
+    const values = await form.validateFields().catch(() => null);
+    if (!values) return;
     try {
       if (editing) {
         const bindings = [
@@ -192,7 +193,15 @@ export default function PointPage() {
       render: (_: unknown, record: MeasurementPoint) => (
         <Space>
           <Button size="small" icon={<EditOutlined />} onClick={() => showEditModal(record)} />
-          <Button size="small" icon={<DeleteOutlined />} danger onClick={() => handleDelete(record.pointId)} />
+          <Popconfirm
+            title="删除该测点？"
+            description="其绑定关系与缓存值会一并清除。"
+            okText="删除"
+            cancelText="取消"
+            onConfirm={() => handleDelete(record.pointId)}
+          >
+            <Button size="small" icon={<DeleteOutlined />} danger />
+          </Popconfirm>
         </Space>
       ),
     },
@@ -213,10 +222,10 @@ export default function PointPage() {
         </Space>
         <Space>
           <Button icon={<DownloadOutlined />} onClick={handleExport}>
-            导出
+            导出数据
           </Button>
           <Button icon={<UploadOutlined />} onClick={() => fileInputRef.current?.click()}>
-            导入
+            导入数据
           </Button>
           <input
             ref={fileInputRef}

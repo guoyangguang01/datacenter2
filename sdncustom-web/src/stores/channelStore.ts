@@ -1,12 +1,7 @@
 import { create } from 'zustand';
 import type { Channel, ChannelStatus } from '../types';
-import { channelApi } from '../services/api';
+import { channelApi, toErrorMessage } from '../services/api';
 import { useBusinessStore } from './businessStore';
-
-function toErrorMessage(e: unknown, fallback: string): string {
-  if (e instanceof Error) return e.message;
-  return fallback;
-}
 
 // Monotonic guard: only the most recent fetch commits its results.
 let fetchChannelsSeq = 0;
@@ -15,6 +10,7 @@ interface ChannelStore {
   channels: Channel[];
   loading: boolean;
   error: string | null;
+  clearError: () => void;
   fetchChannels: (businessId?: string | null) => Promise<void>;
   createChannel: (data: Partial<Channel>) => Promise<void>;
   updateChannel: (id: string, data: Partial<Channel>) => Promise<void>;
@@ -28,6 +24,8 @@ export const useChannelStore = create<ChannelStore>((set, get) => ({
   channels: [],
   loading: false,
   error: null,
+
+  clearError: () => set({ error: null }),
 
   fetchChannels: async (businessId) => {
     // 缺省按当前业务过滤；业务尚未解析时不加载（页面以 currentBusinessId 为 effect 依赖）

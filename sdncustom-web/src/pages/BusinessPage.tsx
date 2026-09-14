@@ -3,6 +3,7 @@ import { Button, Form, Input, message, Modal, Popconfirm, Space, Table, Typograp
 import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
 import type { BusinessSystem } from '../types';
 import { useBusinessStore } from '../stores/businessStore';
+import { toErrorMessage } from '../services/api';
 
 export default function BusinessPage() {
   const businesses = useBusinessStore((s) => s.businesses);
@@ -53,7 +54,7 @@ export default function BusinessPage() {
       }
       setModalOpen(false);
     } catch (e) {
-      if (e instanceof Error) message.error(e.message);
+      message.error(toErrorMessage(e, '保存业务失败'));
     } finally {
       setSubmitting(false);
     }
@@ -64,7 +65,7 @@ export default function BusinessPage() {
       await deleteBusiness(biz.businessId);
       message.success('业务已删除');
     } catch (e) {
-      if (e instanceof Error) message.error(e.message);
+      message.error(toErrorMessage(e, '删除业务失败'));
     }
   };
 

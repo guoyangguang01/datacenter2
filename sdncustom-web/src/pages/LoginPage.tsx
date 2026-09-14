@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Button, Card, Form, Input, message } from 'antd';
 import { LockOutlined, UserOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import { authApi } from '../services/api';
+import { authApi, toErrorMessage } from '../services/api';
 import { authUtil } from '../utils/auth';
 
 export default function LoginPage() {
@@ -21,7 +21,7 @@ export default function LoginPage() {
       authUtil.setUsername(res.data.data.username);
       navigate('/dashboard', { replace: true });
     } catch (e) {
-      message.error(e instanceof Error ? e.message : '登录失败');
+      message.error(toErrorMessage(e, '登录失败'));
     } finally {
       setLoading(false);
     }

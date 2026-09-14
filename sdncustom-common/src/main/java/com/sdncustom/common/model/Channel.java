@@ -14,7 +14,11 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @Entity
-@Table(name = "channel")
+@Table(name = "channel", indexes = {
+        // status 每 200ms 被采集引擎查一次；business_id 用于按业务过滤
+        @Index(name = "idx_channel_status", columnList = "status"),
+        @Index(name = "idx_channel_business", columnList = "business_id")
+})
 public class Channel {
 
     @Id

@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -73,6 +74,11 @@ public class MockModbusTcpServer {
         holdingRegisters[27] = 156;    // 40028: 振动1 15.6mm/s * 10
         holdingRegisters[28] = 123;    // 40029: 振动2 12.3mm/s * 10
         holdingRegisters[29] = 890;    // 40030: 噪声 89.0dB * 10
+
+        // 32/64 位值：占用连续寄存器，按「高字在前」(ABCD) 存放
+        putFloat32(30, 25.6f);         // 40031-40032: 32位浮点温度
+        putInt32(32, 123456);          // 40033-40034: 32位整数计数
+        putFloat64(34, Math.PI);       // 40035-40038: 64位浮点测量
 
         // 输入寄存器 (30001-30020) - 传感器原始值
         inputRegisters[0] = 234;       // 30001: 温度传感器1
@@ -279,6 +285,27 @@ public class MockModbusTcpServer {
                 return new byte[]{functionCode, pdu[1], pdu[2], pdu[3], pdu[4]};
             }
 
+            case ModbusFunction.WRITE_MULTIPLE_REGISTERS: {
+                if (pdu.length < 6) {
+                    return new byte[]{(byte) (functionCode | 0x80), 0x03}; // 非法数据值
+                }
+                int address = ((pdu[1] & 0xFF) << 8) | (pdu[2] & 0xFF);
+                int quantity = ((pdu[3] & 0xFF) << 8) | (pdu[4] & 0xFF);
+                int byteCount = pdu[5] & 0xFF;
+                if (pdu.length < 6 + byteCount) {
+                    return new byte[]{(byte) (functionCode | 0x80), 0x03};
+                }
+                for (int i = 0; i < quantity; i++) {
+                    int value = ((pdu[6 + i * 2] & 0xFF) << 8) | (pdu[7 + i * 2] & 0xFF);
+                    int target = address + i;
+                    if (target >= 0 && target < holdingRegisters.length) {
+                        holdingRegisters[target] = value;
+                    }
+                }
+                // 回显：功能码 + 起始地址 + 寄存器数量
+                return new byte[]{functionCode, pdu[1], pdu[2], pdu[3], pdu[4]};
+            }
+
             default: {
                 // 异常响应：非法功能码
                 return new byte[]{(byte) (functionCode | 0x80), 0x01};
@@ -323,6 +350,31 @@ public class MockModbusTcpServer {
         return response;
     }
 
+    /** 把 32 位浮点按「高字在前」写入连续两个寄存器 */
+    private void putFloat32(int startIndex, float value) {
+        putWords(startIndex, ByteBuffer.allocate(4).putFloat(value).array());
+    }
+
+    /** 把 32 位整数按「高字在前」写入连续两个寄存器 */
+    private void putInt32(int startIndex, int value) {
+        putWords(startIndex, ByteBuffer.allocate(4).putInt(value).array());
+    }
+
+    /** 把 64 位浮点按「高字在前」写入连续四个寄存器 */
+    private void putFloat64(int startIndex, double value) {
+        putWords(startIndex, ByteBuffer.allocate(8).putDouble(value).array());
+    }
+
+    private void putWords(int startIndex, byte[] bigEndianBytes) {
+        for (int i = 0; i < bigEndianBytes.length / 2; i++) {
+            int index = startIndex + i;
+            if (index >= 0 && index < holdingRegisters.length) {
+                holdingRegisters[index] = ((bigEndianBytes[i * 2] & 0xFF) << 8)
+                        | (bigEndianBytes[i * 2 + 1] & 0xFF);
+            }
+        }
+    }
+
     /**
      * 更新模拟数据
      */
@@ -356,6 +408,9 @@ public class MockModbusTcpServer {
         holdingRegisters[27] = 156 + random.nextInt(30) - 15;     // 振动1波动
         holdingRegisters[28] = 123 + random.nextInt(20) - 10;     // 振动2波动
         holdingRegisters[29] = 890 + random.nextInt(40) - 20;     // 噪声波动
+
+        // 32 位浮点（40031-40032）小幅波动；32/64 位整数保持稳定，便于写入回读验证
+        putFloat32(30, 25.6f + (random.nextInt(101) - 50) / 100.0f);
 
         // 输入寄存器波动
         for (int i = 0; i < 20; i++) {

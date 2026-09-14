@@ -21,6 +21,10 @@ import java.util.Map;
  * - 输入寄存器: 30001-39999 (功能码 0x04)
  * - 线圈: 00001-09999 (功能码 0x01)
  * - 离散输入: 10001-19999 (功能码 0x02)
+ *
+ * 多寄存器类型（INT32/FLOAT32 占 2 个、FLOAT64 占 4 个连续寄存器）以测点 address
+ * 为起始寄存器；写侧走功能码 0x10。字序由通道 connectionConfig 的 wordOrder 决定：
+ * {@code big}（默认，高字在前 ABCD）/ {@code little}（低字在前 CDAB）。
  */
 @Slf4j
 public class ModbusTcpAdapter implements ProtocolAdapter {
@@ -29,6 +33,8 @@ public class ModbusTcpAdapter implements ProtocolAdapter {
     private final ModbusTcpClient client = new ModbusTcpClient();
     private Channel channel;
     private volatile boolean connected = false;
+    /** 多寄存器值是否低字在前（connectionConfig.wordOrder = little） */
+    private volatile boolean lowWordFirst = false;
 
     @Override
     public void connect(Channel channel) {
@@ -38,6 +44,8 @@ public class ModbusTcpAdapter implements ProtocolAdapter {
             String host = (String) config.get("host");
             int port = config.containsKey("port") ? (int) config.get("port") : 502;
             int unitId = config.containsKey("unitId") ? (int) config.get("unitId") : 1;
+            String wordOrder = config.containsKey("wordOrder") ? String.valueOf(config.get("wordOrder")) : "big";
+            this.lowWordFirst = "little".equalsIgnoreCase(wordOrder);
 
             client.setUnitId(unitId);
             client.connect(host, port);
@@ -76,14 +84,21 @@ public class ModbusTcpAdapter implements ProtocolAdapter {
         }
         try {
             ModbusAddress addr = parseAddress(point.getAddress());
-            int intValue = convertToInt(value, point.getDataType());
 
-            if (addr.type == AddressType.HOLDING_REGISTER) {
-                client.writeSingleRegister(addr.registerAddress, intValue);
-            } else if (addr.type == AddressType.COIL) {
-                client.writeSingleCoil(addr.registerAddress, intValue != 0);
-            } else {
+            if (addr.type == AddressType.COIL) {
+                client.writeSingleCoil(addr.registerAddress, asBoolean(value));
+                return;
+            }
+            if (addr.type != AddressType.HOLDING_REGISTER) {
                 throw new RuntimeException("Cannot write to address type: " + addr.type);
+            }
+
+            if (ModbusRegisters.isMultiRegister(point.getDataType())) {
+                // 32/64 位：一次写多个连续寄存器（功能码 0x10）
+                int[] registers = ModbusRegisters.encode(asDouble(value), point.getDataType(), lowWordFirst);
+                client.writeMultipleRegisters(addr.registerAddress, registers);
+            } else {
+                client.writeSingleRegister(addr.registerAddress, convertToInt(value, point.getDataType()));
             }
         } catch (Exception e) {
             log.error("Failed to write Modbus point: {}", point.getPointId(), e);
@@ -112,6 +127,11 @@ public class ModbusTcpAdapter implements ProtocolAdapter {
                 pv.setTimestamp(System.currentTimeMillis());
                 pv.setSourceChannelId(channel != null ? channel.getChannelId() : null);
                 results.add(pv);
+                // 读失败说明链路可能已断：关掉客户端让 isConnected() 如实反映
+                //（Modbus 的 socket.isConnected() 只表示"曾经连过"，不会因为对端消失而变 false），
+                // 否则上层一直以为通道还连着（"假连接"），重连无从触发
+                client.disconnect();
+                break;
             }
         }
         return results;
@@ -134,18 +154,20 @@ public class ModbusTcpAdapter implements ProtocolAdapter {
 
     private PointValue readSinglePoint(MeasurementPoint point) throws Exception {
         ModbusAddress addr = parseAddress(point.getAddress());
+        PointDataType dataType = point.getDataType();
+        int width = ModbusRegisters.width(dataType);
         Object value;
         PointQuality quality = PointQuality.GOOD;
 
         switch (addr.type) {
             case HOLDING_REGISTER: {
-                int[] regs = client.readHoldingRegisters(addr.registerAddress, 1);
-                value = regs[0];
+                int[] regs = client.readHoldingRegisters(addr.registerAddress, width);
+                value = decodeRegisters(regs, dataType);
                 break;
             }
             case INPUT_REGISTER: {
-                int[] regs = client.readInputRegisters(addr.registerAddress, 1);
-                value = regs[0];
+                int[] regs = client.readInputRegisters(addr.registerAddress, width);
+                value = decodeRegisters(regs, dataType);
                 break;
             }
             case COIL: {
@@ -164,8 +186,9 @@ public class ModbusTcpAdapter implements ProtocolAdapter {
                 quality = PointQuality.BAD;
         }
 
-        // 转换数据类型
-        value = convertValue(value, point.getDataType());
+        if (quality == PointQuality.GOOD && value != null) {
+            value = convertValue(value, dataType);
+        }
 
         PointValue pv = new PointValue();
         pv.setPointId(point.getPointId());
@@ -174,6 +197,41 @@ public class ModbusTcpAdapter implements ProtocolAdapter {
         pv.setTimestamp(System.currentTimeMillis());
         pv.setSourceChannelId(channel != null ? channel.getChannelId() : null);
         return pv;
+    }
+
+    /** 多寄存器类型按字序解码；其余（BOOL/STRING/INT16）落到单寄存器转换 */
+    private Object decodeRegisters(int[] registers, PointDataType dataType) {
+        if (ModbusRegisters.isMultiRegister(dataType)) {
+            Object decoded = ModbusRegisters.decode(registers, dataType, lowWordFirst);
+            if (decoded != null) {
+                return decoded;
+            }
+        }
+        return registers[0];
+    }
+
+    private boolean asBoolean(Object value) {
+        if (value instanceof Boolean b) {
+            return b;
+        }
+        if (value instanceof Number n) {
+            return n.doubleValue() != 0;
+        }
+        return Boolean.parseBoolean(String.valueOf(value));
+    }
+
+    private double asDouble(Object value) {
+        if (value instanceof Number n) {
+            return n.doubleValue();
+        }
+        if (value instanceof Boolean b) {
+            return b ? 1 : 0;
+        }
+        try {
+            return Double.parseDouble(String.valueOf(value));
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Cannot write non-numeric value: " + value);
+        }
     }
 
     private ModbusAddress parseAddress(String address) {

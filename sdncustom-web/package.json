@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check:types": "node scripts/check-dto-drift.mjs"
   },
   "dependencies": {
     "antd": "^5.15.0",

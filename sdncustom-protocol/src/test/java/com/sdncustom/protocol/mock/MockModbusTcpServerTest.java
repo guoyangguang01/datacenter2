@@ -125,6 +125,42 @@ class MockModbusTcpServerTest {
     }
 
     @Test
+    @DisplayName("写多个保持寄存器（功能码 0x10）并回读")
+    void writeMultipleRegisters() throws Exception {
+        ModbusTcpClient client = new ModbusTcpClient();
+        try {
+            client.connect("localhost", TEST_PORT);
+
+            // 25.6f 高字在前 = [0x41CC, 0xCCCD]；用未占用的寄存器区避免被定时波动覆盖
+            client.writeMultipleRegisters(60, new int[]{0x41CC, 0xCCCD});
+
+            int[] registers = client.readHoldingRegisters(60, 2);
+            assertArrayEquals(new int[]{0x41CC, 0xCCCD}, registers);
+        } finally {
+            client.disconnect();
+        }
+    }
+
+    @Test
+    @DisplayName("模拟器预置的 32 位值可按高字在前读出")
+    void readPreset32BitRegisters() throws Exception {
+        ModbusTcpClient client = new ModbusTcpClient();
+        try {
+            client.connect("localhost", TEST_PORT);
+
+            // 40033-40034 预置 INT32 = 123456 -> [0x0001, 0xE240]
+            int[] int32 = client.readHoldingRegisters(32, 2);
+            assertArrayEquals(new int[]{0x0001, 0xE240}, int32);
+
+            // 40035-40038 预置 FLOAT64 = 3.14159265 -> [0x4009, 0x21FB, 0x5444, 0x2D18]
+            int[] float64 = client.readHoldingRegisters(34, 4);
+            assertArrayEquals(new int[]{0x4009, 0x21FB, 0x5444, 0x2D18}, float64);
+        } finally {
+            client.disconnect();
+        }
+    }
+
+    @Test
     @DisplayName("写入线圈")
     void writeCoil() throws Exception {
         ModbusTcpClient client = new ModbusTcpClient();

@@ -5,6 +5,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.PositiveOrZero;
 import lombok.Data;
 
 import java.util.List;
@@ -28,6 +29,7 @@ public class MeasurementPointDTO {
 
     private boolean writable = false;
 
+    @PositiveOrZero(message = "deadband 不能为负")
     private Double deadband;
 
     /** 绑定（全部通道来源，至少一条；创建/更新时整体替换） */

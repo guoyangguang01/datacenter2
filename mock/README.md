@@ -35,13 +35,19 @@ chmod +x start-mock-servers.sh
 ./start-mock-servers.sh
 ```
 
-### 3. 导入模拟数据
+### 3. 导入通道配置
 
-启动 SDNCustom 应用后，在测点管理页面点击"导入"按钮，选择 `mock-data.json` 文件导入预配置的通道和测点。
+启动 SDNCustom 应用后，在通道管理页面点击"导入"按钮，选择 `mock-channels.json` 文件导入通道配置（只建通道，不含业务与测点）。
 
 ### 4. 连接通道
 
 在通道管理页面，点击各通道的"连接"按钮连接到对应的模拟服务器。
+
+### 5. 导入数据
+
+在**测点管理**页面点击「导入数据」，选择 `mock-data.json` —— 只建业务与测点（含绑定）。
+
+> 顺序不能颠倒：测点通过 `channelId` 绑定通道，数据导入要求通道已存在，否则会整体失败并点名缺失的通道。
 
 ## 模拟数据说明
 
@@ -120,12 +126,12 @@ java -cp <classpath> com.sdncustom.protocol.mock.MockOpcUaServer [port]
 2. **OPC-UA 模拟服务器**使用 Eclipse Milo SDK，首次启动可能需要较长时间初始化
 3. 所有模拟服务器都会自动更新数据，模拟真实设备的实时变化
 4. 模拟数据变化周期为 2-3 秒
-5. 使用 `mock-data.json` 可以快速导入预配置的通道和测点
+5. 引导分两步：`mock-channels.json`（通道配置）→ 逐个连接 → `mock-data.json`（业务与测点）
 
 ## 故障排除
 
 ### 端口被占用
-如果端口被占用，可以修改启动命令的端口参数，同时修改 `mock-data.json` 中的连接配置。
+如果端口被占用，可以修改启动命令的端口参数，同时修改 `mock-channels.json` 中的连接配置。
 
 ### MQTT 连接失败
 确保 MQTT Broker 已启动：
@@ -141,4 +147,4 @@ sudo systemctl start mosquitto
 检查 Java 版本是否为 17+，Milo SDK 需要 Java 11+。
 
 ### 导入数据失败
-确保 `mock-data.json` 文件格式正确，且通道配置中的端口与模拟服务器一致。
+先确认通道已导入（`mock-channels.json`）——测点绑定要求通道存在；再检查 `mock-data.json` 格式，以及 `mock-channels.json` 中的端口与模拟服务器一致。

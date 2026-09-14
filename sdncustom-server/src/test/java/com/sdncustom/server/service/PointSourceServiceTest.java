@@ -67,7 +67,7 @@ class PointSourceServiceTest {
         MeasurementPoint p = point("p1");
         PointSource binding = source("p1", "ch_b", "addr_b");
         when(pointSourceRepository.findByChannelId("ch_b")).thenReturn(List.of(binding));
-        when(pointRepository.findById("p1")).thenReturn(Optional.of(p));
+        when(pointRepository.findAllById(List.of("p1"))).thenReturn(List.of(p));
 
         List<MeasurementPoint> result = pointSourceService.findPointsForChannel("ch_b");
 

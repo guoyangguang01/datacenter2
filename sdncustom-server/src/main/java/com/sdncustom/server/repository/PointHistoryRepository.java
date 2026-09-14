@@ -197,6 +197,12 @@ public class PointHistoryRepository {
             return List.of();
         }
         try {
+            // 用 long 算偏移：page * size 按 int 会在深翻页时溢出成负数，变成从 0 开始取
+            long offset = (long) page * size;
+            if (offset > Integer.MAX_VALUE) {
+                log.warn("History offset {} beyond supported range for point {}", offset, pointId);
+                return List.of();
+            }
             String tableName = tableNameOf(pointId);
             String sql = String.format(
                     "SELECT ts, val, quality, source_channel_id FROM %s WHERE ts >= ? AND ts <= ? ORDER BY ts DESC LIMIT ? OFFSET ?",
@@ -209,7 +215,7 @@ public class PointHistoryRepository {
                 history.setQuality(com.sdncustom.common.model.enums.PointQuality.valueOf(rs.getString("quality")));
                 history.setSourceChannelId(rs.getString("source_channel_id"));
                 return history;
-            }, startTime, endTime, size, page * size);
+            }, startTime, endTime, (long) size, offset);
         } catch (Exception e) {
             log.error("Failed to query point history: {}", pointId, e);
             return List.of();

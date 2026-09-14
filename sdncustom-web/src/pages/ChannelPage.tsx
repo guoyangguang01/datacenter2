@@ -1,9 +1,8 @@
 import { useEffect, useState, useRef } from 'react';
-import { Table, Button, Modal, Form, Input, Select, Switch, Space, Tag, message, Dropdown, InputNumber } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, LinkOutlined, DisconnectOutlined, EyeOutlined, DownloadOutlined, UploadOutlined } from '@ant-design/icons';
+import { Table, Button, Modal, Form, Input, Select, Switch, Space, Tag, message, InputNumber, Popconfirm } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, LinkOutlined, DisconnectOutlined, EyeOutlined, UploadOutlined } from '@ant-design/icons';
 import { useChannelStore } from '../stores/channelStore';
 import { channelApi } from '../services/api';
-import { usePointStore } from '../stores/pointStore';
 import { useBusinessStore } from '../stores/businessStore';
 import type { Channel } from '../types';
 
@@ -37,8 +36,7 @@ function parseConnectionConfig(config: string | undefined): Record<string, unkno
 }
 
 export default function ChannelPage() {
-  const { channels, loading, error, fetchChannels, createChannel, updateChannel, deleteChannel, connectChannel, disconnectChannel } = useChannelStore();
-  const { fetchPoints } = usePointStore();
+  const { channels, loading, error, clearError, fetchChannels, createChannel, updateChannel, deleteChannel, connectChannel, disconnectChannel } = useChannelStore();
   const currentBusinessId = useBusinessStore((s) => s.currentBusinessId);
   const businessesLoaded = useBusinessStore((s) => s.businesses.length > 0);
   const [modalOpen, setModalOpen] = useState(false);
@@ -51,10 +49,13 @@ export default function ChannelPage() {
     fetchChannels();
   }, [fetchChannels, currentBusinessId]);
 
-  // 展示 store 中的错误信息
+  // 展示 store 中的错误信息；弹出后立即清空，否则重新进入本页会重复弹同一条
   useEffect(() => {
-    if (error) message.error(error);
-  }, [error]);
+    if (error) {
+      message.error(error);
+      clearError();
+    }
+  }, [error, clearError]);
 
   const handleAdd = () => {
     setEditing(null);
@@ -97,72 +98,27 @@ export default function ChannelPage() {
     }
   };
 
-  // 导出全部（通道+测点）
-  const handleExportAll = async () => {
-    try {
-      const res = await channelApi.exportAll();
-      const blob = new Blob([res.data as BlobPart], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `sdncustom_export_${new Date().toISOString().slice(0, 10)}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      message.success('导出成功');
-    } catch {
-      message.error('导出失败');
-    }
-  };
-
-  // 仅导出当前业务的通道
-  const handleExportChannels = async () => {
-    try {
-      const res = await channelApi.getAll(currentBusinessId ?? undefined);
-      const blob = new Blob([JSON.stringify(res.data.data, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `channels_export_${new Date().toISOString().slice(0, 10)}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      message.success('导出成功');
-    } catch {
-      message.error('导出失败');
-    }
-  };
-
-  // 导出下拉菜单
-  const exportMenuItems = [
-    { key: 'all', label: '导出全部（通道+测点）', onClick: handleExportAll },
-    { key: 'channels', label: '仅导出通道', onClick: handleExportChannels },
-  ];
-
+  // 导入通道配置（仅通道；业务与测点走「测点管理」页的数据导入）
   const handleImport = async (file: File) => {
     try {
       const text = await file.text();
       const data = JSON.parse(text);
+      const channels = Array.isArray(data) ? data : data.channels;
 
-      // 检测格式：组合格式 {channels, points} 或纯通道数组
-      if (data.channels || data.points) {
-        // 组合格式：同时导入通道和测点
-        const res = await channelApi.importAll(data);
-        const { channelCount, pointCount } = res.data;
-        await fetchChannels();
-        await fetchPoints();
-        message.success(`导入成功：${channelCount} 个通道，${pointCount} 个测点`);
-      } else if (Array.isArray(data)) {
-        // 纯通道数组格式
-        for (const ch of data) {
-          await createChannel(ch.businessId ? ch : { ...ch, businessId: currentBusinessId ?? undefined });
-        }
-        message.success(`导入成功，共导入 ${data.length} 个通道`);
-      } else {
-        message.error('不支持的文件格式');
+      if (!Array.isArray(channels)) {
+        message.error('不支持的文件格式：需要通道数组或 {channels: [...]}');
+        return;
       }
-    } catch {
-      if (!useChannelStore.getState().error) {
-        message.error('导入失败，请检查文件格式');
+
+      const res = await channelApi.importConfig({ channels });
+      if (res.data.code !== 200) {
+        message.error(res.data.message || '导入失败');
+        return;
       }
+      await fetchChannels();
+      message.success(`导入成功，共 ${res.data.data.channelCount} 个通道`);
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : '导入失败，请检查文件格式');
     }
   };
 
@@ -185,7 +141,9 @@ export default function ChannelPage() {
   };
 
   const handleSubmit = async () => {
-    const values = await form.validateFields();
+    // 校验失败时 antd 已在表单上标红；这里吞掉 rejection，避免未处理的 promise
+    const values = await form.validateFields().catch(() => null);
+    if (!values) return;
 
     // 根据协议类型构建连接配置 JSON
     let connectionConfig = '';
@@ -261,7 +219,15 @@ export default function ChannelPage() {
       render: (_: unknown, record: Channel) => (
         <Space>
           <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
-          <Button size="small" icon={<DeleteOutlined />} danger onClick={() => handleDelete(record.channelId)} />
+          <Popconfirm
+            title="删除该通道？"
+            description="仅剩该通道绑定的测点会一并删除。"
+            okText="删除"
+            cancelText="取消"
+            onConfirm={() => handleDelete(record.channelId)}
+          >
+            <Button size="small" icon={<DeleteOutlined />} danger />
+          </Popconfirm>
           {record.status === 'DISCONNECTED' ? (
             <Button size="small" type="primary" icon={<LinkOutlined />} onClick={() => handleConnect(record.channelId)}>
               连接
@@ -292,13 +258,8 @@ export default function ChannelPage() {
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
         <h2>通道管理</h2>
         <Space>
-          <Dropdown menu={{ items: exportMenuItems }} placement="bottomRight">
-            <Button icon={<DownloadOutlined />}>
-              导出
-            </Button>
-          </Dropdown>
           <Button icon={<UploadOutlined />} onClick={() => fileInputRef.current?.click()}>
-            导入
+            导入通道配置
           </Button>
           <input
             ref={fileInputRef}

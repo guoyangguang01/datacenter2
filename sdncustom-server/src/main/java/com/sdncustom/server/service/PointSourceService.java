@@ -16,8 +16,11 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * 测点绑定（绑定集）服务：一个测点的全部绑定统一存在 point_source 表，无主从之分。
@@ -37,9 +40,18 @@ public class PointSourceService {
      * 视图保留 pointId（合并与路由的锚点），覆盖 channelId/address 为该通道绑定值。
      */
     public List<MeasurementPoint> findPointsForChannel(String channelId) {
-        List<MeasurementPoint> result = new ArrayList<>();
-        for (PointSource binding : pointSourceRepository.findByChannelId(channelId)) {
-            MeasurementPoint point = pointRepository.findById(binding.getPointId()).orElse(null);
+        List<PointSource> bindings = pointSourceRepository.findByChannelId(channelId);
+        if (bindings.isEmpty()) {
+            return List.of();
+        }
+        // 批量取，别在绑定上逐条 findById —— 这条路径每 200ms 每通道都会走
+        List<String> pointIds = bindings.stream().map(PointSource::getPointId).distinct().toList();
+        Map<String, MeasurementPoint> pointsById = pointRepository.findAllById(pointIds).stream()
+                .collect(Collectors.toMap(MeasurementPoint::getPointId, Function.identity()));
+
+        List<MeasurementPoint> result = new ArrayList<>(bindings.size());
+        for (PointSource binding : bindings) {
+            MeasurementPoint point = pointsById.get(binding.getPointId());
             if (point != null) {
                 result.add(viewForBinding(point, binding.getChannelId(), binding.getAddress()));
             }
@@ -93,7 +105,8 @@ public class PointSourceService {
             }
             Channel channel = channelRepository.findById(dto.getChannelId()).orElse(null);
             if (channel == null) {
-                throw new BusinessException(400, "绑定通道不存在: " + dto.getChannelId());
+                throw new BusinessException(400, "绑定通道不存在: " + dto.getChannelId()
+                        + "（导入数据前请先导入通道配置）");
             }
             if (!Objects.equals(channel.getBusinessId(), pointBusinessId)) {
                 throw new BusinessException(400, "绑定通道不属于当前业务: " + dto.getChannelId());

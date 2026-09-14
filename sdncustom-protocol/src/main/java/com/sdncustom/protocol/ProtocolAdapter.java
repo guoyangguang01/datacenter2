@@ -65,4 +65,14 @@ public interface ProtocolAdapter {
     default void onConnected(List<MeasurementPoint> points) {
         // no-op by default
     }
+
+    /**
+     * 测点被删除或解绑时的钩子，由通道生命周期管理层统一调用。
+     * 订阅型协议（如 MQTT）在此退订并清理缓存；请求/响应型协议无需覆写。
+     *
+     * @param points 不再需要采集的测点绑定视图（channelId/address 已按绑定填充）
+     */
+    default void onPointsRemoved(List<MeasurementPoint> points) {
+        // no-op by default
+    }
 }

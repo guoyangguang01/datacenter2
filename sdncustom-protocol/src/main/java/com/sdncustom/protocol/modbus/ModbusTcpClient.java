@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -32,7 +33,8 @@ public class ModbusTcpClient {
      */
     public void connect(String host, int port) throws IOException {
         try {
-            socket = new Socket(host, port > 0 ? port : MODBUS_TCP_PORT);
+            socket = new Socket();
+            socket.connect(new InetSocketAddress(host, port > 0 ? port : MODBUS_TCP_PORT), DEFAULT_TIMEOUT);
             socket.setSoTimeout(DEFAULT_TIMEOUT);
             input = new DataInputStream(socket.getInputStream());
             output = new DataOutputStream(socket.getOutputStream());
@@ -114,8 +116,38 @@ public class ModbusTcpClient {
      */
     public void writeSingleRegister(int address, int value) throws IOException {
         byte[] request = buildWriteSingleRequest(address, value);
-        byte[] response = sendRequest(request);
-        parseWriteResponse(response);
+        parseWriteResponse(sendRequest(request), ModbusFunction.WRITE_SINGLE_REGISTER, address);
+    }
+
+    /**
+     * 写多个保持寄存器（功能码 0x10）——32/64 位值跨寄存器写入走这里
+     *
+     * @param startAddress 起始寄存器地址
+     * @param values       要写入的寄存器序列（大端字序，调用方已按设备字节序排好）
+     */
+    public void writeMultipleRegisters(int startAddress, int[] values) throws IOException {
+        if (values == null || values.length == 0) {
+            throw new IllegalArgumentException("Modbus write requires at least one register");
+        }
+        if (values.length > 123) {
+            throw new IllegalArgumentException("Modbus allows at most 123 registers per write, got " + values.length);
+        }
+
+        int byteCount = values.length * 2;
+        byte[] request = new byte[MBAP_HEADER_SIZE + 6 + byteCount];
+        buildMbapHeader(request, 6 + byteCount);
+        request[MBAP_HEADER_SIZE] = ModbusFunction.WRITE_MULTIPLE_REGISTERS;
+        request[MBAP_HEADER_SIZE + 1] = (byte) (startAddress >> 8);
+        request[MBAP_HEADER_SIZE + 2] = (byte) startAddress;
+        request[MBAP_HEADER_SIZE + 3] = (byte) (values.length >> 8);
+        request[MBAP_HEADER_SIZE + 4] = (byte) values.length;
+        request[MBAP_HEADER_SIZE + 5] = (byte) byteCount;
+        for (int i = 0; i < values.length; i++) {
+            request[MBAP_HEADER_SIZE + 6 + i * 2] = (byte) (values[i] >> 8);
+            request[MBAP_HEADER_SIZE + 7 + i * 2] = (byte) values[i];
+        }
+
+        parseWriteResponse(sendRequest(request), ModbusFunction.WRITE_MULTIPLE_REGISTERS, startAddress);
     }
 
     /**
@@ -148,7 +180,7 @@ public class ModbusTcpClient {
         request[MBAP_HEADER_SIZE + 3] = (byte) (value ? 0xFF : 0x00);
         request[MBAP_HEADER_SIZE + 4] = 0x00;
         byte[] response = sendRequest(request);
-        parseWriteResponse(response);
+        parseWriteResponse(response, ModbusFunction.WRITE_SINGLE_COIL, address);
     }
 
     private byte[] buildReadRequest(byte functionCode, int startAddress, int quantity) {
@@ -232,20 +264,26 @@ public class ModbusTcpClient {
     }
 
     private int[] parseReadResponse(byte[] response, int quantity) {
-        if (response.length < 3) {
+        if (response.length < 2) {
             throw new RuntimeException("Invalid read response");
         }
 
         int byteCount = response[1] & 0xFF;
-        int[] values = new int[quantity];
-
-        for (int i = 0; i < quantity; i++) {
-            int offset = 2 + i * 2;
-            if (offset + 1 < response.length) {
-                values[i] = ((response[offset] & 0xFF) << 8) | (response[offset + 1] & 0xFF);
-            }
+        int expected = quantity * 2;
+        // 以前是缺字节就补 0，会把截断的响应伪装成合法值；这里直接判失败
+        if (byteCount != expected) {
+            throw new RuntimeException("Modbus byte count mismatch: expected " + expected + ", got " + byteCount);
+        }
+        if (response.length < 2 + byteCount) {
+            throw new RuntimeException("Truncated Modbus read response: need " + (2 + byteCount)
+                    + " bytes, got " + response.length);
         }
 
+        int[] values = new int[quantity];
+        for (int i = 0; i < quantity; i++) {
+            int offset = 2 + i * 2;
+            values[i] = ((response[offset] & 0xFF) << 8) | (response[offset + 1] & 0xFF);
+        }
         return values;
     }
 
@@ -268,10 +306,23 @@ public class ModbusTcpClient {
         return values;
     }
 
-    private void parseWriteResponse(byte[] response) {
+    /**
+     * 写响应是请求的回显（功能码 + 地址 + 数量/值），校验功能码与地址是否与请求一致，
+     * 避免把别的请求的回显当成成功。
+     */
+    private void parseWriteResponse(byte[] response, byte expectedFunction, int expectedAddress) {
         if (response.length < 5) {
             throw new RuntimeException("Invalid write response");
         }
-        // 写响应通常包含回显的地址和值，无需额外解析
+        if (response[0] != expectedFunction) {
+            throw new RuntimeException("Modbus write response function mismatch: expected "
+                    + Integer.toHexString(expectedFunction & 0xFF)
+                    + ", got " + Integer.toHexString(response[0] & 0xFF));
+        }
+        int echoedAddress = ((response[1] & 0xFF) << 8) | (response[2] & 0xFF);
+        if (echoedAddress != expectedAddress) {
+            throw new RuntimeException("Modbus write response address mismatch: expected "
+                    + expectedAddress + ", got " + echoedAddress);
+        }
     }
 }

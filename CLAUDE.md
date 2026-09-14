@@ -27,6 +27,8 @@ SDNCustom/
 └── sdncustom-web/         # 前端 - React SPA
 ```
 
+> 原始设计文档：`docs/superpowers/specs/2026-08-26-sdncustom-design.md`（数据模型/协议层/存储设计的完整背景）。注意其中"多 Channel 写冲突"、第一期范围等章节已被后续绑定集模型与业务隔离迭代**取代**，以本文件为准。
+
 ## 核心概念
 
 - **测点 (MeasurementPoint)**：数据的最小单元，平台的一等公民
@@ -36,11 +38,9 @@ SDNCustom/
 
 ## 环境要求
 
-- **JDK 23**：项目使用 OpenJDK 23
-  - 安装路径：`C:\Users\guoya\.jdks\openjdk-23.0.2`
-  - 环境变量：`JAVA_HOME=C:\Users\guoya\.jdks\openjdk-23.0.2`
-  - 脚本中已配置：`scripts/build.bat` 和 `scripts/start.bat` 会自动设置 JAVA_HOME
-- **Maven 3.9+**：`D:\dev\software\apache-maven-3.9.9`
+- **JDK 23**：根 pom 固定 `<java.version>23</java.version>`；构建机需 JDK 23。JDK 版本较低时用 `-Djava.version=<本机版本>` 覆盖（如 21）
+  - 路径不写死在 pom 里——`JAVA_HOME` 由 shell 或 `scripts/*.bat` 头部（`set JAVA_HOME=...`、`set M2_HOME=...`）提供，换机器需改脚本
+- **Maven 3.9+**
 - **Node.js 18+**
 - **Docker**：用于运行 Redis、TDengine、Mosquitto
 
@@ -49,16 +49,18 @@ SDNCustom/
 ### 后端 (Maven)
 
 ```bash
-# 确保 JAVA_HOME 指向 JDK 23
-export JAVA_HOME=C:/Users/guoya/.jdks/openjdk-23.0.2  # Linux/Mac
-# set JAVA_HOME=C:\Users\guoya\.jdks\openjdk-23.0.2   # Windows
+# JAVA_HOME 需指向 JDK 23（或加 -Djava.version=<本机版本> 覆盖）
+mvn clean compile                          # 编译
+mvn -pl sdncustom-protocol -am compile     # 只编译某模块及其依赖
+cd sdncustom-server && mvn spring-boot:run # 启动 (端口 8080)
 
-mvn clean compile                    # 编译
-cd sdncustom-server && mvn spring-boot:run  # 启动 (端口 8080)
-mvn test                             # 运行所有测试
-mvn test -Dtest=ChannelServiceTest   # 运行单个测试类
-mvn test -Dtest=ChannelServiceTest#testMethod  # 运行单个测试方法
+mvn test                                        # 全部模块
+mvn test -pl sdncustom-server                   # 只跑某模块（-am 会连带依赖模块）
+mvn test -Dtest=ChannelServiceTest              # 运行单个测试类
+mvn test -Dtest=ChannelServiceTest#testMethod   # 运行单个测试方法
 ```
+
+测试只在 Java 模块里（`sdncustom-common` / `sdncustom-protocol` / `sdncustom-server`，26 个测试类、214 个 `@Test`，集中在 service/security/config/monitor/repository）。`sdncustom-web` **没有测试框架**——`package.json` 无 `test` 脚本、无 vitest/jest，前端改动只能靠 `npm run build`（含 `tsc` 类型检查）、`npm run check:types`（比对后端 DTO/枚举与手写类型是否漂移）与手工验证。
 
 ### 前端 (Vite)
 
@@ -66,7 +68,7 @@ mvn test -Dtest=ChannelServiceTest#testMethod  # 运行单个测试方法
 cd sdncustom-web
 npm install
 npm run dev                          # 启动开发服务器 (端口 3000)
-npm run build                        # 构建生产版本
+npm run build                        # tsc 类型检查 + vite 生产构建
 ```
 
 ### Docker 依赖
@@ -91,7 +93,7 @@ scripts/start-frontend.bat           # 单独启动前端
 
 ## 协议适配器
 
-所有协议适配器实现 `ProtocolAdapter` 接口；每个协议有一个 `ProtocolAdapterFactory`（`@Component`），Spring 启动时由 `ProtocolRegistry` 收集所有工厂，并按 channelId 管理适配器实例的生命周期（`getOrCreate`/`release`/`remove`）。连接成功后统一调用 `adapter.onConnected(points)`，订阅型协议（MQTT）在此建立/增量订阅，上层不再用 `instanceof` 特判：
+所有协议适配器实现 `ProtocolAdapter` 接口；每个协议有一个 `ProtocolAdapterFactory`（`@Component`），Spring 启动时由 `ProtocolRegistry` 收集所有工厂，并按 channelId 管理适配器实例的生命周期（`getOrCreate`/`release`/`remove`）。连接成功后统一调用 `adapter.onConnected(points)`，**测点删除/解绑时调用 `adapter.onPointsRemoved(points)`**，订阅型协议（MQTT）在这两个钩子里增量订阅/退订，上层不再用 `instanceof` 特判：
 
 | 协议 | 适配器类 | 说明 |
 |------|---------|------|
@@ -99,6 +101,16 @@ scripts/start-frontend.bat           # 单独启动前端
 | Modbus TCP | `ModbusTcpAdapter` | 标准 Modbus TCP |
 | MQTT | `MqttAdapter` | MQTT 订阅/发布 |
 | OPC-UA | `OpcUaAdapter` | OPC-UA 客户端 |
+
+**适配器读到的是"绑定视图"，不是持久化实体**（改动适配器前必读）：`MeasurementPoint.channelId` / `address` 是 `@Transient @JsonIgnore` 的视图字段，持久化实体上恒为空。`PointSourceService.findPointsForChannel`（采集/`onConnected`）与 `allBindingViews`（写广播）按 `point_source` 表的每条绑定合成视图——覆盖 channelId/address 为该通道的绑定值，其余字段（pointId/dataType/deadband/...）从实体拷贝。所以适配器里 `point.getAddress()` 取地址是对的，但入参**不是**数据库实体（不含 businessId、bindings），别拿它做别的事。
+
+适配器是**普通类**（非 `@Component`），由对应 `XxxAdapterFactory`（`@Component`）按 `ProtocolType` 创建。新增协议 = 实现 `ProtocolAdapter` + 加一个工厂，无需改上层（订阅型重写 `onConnected` 即可，上层不 `instanceof` 特判）。
+
+### Modbus 多寄存器（32/64 位）
+
+INT32/FLOAT32 占 **2 个连续寄存器**、FLOAT64 占 **4 个**，起始地址取测点 `address`（如 `40031` 表示 40031-40032 两个字）；写侧走功能码 **0x10 写多个寄存器**，单寄存器/线圈仍走 0x06/0x05。
+
+字序由通道 `connectionConfig.wordOrder` 决定：**`big`（默认，高字在前 ABCD）** / `little`（低字在前 CDAB）。字内字节固定大端，只交换寄存器顺序。**Modbus 对此无标准、设备间差异很大**——接现场设备时按手册确认这个值，配错会读到量级完全不对的数值（不报错）。
 
 ### 自定义 TCP 协议报文格式
 
@@ -110,9 +122,12 @@ scripts/start-frontend.bat           # 单独启动前端
 
 ## 关键服务
 
-- **AcquisitionEngine**：定时采集引擎，每 200ms 扫描 CONNECTED 状态的 Channel 并读取测点值；经 ChangeGate 过滤后**仅对有效变化**做批量落库与推送（无变化则零写入）
-- **ChangeGate**：变更检测门 + 多来源合并。测点为**绑定集模型**（无主通道）：`MeasurementPoint` 不带 channelId/address，全部绑定在 `point_source` 表（每点≥1条，绑定通道互不相同），API 用 `bindings` 数组；权威值 = 质量优先（GOOD>UNCERTAIN>BAD>COMM_LOST）→ 时间戳最新 → 来源键稳定平局；数值型按 |新−旧| > 测点死区(deadband) 判断对权威值增量生效；手动写值会同步门状态避免重复上报。写入广播到所有绑定通道（跳过未连接/只读），WS 推送按绑定通道 fan-out。启动时 `BindingMigration` 把旧 channel_id/address 回填到 point_source 并删除旧列（幂等）
-- **ChannelService**：Channel 生命周期唯一入口（CRUD + connect/disconnect/syncDisconnected，按通道加锁串行化；DB status 是适配器运行时状态的投影）
+- **AcquisitionEngine**：定时采集引擎，每 200ms 扫描 CONNECTED 状态的 Channel，**按通道在固定 8 线程池上并行采集**（`allOf` 限时 5s，慢通道不拖长整轮周期）；经 ChangeGate 过滤后**仅对有效变化**做批量落库与推送（无变化则零写入）。适配器报 `isConnected()==false` 时，非 MQTT 协议会把 DB 状态修正为 DISCONNECTED（消除"假连接"）——所以 TCP/Modbus 适配器在**读失败时会主动关闭连接**，让 `isConnected()` 如实反映（否则 socket 死了标志还是 true，永远检测不到掉线）
+- **ChannelReconnectScheduler**：断线自动重连。`ChannelService` 维护"期望连接"集合（`connect` 加入、`disconnect` 移除、掉线不移除），调度器按 `sdncustom.channel.reconnect.*` 退避重试（默认 2s 起、×2、封顶 60s，每 5s 扫一遍）。**只管非 MQTT**——Paho 自带重连，再叠一层会重建适配器实例。指标 `sdncustom.channel.reconnects` / `reconnect.failures`
+- **ChangeGate**：变更检测门 + 多来源合并。测点为**绑定集模型**（无主通道）：`MeasurementPoint` 不带 channelId/address，全部绑定在 `point_source` 表（每点≥1条，绑定通道互不相同），API 用 `bindings` 数组；权威值 = 质量优先（GOOD>UNCERTAIN>BAD>COMM_LOST）→ 时间戳最新 → 来源键稳定平局；数值型按 |新−旧| > 测点死区(deadband) 判断对权威值增量生效；手动写值会同步门状态避免重复上报。写入广播到所有绑定通道（跳过未连接/只读），WS 推送按绑定通道 fan-out。启动时 `BindingMigration` 把旧 channel_id/address 回填到 point_source 并删除旧列（幂等）。门的状态还用三个生命周期方法维护：`recordManualWrite`（手动写值后置基线，避免下轮采集重复上报）、`removePoints`（删点/断连时清该点状态）、`syncPointBindings`（改绑定后收敛来源集合、保留权威基线）
+- **ChannelService**：Channel 生命周期唯一入口（CRUD + connect/disconnect/syncDisconnected，按通道加锁 `ReentrantLock` 串行化；DB status 是适配器运行时状态的投影）。`update()` 检测到协议/connectionConfig 变化时会先销毁旧适配器、必要时以新配置重连（修复"改配置仍沿用旧连接"）
+- **PointSourceService**：`point_source` 绑定表的唯一入口——`findPointsForChannel`/`allBindingViews` 生成绑定视图，`replaceBindings`（整体替换）/`addBinding` 维护绑定，`validateBindings` 校验（≥1 条、通道存在、同点不重复、必须与测点同业务）
+- **PointBindingRegistry**：测点→绑定通道 的内存路由缓存（WebSocket fan-out 用），首次访问冷加载、配置变更时 `invalidate`/`invalidateChannel`
 - **PointService**：测点 CRUD、手动写入（writeValue）、缓存批量更新
 - **HistoryService**：TDengine 历史存储（超级表初始化 + 批量写入）
 - **DistributionService**：WebSocket 实时数据推送（按通道合帧；采集线程仅向专用单线程队列提交任务，绝不因推送阻塞）
@@ -130,6 +145,17 @@ scripts/start-frontend.bat           # 单独启动前端
 前端 ──→ REST API ──→ PointService ──→ Redis + Channel ──→ 外部系统
 ```
 
+## 启动时序
+
+表结构由 JPA `ddl-auto: update` 建好后，`CommandLineRunner` 按 `@Order` 依次执行：
+
+1. `BindingMigration`（@Order 1）——旧 `channel_id`/`address` 列回填 `point_source`
+2. `BusinessSystemMigration`（@Order 2）——建默认业务 `default` 并回填存量归属
+3. `DemoDataInitializer`（@Order 3）——空库播种示例数据
+4. `AppStartupRunner`（未标 `@Order`，排在最后）——① `HistoryService.init()` 建 TDengine 库/超级表（失败仅告警）→ ② 守护线程 sleep 2s 后 `ChannelService.autoConnectAll()`（并行连接 `autoConnect=true` 通道）
+
+运行时产物：H2 配置库是文件库 `./data/sdncustom.mv.db`（`data/` 与 `logs/` 均被 gitignore）。**删掉 `data/` 即重置全部配置**，下次启动会重新跑迁移并播种示例数据。
+
 ## TDengine 历史存储
 
 - 启动时自动创建数据库（库名取 `tdengine.url` 最后一段）并强制 `KEEP` 保留天数（`sdncustom.history.keep-days`，默认 30）
@@ -139,7 +165,7 @@ scripts/start-frontend.bat           # 单独启动前端
 ## 可观测性
 
 - Actuator 端点：`/actuator/health`（匿名可访问，仅 status；含自定义 `channels` 健康指示器——autoConnect 通道掉线即 DOWN；鉴权后可见 details）；`/actuator/metrics`、`/actuator/prometheus`（均需 JWT）
-- 业务指标（前缀 `sdncustom_`）：acquisition.cycle（采集周期 Timer，P50/P95/P99）、acquisition.channels.connected、acquisition.failures（tag=channel）、acquisition.changed.values（有效变化数，量化死区节省）、history.write、history.errors、history.circuit.open（TDengine 熔断 0/1）、ws.sessions、ws.evictions（慢客户端踢除）
+- 业务指标（前缀 `sdncustom_`）：acquisition.cycle（采集周期 Timer，P50/P95/P99）、acquisition.channels.connected、acquisition.failures（tag=channel）、acquisition.changed.values（有效变化数，量化死区节省）、channel.reconnects / channel.reconnect.failures（断线自动重连）、history.write、history.errors、history.circuit.open（TDengine 熔断 0/1）、ws.sessions、ws.evictions（慢客户端踢除）
 - 前端仪表盘顶部为系统状态卡（通道连接数 / WS 会话 / 采集 P99 与失败 / 历史存储健康），数据源 `GET /api/system/status`（10s 轮询）
 - Redis 不参与 health 判定（按设计降级）；TDengine 初始化任何失败（含原生驱动缺客户端库的 UnsatisfiedLinkError）仅告警，不阻断启动
 
@@ -157,6 +183,16 @@ scripts/start-frontend.bat           # 单独启动前端
 
 ## API 端点
 
+> 除 `POST /api/auth/login` 与 `/actuator/health` 外，全部需要 `Authorization: Bearer <token>`。
+
+### Auth / Meta
+
+```
+POST   /api/auth/login         # 登录，返回 JWT
+GET    /api/auth/me            # 当前身份
+GET    /api/system/status      # 仪表盘状态卡聚合数据（通道/WS/P99/失败/历史健康）
+```
+
 ### BusinessSystem
 
 ```
@@ -169,18 +205,22 @@ DELETE /api/businesses/{id}      # 删除（名下有通道/测点时返回 400�
 ### Channel
 
 ```
-GET    /api/channels           # 查询所有（可选 ?businessId= 按业务过滤）
+GET    /api/channels           # 查询所有（可选 ?businessId= 过滤；传 ?size= 才返回 {items,total,page,size}，否则是全量数组）
+
+GET    /api/channels/{id}
 POST   /api/channels           # 创建（body 必填 businessId 且业务必须存在）
 PUT    /api/channels/{id}      # 更新
 DELETE /api/channels/{id}      # 删除
 POST   /api/channels/{id}/connect     # 连接
 POST   /api/channels/{id}/disconnect  # 断开
+POST   /api/channels/import    # 仅导入通道配置（body 为 {channels:[...]} 或通道数组）；已存在则 upsert，
+                               # 省略 connectionConfig 时保留库中原值
 ```
 
 ### MeasurementPoint
 
 ```
-GET    /api/points                     # 查询所有 (可选 ?channelId=xxx / ?businessId=xxx，可叠加；返回绑定到该通道的点)
+GET    /api/points                     # 查询所有 (可选 ?channelId=xxx / ?businessId=xxx，可叠加；传 ?size= 才分页返回 {items,total,page,size})
 POST   /api/points                     # 创建（body 必填 businessId；bindings 通道必须与测点同业务）
 PUT    /api/points/{id}                # 更新（整体替换 bindings）
 DELETE /api/points/{id}                # 删除
@@ -188,6 +228,16 @@ POST   /api/points/{id}/bindings       # 给既有测点加绑定（创建表单
 GET    /api/points/{id}/value          # 获取当前值
 PUT    /api/points/{id}/value          # 写入值（广播到所有绑定通道）
 GET    /api/points/{id}/history        # 查询历史
+```
+
+### Data（数据导入导出）
+
+> **数据与连接配置分离**：数据 = 业务 + 测点（含 bindings）；连接配置 = 通道，走 `POST /api/channels/import`。
+> 测点靠 `channelId` 绑定通道，所以**导入数据前通道必须已存在**，否则整体失败并点名缺失通道。
+
+```
+GET    /api/data/export                # 导出 {businesses, points}；裸 payload（无 ApiResponse 信封），文件可直接回灌
+POST   /api/data/import                # 导入 {businesses?, points}；返回 {businessCount, pointCount}，事务性
 ```
 
 ### WebSocket
@@ -212,6 +262,7 @@ GET    /api/points/{id}/history        # 查询历史
 - 异常通过 `GlobalExceptionHandler` 全局处理
 - Repository 继承 `JpaRepository`
 - 协议适配器无静态单例缓存；实例由 `ProtocolRegistry`（Spring 管理）按 channelId 创建与释放
+- **`@Transactional` 里不做远端 I/O**：订阅/退订适配器、连断开通道、Redis 写、WS 推送一律用 `TransactionHooks.afterCommit(...)` 挪到提交之后——否则整段时间占着 DB 连接做网络 I/O，且回滚时远端已经动过。无活动事务时该助手立即执行（单测/采集线程行为不变）
 
 ### TypeScript 前端
 
@@ -222,21 +273,24 @@ GET    /api/points/{id}/history        # 查询历史
 
 ## Mock 服务器
 
-项目包含模拟服务器用于测试：
+模拟器**实现**在 `sdncustom-protocol/src/main/java/com/sdncustom/protocol/mock/`（随 protocol 模块编译）；`mock/` 目录只有启动脚本和两个数据文件（`mock-channels.json` / `mock-data.json`）：
 
 ```bash
 cd mock
-./build-and-start.bat              # 构建并启动所有 Mock 服务器
+./build-and-start.bat              # 构建 protocol 模块 fat jar 并拉起所有 Mock 服务器（Windows）
+./start-mock-servers.sh            # Linux/Mac 等价脚本
 ```
 
 | Mock 服务器 | 端口 | 说明 |
 |-------------|------|------|
 | MockTcpServer | 9002 | 模拟自定义 TCP 协议设备 |
-| MockModbusTcpServer | 5020 | 模拟 Modbus TCP 设备 |
+| MockModbusTcpServer | 5020 | 模拟 Modbus TCP 设备（支持 0x10 多寄存器写，预置 40031/32=FLOAT32、40033/34=INT32、40035-38=FLOAT64） |
 | MockMqttClient | 1883 | 模拟 MQTT 传感器（需 MQTT Broker） |
 | MockOpcUaServer | 4840 | 模拟 OPC-UA 服务器 |
 
 > 注意：自定义 TCP 模拟服务器使用 **9002** 端口（9001 已被 Mosquitto 的 MQTT WebSocket 占用）。
+
+`mock/mock-channels.json` 是 `{channels}` 格式，正好是 `POST /api/channels/import` 的入参；`mock/mock-data.json` 是 `{points}` 格式（绑定用 `bindings` 数组），正好是 `POST /api/data/import` 的入参。引导分两步：① 通道管理页「导入通道配置」选 `mock-channels.json`，逐个"连接"；② 测点管理页「导入数据」选 `mock-data.json`（文件无 `businesses`/`businessId`，全部落默认业务 `default`）。**顺序不能颠倒**——测点绑定要求通道已存在。所有示例通道 `autoConnect=false`，不会自动接上模拟器。
 
 ## 安全配置
 
@@ -244,7 +298,7 @@ cd mock
   - 默认 `admin` / `changeme`，生产环境必须通过 `SDNCUSTOM_SECURITY_USERNAME` / `SDNCUSTOM_SECURITY_PASSWORD` 覆盖
   - `SDNCUSTOM_JWT_SECRET`：签名密钥（至少 32 字节）；为空时启动自动生成随机密钥（重启后已发 token 失效，仅限开发）
 - 登录接口：`POST /api/auth/login`；WebSocket 握手需携带 `?token=`，REST 需 `Authorization: Bearer` 头
-- `/api/channels/export` 导出的 connectionConfig 中密码类字段会被脱敏为 `******`
+- 连接配置（通道）不再出现在数据导入导出中；`GET /api/channels` 返回明文 `connectionConfig`，故该接口仅限管理员使用
 - H2 console 已禁用；TDengine 凭据可通过 `TDENGINE_USERNAME` / `TDENGINE_PASSWORD` 覆盖
 - 前端登录页位于 `/login`，token 存 localStorage（key: `sdncustom_token`）
 

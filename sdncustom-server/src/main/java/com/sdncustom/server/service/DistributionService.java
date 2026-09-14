@@ -64,4 +64,11 @@ public class DistributionService {
         List<PointValue> snapshot = List.copyOf(pointValues);
         pushExecutor.submit(() -> webSocketHandler.pushBatch(snapshot));
     }
+
+    /**
+     * 推送通道状态变化（连接/断开/异常），供监控页实时反映通道状态
+     */
+    public void pushChannelStatus(String channelId, String status) {
+        pushExecutor.submit(() -> webSocketHandler.pushChannelStatus(channelId, status));
+    }
 }

@@ -48,6 +48,17 @@ public class OpcUaAdapter implements ProtocolAdapter {
             log.info("Connected to OPC-UA server: {}", endpoint);
         } catch (Exception e) {
             connected = false;
+            // 失败路径必须自己收尾：上层 connect 失败走的是 registry.remove()，不会调 disconnect()，
+            // 关掉半成品 client 否则每次失败都泄漏一个客户端会话
+            try {
+                if (client != null) {
+                    client.disconnect().get(5, TimeUnit.SECONDS);
+                }
+            } catch (Exception cleanup) {
+                log.debug("OPC-UA client cleanup after failed connect: {}", cleanup.getMessage());
+            } finally {
+                client = null;
+            }
             log.error("Failed to connect to OPC-UA server: {}", e.getMessage());
             throw new RuntimeException("OPC-UA connection failed", e);
         }

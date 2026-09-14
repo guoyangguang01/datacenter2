@@ -4,6 +4,7 @@ import com.sdncustom.common.dto.ChannelDTO;
 import com.sdncustom.common.exception.ResourceNotFoundException;
 import com.sdncustom.common.model.Channel;
 import com.sdncustom.common.model.MeasurementPoint;
+import com.sdncustom.common.model.PointValue;
 import com.sdncustom.common.model.enums.ChannelDirection;
 import com.sdncustom.common.model.enums.ChannelStatus;
 import com.sdncustom.common.model.enums.ProtocolType;
@@ -22,8 +23,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -63,6 +66,9 @@ class ChannelServiceTest {
 
     @Mock
     private ProtocolAdapter adapter;
+
+    @Mock
+    private DistributionService distributionService;
 
     @InjectMocks
     private ChannelService channelService;
@@ -403,5 +409,41 @@ class ChannelServiceTest {
 
         verify(channelRepository).findByAutoConnect(true);
         verify(adapter).connect(any(Channel.class));
+    }
+
+    @Test
+    @DisplayName("断开通道：唯一来源的测点清基线并推 COMM_LOST")
+    void disconnectSoleSourceClearsBaseline() {
+        testChannel.setStatus(ChannelStatus.CONNECTED);
+        when(channelRepository.findById("ch_001")).thenReturn(Optional.of(testChannel));
+        when(channelRepository.save(any(Channel.class))).thenReturn(testChannel);
+        MeasurementPoint point = new MeasurementPoint();
+        point.setPointId("p1");
+        when(pointSourceService.findPointsForChannel("ch_001")).thenReturn(List.of(point));
+        when(pointSourceService.bindingChannelIds("p1")).thenReturn(new LinkedHashSet<>(List.of("ch_001")));
+
+        channelService.disconnect("ch_001");
+
+        verify(changeGate).removePoints(List.of("p1"));
+        verify(pointValueCache).save(any(PointValue.class));
+    }
+
+    @Test
+    @DisplayName("断开多来源通道：只收敛来源集合，不清权威基线（否则幸存来源会被当变化重推）")
+    void disconnectMultiSourceKeepsBaseline() {
+        testChannel.setStatus(ChannelStatus.CONNECTED);
+        when(channelRepository.findById("ch_001")).thenReturn(Optional.of(testChannel));
+        when(channelRepository.save(any(Channel.class))).thenReturn(testChannel);
+        MeasurementPoint point = new MeasurementPoint();
+        point.setPointId("p1");
+        when(pointSourceService.findPointsForChannel("ch_001")).thenReturn(List.of(point));
+        when(pointSourceService.bindingChannelIds("p1"))
+                .thenReturn(new LinkedHashSet<>(List.of("ch_001", "ch_002")));
+
+        channelService.disconnect("ch_001");
+
+        verify(changeGate).syncPointBindings("p1", Set.of("ch_002"));
+        verify(changeGate, never()).removePoints(anyList());
+        verify(pointValueCache, never()).save(any(PointValue.class));
     }
 }

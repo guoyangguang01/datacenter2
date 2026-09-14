@@ -134,11 +134,15 @@ public class DataWebSocketHandler extends TextWebSocketHandler {
 
         try {
             Map<String, PointValue> uniqueValues = new LinkedHashMap<>();
+            List<String> pointIds = new ArrayList<>();
             for (String channelId : channelIds) {
-                List<MeasurementPoint> points = pointSourceService.findPointsForChannel(channelId);
-                for (MeasurementPoint p : points) {
-                    pointValueCache.findByPointId(p.getPointId()).ifPresent(v -> uniqueValues.putIfAbsent(v.getPointId(), v));
+                for (MeasurementPoint p : pointSourceService.findPointsForChannel(channelId)) {
+                    pointIds.add(p.getPointId());
                 }
+            }
+            // 一次 multiGet，别逐点读 Redis
+            for (PointValue v : pointValueCache.findByPointIds(pointIds)) {
+                uniqueValues.putIfAbsent(v.getPointId(), v);
             }
             List<PointValue> values = new ArrayList<>(uniqueValues.values());
             if (values.isEmpty()) return;

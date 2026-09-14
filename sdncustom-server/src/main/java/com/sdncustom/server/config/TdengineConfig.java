@@ -13,10 +13,18 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Configuration
 public class TdengineConfig {
+
+    /** 库名白名单：只允许标识符字符，杜绝拼进 DDL 的注入面 */
+    private static final Pattern DB_NAME_PATTERN = Pattern.compile("[A-Za-z0-9_]+");
+
+    /** 引导连接的登录超时（秒） */
+    private static final int BOOTSTRAP_LOGIN_TIMEOUT_SECONDS = 5;
+
 
     @Value("${tdengine.url:}")
     private String tdengineUrl;
@@ -76,6 +84,11 @@ public class TdengineConfig {
             log.warn("Cannot parse database name from tdengine.url: {}", tdengineUrl);
             return;
         }
+        // 库名要拼进 DDL，必须白名单校验后才允许执行
+        if (!DB_NAME_PATTERN.matcher(dbName).matches()) {
+            log.warn("Refusing to bootstrap TDengine: database name '{}' has unsupported characters", dbName);
+            return;
+        }
         String baseUrl = baseUrlWithoutDb(tdengineUrl);
         String driver = driverClassFor(tdengineUrl);
         try {
@@ -84,9 +97,10 @@ public class TdengineConfig {
             log.warn("TDengine driver not found: {}", driver);
             return;
         }
+        // 引导连接没有池化超时保护，靠全局 login timeout 兜底，避免不可达时挂住启动
+        DriverManager.setLoginTimeout(BOOTSTRAP_LOGIN_TIMEOUT_SECONDS);
         try (Connection conn = DriverManager.getConnection(baseUrl, tdengineUsername, tdenginePassword);
              Statement stmt = conn.createStatement()) {
-            // 库名来自本地配置且经白名单校验，不拼接外部输入
             stmt.execute(String.format("CREATE DATABASE IF NOT EXISTS %s PRECISION 'ms' KEEP %d", dbName, keepDays));
             // 存量库强制对齐当前配置的保留时长
             stmt.execute(String.format("ALTER DATABASE %s KEEP %d", dbName, keepDays));

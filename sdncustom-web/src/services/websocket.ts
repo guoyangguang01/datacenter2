@@ -2,12 +2,17 @@ import { authUtil } from '../utils/auth';
 
 type MessageHandler = (data: unknown) => void;
 
+// 重连退避：1s 起、×2、封顶 30s（另加 30% 抖动）
+const RECONNECT_BASE_MS = 1000;
+const RECONNECT_MAX_MS = 30000;
+
 class WebSocketService {
   private ws: WebSocket | null = null;
   private handlers: Map<string, Set<MessageHandler>> = new Map();
   private reconnectTimer: number | null = null;
   private shouldReconnect = true;
   private pendingMessages: string[] = [];
+  private reconnectAttempts = 0;
 
   connect(): WebSocket | null {
     // Idempotent: reuse an existing connecting/open socket instead of leaking a new one.
@@ -35,6 +40,7 @@ class WebSocketService {
 
     ws.onopen = () => {
       console.log('WebSocket connected');
+      this.reconnectAttempts = 0; // 连上了就把退避重置
       this.emit('connected', null);
       this.flushPending();
     };
@@ -67,13 +73,20 @@ class WebSocketService {
     return ws;
   }
 
+  /**
+   * 指数退避重连。原先固定 3s：服务端长时间不可用时会一直按 3s 打，
+   * 而多个客户端又会在同一时刻一起重连。现在 1s 起、×2、封顶 30s，并加 30% 抖动。
+   */
   private scheduleReconnect() {
     if (this.reconnectTimer !== null) return;
     if (!authUtil.isAuthenticated()) return;
+    const base = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * 2 ** this.reconnectAttempts);
+    const delay = Math.round(base * (1 + Math.random() * 0.3));
+    this.reconnectAttempts += 1;
     this.reconnectTimer = window.setTimeout(() => {
       this.reconnectTimer = null;
       this.connect();
-    }, 3000);
+    }, delay);
   }
 
   subscribe(channelIds: string[]) {
@@ -129,6 +142,7 @@ class WebSocketService {
 
   disconnect() {
     this.shouldReconnect = false;
+    this.reconnectAttempts = 0;
     if (this.reconnectTimer !== null) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
