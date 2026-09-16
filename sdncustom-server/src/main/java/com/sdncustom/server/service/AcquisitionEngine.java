@@ -39,8 +39,7 @@ public class AcquisitionEngine {
     private final ChannelRepository channelRepository;
     private final MeasurementPointRepository pointRepository;
     private final ChannelService channelService;
-    private final PointService pointService;
-    private final HistoryService historyService;
+    private final PersistenceService persistenceService;
     private final DistributionService distributionService;
     private final ChangeGate changeGate;
     private final InputPointPropagator inputPointPropagator;
@@ -122,12 +121,14 @@ public class AcquisitionEngine {
                     List<PointValue> allValues = new ArrayList<>(publishable);
                     allValues.addAll(inputValues);
 
-                    pointService.updateBatch(allValues);
-                    historyService.saveBatch(allValues);
+                    // 落库（Redis 实时缓存 + TDengine 历史）移交后台单线程队列：
+                    // 采集周期不再等一次 Redis 往返（超时 3s）或一次 TDengine 写入。
+                    // 单线程 FIFO 保证批次间保序，INPUT 传播值不会晚于下一轮 OUTPUT 值落库。
+                    persistenceService.submitBatch(allValues);
 
-                    // 推送前再复核一次：上面两次落库可能很慢（Redis 超时会阻塞数秒），
-                    // 期间用户若断开，迟到的 GOOD 会在 COMM_LOST 之后把前端刷回正常。
-                    // 过滤放在推送前一刻，窗口就只剩一次查询的距离。
+                    // 推送前再复核一次：到这一步本轮唯一剩下的同步 I/O 是传播的设备写出
+                    // （backlog A9，仍在采集线程上跑），期间用户若断开，迟到的 GOOD 会在
+                    // COMM_LOST 之后把前端刷回正常。过滤放在推送前一刻，窗口就只剩一次查询的距离。
                     // 输入测点值不过这道滤网：它们的来源通道是**写出目标**，
                     // 目标掉线只代表没送达，不代表这个值本身失效（决策 A）。
                     List<PointValue> pushable = new ArrayList<>(onlyLiveSources(publishable));

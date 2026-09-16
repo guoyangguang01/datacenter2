@@ -43,10 +43,7 @@ class AcquisitionEngineTest {
     private MeasurementPointRepository pointRepository;
 
     @Mock
-    private PointService pointService;
-
-    @Mock
-    private HistoryService historyService;
+    private PersistenceService persistenceService;
 
     @Mock
     private DistributionService distributionService;
@@ -100,7 +97,7 @@ class AcquisitionEngineTest {
 
         engine.acquire();
 
-        verifyNoInteractions(pointService, historyService, distributionService);
+        verifyNoInteractions(persistenceService, distributionService);
     }
 
     @Test
@@ -117,8 +114,7 @@ class AcquisitionEngineTest {
 
         engine.acquire();
 
-        verify(pointService).updateBatch(read);
-        verify(historyService).saveBatch(read);
+        verify(persistenceService).submitBatch(read);
         verify(distributionService).pushBatch(read);
         assertEquals(1.0, meterRegistry.get("sdncustom.acquisition.cycle").timer().count());
         assertEquals(1.0, meterRegistry.get("sdncustom.acquisition.changed.values").counter().count());
@@ -138,8 +134,8 @@ class AcquisitionEngineTest {
 
         engine.acquire();
 
-        verifyNoInteractions(historyService, distributionService);
-        verify(pointService, never()).updateBatch(anyList());
+        verifyNoInteractions(distributionService);
+        verify(persistenceService, never()).submitBatch(anyList());
     }
 
     @Test
@@ -154,7 +150,7 @@ class AcquisitionEngineTest {
         engine.acquire();
 
         verify(channelService).syncDisconnected("ch_001");
-        verifyNoInteractions(historyService, distributionService);
+        verifyNoInteractions(persistenceService, distributionService);
     }
 
     @Test
@@ -180,8 +176,7 @@ class AcquisitionEngineTest {
         engine.acquire();
 
         List<PointValue> expected = List.of(read.get(0), inputValue);
-        verify(pointService).updateBatch(expected);
-        verify(historyService).saveBatch(expected);
+        verify(persistenceService).submitBatch(expected);
         verify(distributionService).pushBatch(expected);
     }
 
@@ -218,8 +213,7 @@ class AcquisitionEngineTest {
         // changeGate 已经推进过基线：异常若逃出 acquire()，这一轮的变化值就永久丢了
         engine.acquire();
 
-        verify(pointService).updateBatch(read);
-        verify(historyService).saveBatch(read);
+        verify(persistenceService).submitBatch(read);
         verify(distributionService).pushBatch(read);
         assertEquals(1.0, meterRegistry.get("sdncustom.propagation.errors").counter().count());
     }

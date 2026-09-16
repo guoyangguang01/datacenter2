@@ -124,7 +124,7 @@ INT32/FLOAT32 占 **2 个连续寄存器**、FLOAT64 占 **4 个**，起始地�
 
 ## 关键服务
 
-- **AcquisitionEngine**：定时采集引擎，每 200ms 扫描 CONNECTED 状态的 Channel，**按通道在固定 8 线程池上并行采集**（`allOf` 限时 5s，慢通道不拖长整轮周期）；每个通道**只采 OUTPUT 测点**（`pointRepository.findByChannelIdAndDirection(channelId, OUTPUT)`），经 ChangeGate 过滤后**仅对有效变化**做批量落库与推送（无变化则零写入），并调用 `InputPointPropagator` 把有效变化写到 INPUT 测点——传播值与输出测点值**并入同一批次**落库与推送；推送前的 `onlyLiveSources` 复核**不适用于传播值**（INPUT 的关联通道是写出目标，掉线只代表没送达，不代表值失效）。适配器报 `isConnected()==false` 时，非 MQTT 协议会把 DB 状态修正为 DISCONNECTED（消除"假连接"）——所以 TCP/Modbus 适配器在**读失败时会主动关闭连接**，让 `isConnected()` 如实反映
+- **AcquisitionEngine**：定时采集引擎，每 200ms 扫描 CONNECTED 状态的 Channel，**按通道在固定 8 线程池上并行采集**（`allOf` 限时 5s，慢通道不拖长整轮周期）；每个通道**只采 OUTPUT 测点**（`pointRepository.findByChannelIdAndDirection(channelId, OUTPUT)`），经 ChangeGate 过滤后**仅对有效变化**做处理（无变化则零写入），并调用 `InputPointPropagator` 把有效变化写到 INPUT 测点——传播值与输出测点值**并入同一批次**；该批次**异步移交** `PersistenceService` 队列落库、交给 `DistributionService` 队列推送，采集周期**不等**任何落库或推送完成；推送前的 `onlyLiveSources` 复核**不适用于传播值**（INPUT 的关联通道是写出目标，掉线只代表没送达，不代表值失效）。适配器报 `isConnected()==false` 时，非 MQTT 协议会把 DB 状态修正为 DISCONNECTED（消除"假连接"）——所以 TCP/Modbus 适配器在**读失败时会主动关闭连接**，让 `isConnected()` 如实反映
 - **InputPointPropagator**：输入测点传播。值语义是「意图」而非「实际」——输出测点经 ChangeGate 的有效变化查其引用者（`findByReferencePointIdIn`），逐个**写出到 INPUT 测点的关联通道**（跳过未连接/只读通道），不论写出成功与否都用输出测点的值/质量/时间戳更新 INPUT（写出失败只记日志与指标 `sdncustom.propagation.failures`）。来源通道取写出成功的通道，失败则退回 INPUT 的 channelId。INPUT 不参与采集周期，传播值不会回流 ChangeGate，无自我触发回路
 - **ChannelReconnectScheduler**：断线自动重连。`ChannelService` 维护"期望连接"集合（`connect` 加入、`disconnect` 移除、掉线不移除），调度器按 `sdncustom.channel.reconnect.*` 退避重试（默认 2s 起、×2、封顶 60s，每 5s 扫一遍）。**只管非 MQTT**——Paho 自带重连，再叠一层会重建适配器实例。指标 `sdncustom.channel.reconnects` / `reconnect.failures`
 - **ChangeGate**：变更检测门。每个测点只有一个来源通道（一对一关联），直接按 pointId 记录权威值；数值型按 |新−旧| > 测点死区(deadband) 判断有效变化，非数值按 equals 判断。门的状态用 `removePoints`（删点/断连时清该点状态）维护
@@ -133,6 +133,8 @@ INT32/FLOAT32 占 **2 个连续寄存器**、FLOAT64 占 **4 个**，起始地�
 - **PointService**：测点 CRUD（创建/更新时校验方向与引用、删除被引用的 OUTPUT 报 400）、缓存批量更新
 - **HistoryService**：TDengine 历史存储（超级表初始化 + 批量写入）
 - **DistributionService**：WebSocket 实时数据推送（按通道合帧；采集线程仅向专用单线程队列提交任务，绝不因推送阻塞）
+- **PersistenceService**：落库后台队列（Redis 实时缓存 + TDengine 历史）。采集调度线程只 `submitBatch` 快照，绝不等一次 Redis 往返（超时 3s）或一次 TDengine 写入——`acquire()` 是 `@Scheduled(fixedDelay)`，写在它里面的耗时是 1:1 吃掉采集频率的。**线程数必须恒为 1**：单线程 + FIFO 是批次间保序的唯一手段，保证 INPUT 传播值不晚于下一轮 OUTPUT 值落库（backlog A9 记的顺序隐患由此消解）。队列容量 `sdncustom.persistence.queue-capacity`（默认 200），**满则丢最旧批次**并计 `persistence.queue.dropped`——该批次的实时缓存与历史同时永久缺失，这是相对"同步写（只是慢）"新增的损失模式。停机先给 2s 排空窗口再强杀
+
 - **DataWebSocketHandler**：每个客户端会话持有独立的有界发送队列 + 守护发送线程（`sdncustom.websocket.session-send-queue-capacity`），慢/卡死客户端只影响自己；队列溢出即断开该会话，不影响其他客户端与采集
 
 ## 数据流
@@ -141,9 +143,10 @@ INT32/FLOAT32 占 **2 个连续寄存器**、FLOAT64 占 **4 个**，起始地�
 外部系统 ──→ Channel(读关联的 OUTPUT 测点) ──→ AcquisitionEngine ──→ ChangeGate(死区/变更过滤)
                                                     ↓ 仅有效变化（批量）
                               InputPointPropagator（写到 INPUT 测点的关联通道；值并入同一批次）
-                              Redis MSET(实时) + TDengine 多表INSERT(历史) + WebSocket按通道合帧推送
-                                                    ↓
-                          DistributionService ──→ WebSocket ──→ 前端
+                                                    ↓ 两步都只"提交即返回"，不做同步 I/O
+                       ┌────────────────────────────┴────────────────────────────┐
+        PersistenceService(单线程 FIFO 队列)                    DistributionService(单线程队列)
+        Redis MSET(实时) + TDengine 多表INSERT(历史)            WebSocket 按通道合帧 ──→ 前端
 
 前端 ──→ REST API ──→ PointService ──→ H2 配置库（CRUD）+ Redis 实时值（查值）
 ```
@@ -185,7 +188,7 @@ INT32/FLOAT32 占 **2 个连续寄存器**、FLOAT64 占 **4 个**，起始地�
 ## 可观测性
 
 - Actuator 端点：`/actuator/health`（匿名可访问，仅 status；含自定义 `channels` 健康指示器——autoConnect 通道掉线即 DOWN；鉴权后可见 details）；`/actuator/metrics`、`/actuator/prometheus`（均需 JWT）
-- 业务指标（前缀 `sdncustom_`）：acquisition.cycle（采集周期 Timer，P50/P95/P99）、acquisition.channels.connected、acquisition.failures（tag=channel）、acquisition.changed.values（有效变化数，量化死区节省）、propagation.writes / propagation.failures（输入测点写出成功/失败，均 tag=channel）、channel.reconnects / channel.reconnect.failures（断线自动重连）、history.write、history.errors、history.circuit.open（TDengine 熔断 0/1）、ws.sessions、ws.evictions（慢客户端踢除）
+- 业务指标（前缀 `sdncustom_`）：acquisition.cycle（采集周期 Timer，P50/P95/P99）、acquisition.channels.connected、acquisition.failures（tag=channel）、acquisition.changed.values（有效变化数，量化死区节省）、propagation.writes / propagation.failures（输入测点写出成功/失败，均 tag=channel）、channel.reconnects / channel.reconnect.failures（断线自动重连）、history.write、history.errors、history.circuit.open（TDengine 熔断 0/1）、history.subtables.created（子表批量建立数，重启后首轮应等于当轮有变化的测点数、之后为 0）、persistence.queue.dropped（落库队列满被丢的最旧批次数，**非 0 即意味着那批数据永久缺失**）、persistence.errors（后台落库单步失败）、persistence.queue.depth（落库队列积压批次数）、ws.sessions、ws.evictions（慢客户端踢除）
 - 前端仪表盘顶部为系统状态卡（通道连接数 / WS 会话 / 采集 P99 与失败 / 历史存储健康），数据源 `GET /api/system/status`（10s 轮询）
 - Redis 不参与 health 判定（按设计降级）；TDengine 初始化任何失败（含原生驱动缺客户端库的 UnsatisfiedLinkError）仅告警，不阻断启动
 

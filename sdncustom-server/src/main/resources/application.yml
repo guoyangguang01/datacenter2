@@ -58,6 +58,11 @@ sdncustom:
   acquisition:
     interval-ms: 200
 
+  # 落库（Redis 实时缓存 + TDengine 历史）后台队列
+  persistence:
+    # 待落库批次队列容量，满则丢最旧批次（接受该批次的历史永久缺失）
+    queue-capacity: 200
+
   # 断线自动重连（只管非 MQTT；MQTT 由 Paho 自带重连）
   channel:
     reconnect:
