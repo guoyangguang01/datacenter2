@@ -35,80 +35,64 @@ public class MockTcpServer {
     }
 
     /**
-     * 初始化模拟测点数据
+     * 初始化模拟测点数据，全部从 mock-data.json 加载。
      */
     private void initMockData() {
-        // BOOL 类型 - 设备状态
-        pointValues.put("bool_001", true);   // 设备1运行
-        pointValues.put("bool_002", false);  // 设备2停止
-        pointValues.put("bool_003", true);   // 设备3运行
-        pointValues.put("bool_004", false);  // 报警信号
-        pointValues.put("bool_005", true);   // 联锁状态
-        pointValues.put("bool_006", false);  // 维护模式
-        pointValues.put("bool_007", true);   // 自动模式
-        pointValues.put("bool_008", false);  // 手动模式
-        pointValues.put("bool_009", true);   // 门禁状态
-        pointValues.put("bool_010", false);  // 消防报警
+        String mockDataPath = findMockDataPath();
+        if (mockDataPath != null) {
+            loadFromMockData(mockDataPath);
+        }
+        if (pointValues.isEmpty()) {
+            log.warn("No mock data loaded (mock-data.json not found or has no TCP points)");
+        } else {
+            log.info("Mock TCP data loaded: {} points", pointValues.size());
+        }
+    }
 
-        // INT16 类型 - 模拟量设定值
-        pointValues.put("int16_001", 1234);   // 温度设定值
-        pointValues.put("int16_002", -5678);  // 压力设定值
-        pointValues.put("int16_003", 0);      // 流量设定值
-        pointValues.put("int16_004", 500);    // 液位设定值
-        pointValues.put("int16_005", 1500);   // 转速设定值
-        pointValues.put("int16_006", 380);    // 电压设定值
-        pointValues.put("int16_007", 50);     // 频率设定值
-        pointValues.put("int16_008", 100);    // 功率设定值
-        pointValues.put("int16_009", 75);     // 湿度设定值
-        pointValues.put("int16_010", 200);    // 液压设定值
+    /**
+     * 从 mock-data.json 加载 TCP 通道的测点地址作为数据 key。
+     */
+    @SuppressWarnings("unchecked")
+    public void loadFromMockData(String mockDataPath) {
+        try {
+            Map<String, Object> data = objectMapper.readValue(new File(mockDataPath), Map.class);
+            List<Map<String, Object>> points = (List<Map<String, Object>>) data.get("points");
+            if (points == null) return;
 
-        // INT32 类型 - 计数器和累计值
-        pointValues.put("int32_001", 123456);   // 生产计数
-        pointValues.put("int32_002", -789012);  // 偏移量
-        pointValues.put("int32_003", 999999);   // 累计脉冲
-        pointValues.put("int32_004", 456789);   // 运行时间(秒)
-        pointValues.put("int32_005", 7890);     // 故障次数
-        pointValues.put("int32_006", 12345);    // 维护计数
-        pointValues.put("int32_007", 67890);    // 产品A计数
-        pointValues.put("int32_008", 23456);    // 产品B计数
-        pointValues.put("int32_009", 89012);    // 合格品计数
-        pointValues.put("int32_010", 34567);    // 不合格品计数
+            for (Map<String, Object> p : points) {
+                String channelId = String.valueOf(p.getOrDefault("channelId", ""));
+                if (!"ch_tcp_mock".equals(channelId)) continue;
+                String address = String.valueOf(p.getOrDefault("address", ""));
+                String dataType = String.valueOf(p.getOrDefault("dataType", "FLOAT64"));
+                if (address.isEmpty()) continue;
+                if (pointValues.containsKey(address)) continue;
+                pointValues.put(address, defaultValueFor(dataType));
+            }
+        } catch (IOException e) {
+            log.warn("Failed to load mock-data.json: {}", e.getMessage());
+        }
+    }
 
-        // FLOAT32 类型 - 过程变量
-        pointValues.put("float32_001", 25.6f);    // 环境温度
-        pointValues.put("float32_002", -10.5f);   // 低温区温度
-        pointValues.put("float32_003", 100.0f);   // 高温区温度
-        pointValues.put("float32_004", 45.3f);    // 进口温度
-        pointValues.put("float32_005", 67.8f);    // 出口温度
-        pointValues.put("float32_006", 101.3f);   // 大气压力
-        pointValues.put("float32_007", 202.6f);   // 管道压力
-        pointValues.put("float32_008", 50.0f);    // 主管流量
-        pointValues.put("float32_009", 75.5f);    // 储罐液位
-        pointValues.put("float32_010", 88.2f);    // 湿度
+    private static Object defaultValueFor(String dataType) {
+        return switch (dataType) {
+            case "BOOL" -> false;
+            case "INT16" -> 1000;
+            case "INT32" -> 10000;
+            case "FLOAT32" -> 25.0f;
+            case "FLOAT64" -> 100.0;
+            case "STRING" -> "OK";
+            default -> 0;
+        };
+    }
 
-        // FLOAT64 类型 - 高精度测量值
-        pointValues.put("float64_001", 3.14159265);   // 精确测量值1
-        pointValues.put("float64_002", -2.71828182);  // 精确测量值2
-        pointValues.put("float64_003", 1024.512);     // 精确测量值3
-        pointValues.put("float64_004", 0.001234);     // 微小变化量
-        pointValues.put("float64_005", 99999.999);    // 大数值
-        pointValues.put("float64_006", 220.5);        // 电压有效值
-        pointValues.put("float64_007", 5.23);         // 电流有效值
-        pointValues.put("float64_008", 1145.1);       // 有功功率
-        pointValues.put("float64_009", 0.85);         // 功率因数
-        pointValues.put("float64_010", 50.01);        // 频率
-
-        // STRING 类型 - 状态信息
-        pointValues.put("string_001", "Hello IoT");      // 设备标识
-        pointValues.put("string_002", "Running");         // 运行状态
-        pointValues.put("string_003", "Normal");          // 告警状态
-        pointValues.put("string_004", "Auto");            // 运行模式
-        pointValues.put("string_005", "Product A");       // 当前产品
-        pointValues.put("string_006", "Batch-2024-001");  // 批次号
-        pointValues.put("string_007", "OK");              // 质量状态
-        pointValues.put("string_008", "Zone-1");          // 当前区域
-        pointValues.put("string_009", "Shift-A");         // 当前班次
-        pointValues.put("string_010", "Online");          // 通信状态
+    /** 从 mock/ 目录或当前目录向上查找 mock-data.json */
+    static String findMockDataPath() {
+        String[] candidates = {"mock/mock-data.json", "../mock/mock-data.json", "mock-data.json"};
+        for (String c : candidates) {
+            File f = new File(c);
+            if (f.exists()) return f.getAbsolutePath();
+        }
+        return null;
     }
 
     /**
@@ -227,12 +211,21 @@ public class MockTcpServer {
             case TcpCommand.READ_REQUEST: {
                 Map<String, Object> req = objectMapper.readValue(request.getBody(), Map.class);
                 List<String> pointIds = (List<String>) req.get("pointIds");
+                List<String> addresses = (List<String>) req.get("addresses");
+                if (addresses == null) {
+                    addresses = pointIds != null ? pointIds : List.of();
+                }
+                if (pointIds == null) {
+                    pointIds = addresses;
+                }
 
                 List<Map<String, Object>> values = new ArrayList<>();
-                for (String pointId : pointIds) {
+                for (int i = 0; i < addresses.size(); i++) {
+                    String address = addresses.get(i);
+                    String pointId = i < pointIds.size() ? pointIds.get(i) : address;
                     Map<String, Object> v = new HashMap<>();
                     v.put("pointId", pointId);
-                    v.put("value", pointValues.getOrDefault(pointId, 0));
+                    v.put("value", pointValues.getOrDefault(address, 0));
                     v.put("quality", "GOOD");
                     v.put("timestamp", System.currentTimeMillis());
                     values.add(v);
@@ -247,7 +240,9 @@ public class MockTcpServer {
                 Map<String, Object> req = objectMapper.readValue(request.getBody(), Map.class);
                 String pointId = (String) req.get("pointId");
                 Object value = req.get("value");
-                pointValues.put(pointId, value);
+                if (pointId != null && value != null) {
+                    pointValues.put(pointId, value);
+                }
 
                 Map<String, Object> responseBody = new HashMap<>();
                 responseBody.put("success", true);
@@ -264,79 +259,25 @@ public class MockTcpServer {
     }
 
     /**
-     * 更新模拟数据（模拟实时变化）
+     * 更新模拟数据（模拟实时变化）—— 动态迭代所有加载的条目，
+     * 根据值类型施加随机波动。
      */
     private void updateMockData() {
-        // BOOL 随机切换
-        pointValues.put("bool_001", random.nextBoolean());
-        pointValues.put("bool_002", random.nextBoolean());
-        pointValues.put("bool_003", random.nextBoolean());
-        pointValues.put("bool_004", random.nextDouble() < 0.1);  // 10% 概率报警
-        pointValues.put("bool_005", random.nextBoolean());
-        pointValues.put("bool_009", random.nextBoolean());
-
-        // INT16 小幅波动
-        pointValues.put("int16_001", (int) pointValues.get("int16_001") + random.nextInt(11) - 5);
-        pointValues.put("int16_003", random.nextInt(100));
-        pointValues.put("int16_004", Math.max(0, Math.min(1000, (int) pointValues.get("int16_004") + random.nextInt(21) - 10)));
-        pointValues.put("int16_005", Math.max(0, Math.min(3000, (int) pointValues.get("int16_005") + random.nextInt(101) - 50)));
-        pointValues.put("int16_009", Math.max(0, Math.min(100, (int) pointValues.get("int16_009") + random.nextInt(11) - 5)));
-
-        // INT32 递增
-        pointValues.put("int32_001", (int) pointValues.get("int32_001") + random.nextInt(101) - 50);
-        pointValues.put("int32_004", (int) pointValues.get("int32_004") + 2);  // 运行时间递增
-        pointValues.put("int32_007", (int) pointValues.get("int32_007") + random.nextInt(5));
-        pointValues.put("int32_008", (int) pointValues.get("int32_008") + random.nextInt(3));
-        pointValues.put("int32_009", (int) pointValues.get("int32_009") + random.nextInt(4));
-        if (random.nextDouble() < 0.05) { // 5% 概率产生不合格品
-            pointValues.put("int32_010", (int) pointValues.get("int32_010") + 1);
+        for (Map.Entry<String, Object> entry : pointValues.entrySet()) {
+            Object current = entry.getValue();
+            if (current instanceof Double d) {
+                double amplitude = Math.max(Math.abs(d) * 0.02, 0.5);
+                entry.setValue(d + (random.nextDouble() - 0.5) * amplitude * 2);
+            } else if (current instanceof Integer i) {
+                entry.setValue(i + random.nextInt(5) - 2);
+            } else if (current instanceof Float f) {
+                float amplitude = Math.max(Math.abs(f) * 0.02f, 0.5f);
+                entry.setValue(f + (random.nextFloat() - 0.5f) * amplitude * 2);
+            } else if (current instanceof Boolean) {
+                entry.setValue(random.nextBoolean());
+            }
+            // String 节点不波动
         }
-
-        // FLOAT32 波动
-        pointValues.put("float32_001", (float) pointValues.get("float32_001") + (random.nextFloat() - 0.5f) * 2);
-        pointValues.put("float32_002", (float) pointValues.get("float32_002") + (random.nextFloat() - 0.5f));
-        pointValues.put("float32_003", (float) pointValues.get("float32_003") + (random.nextFloat() - 0.5f) * 3);
-        pointValues.put("float32_004", (float) pointValues.get("float32_004") + (random.nextFloat() - 0.5f) * 2);
-        pointValues.put("float32_005", (float) pointValues.get("float32_005") + (random.nextFloat() - 0.5f) * 2);
-        pointValues.put("float32_006", (float) pointValues.get("float32_006") + (random.nextFloat() - 0.5f) * 5);
-        pointValues.put("float32_007", (float) pointValues.get("float32_007") + (random.nextFloat() - 0.5f) * 10);
-        pointValues.put("float32_008", (float) pointValues.get("float32_008") + (random.nextFloat() - 0.5f) * 5);
-        pointValues.put("float32_009", (float) pointValues.get("float32_009") + (random.nextFloat() - 0.5f) * 4);
-        pointValues.put("float32_010", (float) pointValues.get("float32_010") + (random.nextFloat() - 0.5f) * 5);
-
-        // FLOAT64 波动
-        pointValues.put("float64_001", (double) pointValues.get("float64_001") + (random.nextDouble() - 0.5) * 0.1);
-        pointValues.put("float64_003", (double) pointValues.get("float64_003") + random.nextDouble() * 10 - 5);
-        pointValues.put("float64_006", 220.0 + (random.nextDouble() - 0.5) * 10);  // 电压波动
-        pointValues.put("float64_007", 5.0 + (random.nextDouble() - 0.5) * 2);      // 电流波动
-        pointValues.put("float64_008", (double) pointValues.get("float64_006") * (double) pointValues.get("float64_007"));  // 功率计算
-        pointValues.put("float64_009", 0.85 + (random.nextDouble() - 0.5) * 0.1);   // 功率因数波动
-        pointValues.put("float64_010", 50.0 + (random.nextDouble() - 0.5) * 0.1);   // 频率波动
-
-        // STRING 随机切换状态
-        String[] runStatuses = {"Running", "Idle", "Warning", "Normal", "High Load", "Starting", "Stopping"};
-        pointValues.put("string_002", runStatuses[random.nextInt(runStatuses.length)]);
-
-        String[] alarms = {"Normal", "High Temperature", "Low Pressure", "Overload", "Communication Error", "Sensor Fault"};
-        pointValues.put("string_003", random.nextDouble() < 0.8 ? "Normal" : alarms[random.nextInt(alarms.length)]);
-
-        String[] modes = {"Auto", "Manual", "Maintenance", "Setup"};
-        pointValues.put("string_004", modes[random.nextInt(modes.length)]);
-
-        String[] products = {"Product A", "Product B", "Product C", "Product D"};
-        pointValues.put("string_005", products[random.nextInt(products.length)]);
-
-        String[] quality = {"OK", "NG", "Pending", "Rework"};
-        pointValues.put("string_007", random.nextDouble() < 0.9 ? "OK" : quality[random.nextInt(quality.length)]);
-
-        String[] zones = {"Zone-1", "Zone-2", "Zone-3", "Zone-4", "Zone-5"};
-        pointValues.put("string_008", zones[random.nextInt(zones.length)]);
-
-        String[] shifts = {"Shift-A", "Shift-B", "Shift-C"};
-        pointValues.put("string_009", shifts[random.nextInt(shifts.length)]);
-
-        String[] commStatus = {"Online", "Offline", "Timeout", "Error"};
-        pointValues.put("string_010", random.nextDouble() < 0.9 ? "Online" : commStatus[random.nextInt(commStatus.length)]);
     }
 
     /**

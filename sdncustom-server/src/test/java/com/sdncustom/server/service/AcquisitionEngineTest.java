@@ -5,10 +5,12 @@ import com.sdncustom.common.model.MeasurementPoint;
 import com.sdncustom.common.model.PointValue;
 import com.sdncustom.common.model.enums.ChannelStatus;
 import com.sdncustom.common.model.enums.PointDataType;
+import com.sdncustom.common.model.enums.PointDirection;
 import com.sdncustom.common.model.enums.PointQuality;
 import com.sdncustom.protocol.ProtocolAdapter;
 import com.sdncustom.protocol.ProtocolRegistry;
 import com.sdncustom.server.repository.ChannelRepository;
+import com.sdncustom.server.repository.MeasurementPointRepository;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -38,7 +40,7 @@ class AcquisitionEngineTest {
     private ChannelService channelService;
 
     @Mock
-    private PointSourceService pointSourceService;
+    private MeasurementPointRepository pointRepository;
 
     @Mock
     private PointService pointService;
@@ -105,7 +107,7 @@ class AcquisitionEngineTest {
     @DisplayName("通过变更检测的值被批量写入三处下游")
     void changedValuesFlushedInBatch() {
         when(channelRepository.findByStatus(ChannelStatus.CONNECTED)).thenReturn(List.of(channel));
-        when(pointSourceService.findOutputPointsForChannel("ch_001")).thenReturn(List.of(point));
+        when(pointRepository.findByChannelIdAndDirection("ch_001", PointDirection.OUTPUT)).thenReturn(List.of(point));
         ProtocolAdapter adapter = mock(ProtocolAdapter.class);
         when(protocolRegistry.getOrCreate(channel)).thenReturn(adapter);
         when(adapter.isConnected()).thenReturn(true);
@@ -126,7 +128,7 @@ class AcquisitionEngineTest {
     @DisplayName("无有效变化时零写入")
     void noChangesMeansNoWrites() {
         when(channelRepository.findByStatus(ChannelStatus.CONNECTED)).thenReturn(List.of(channel));
-        when(pointSourceService.findOutputPointsForChannel("ch_001")).thenReturn(List.of(point));
+        when(pointRepository.findByChannelIdAndDirection("ch_001", PointDirection.OUTPUT)).thenReturn(List.of(point));
         ProtocolAdapter adapter = mock(ProtocolAdapter.class);
         when(protocolRegistry.getOrCreate(channel)).thenReturn(adapter);
         when(adapter.isConnected()).thenReturn(true);
@@ -144,7 +146,7 @@ class AcquisitionEngineTest {
     @DisplayName("适配器断开时修正通道状态（非 MQTT）")
     void disconnectedAdapterTriggersChannelDisconnect() {
         when(channelRepository.findByStatus(ChannelStatus.CONNECTED)).thenReturn(List.of(channel));
-        when(pointSourceService.findOutputPointsForChannel("ch_001")).thenReturn(List.of(point));
+        when(pointRepository.findByChannelIdAndDirection("ch_001", PointDirection.OUTPUT)).thenReturn(List.of(point));
         ProtocolAdapter adapter = mock(ProtocolAdapter.class);
         when(protocolRegistry.getOrCreate(channel)).thenReturn(adapter);
         when(adapter.isConnected()).thenReturn(false);
@@ -159,7 +161,7 @@ class AcquisitionEngineTest {
     @DisplayName("输出测点变化触发传播，输入测点值并入同一批次")
     void propagationValuesJoinTheSameBatch() {
         when(channelRepository.findByStatus(ChannelStatus.CONNECTED)).thenReturn(List.of(channel));
-        when(pointSourceService.findOutputPointsForChannel("ch_001")).thenReturn(List.of(point));
+        when(pointRepository.findByChannelIdAndDirection("ch_001", PointDirection.OUTPUT)).thenReturn(List.of(point));
         ProtocolAdapter adapter = mock(ProtocolAdapter.class);
         when(protocolRegistry.getOrCreate(channel)).thenReturn(adapter);
         when(adapter.isConnected()).thenReturn(true);
@@ -187,7 +189,7 @@ class AcquisitionEngineTest {
     @DisplayName("无有效变化时不触发传播")
     void noChangesMeansNoPropagation() {
         when(channelRepository.findByStatus(ChannelStatus.CONNECTED)).thenReturn(List.of(channel));
-        when(pointSourceService.findOutputPointsForChannel("ch_001")).thenReturn(List.of(point));
+        when(pointRepository.findByChannelIdAndDirection("ch_001", PointDirection.OUTPUT)).thenReturn(List.of(point));
         ProtocolAdapter adapter = mock(ProtocolAdapter.class);
         when(protocolRegistry.getOrCreate(channel)).thenReturn(adapter);
         when(adapter.isConnected()).thenReturn(true);
@@ -204,7 +206,7 @@ class AcquisitionEngineTest {
     @DisplayName("传播抛异常：不逃出采集周期，本轮 OUTPUT 值照常落库/推送")
     void propagationFailureDoesNotLoseTheCycle() {
         when(channelRepository.findByStatus(ChannelStatus.CONNECTED)).thenReturn(List.of(channel));
-        when(pointSourceService.findOutputPointsForChannel("ch_001")).thenReturn(List.of(point));
+        when(pointRepository.findByChannelIdAndDirection("ch_001", PointDirection.OUTPUT)).thenReturn(List.of(point));
         ProtocolAdapter adapter = mock(ProtocolAdapter.class);
         when(protocolRegistry.getOrCreate(channel)).thenReturn(adapter);
         when(adapter.isConnected()).thenReturn(true);
@@ -226,7 +228,7 @@ class AcquisitionEngineTest {
     @DisplayName("输入测点的来源通道掉线不影响传播值推送")
     void inputValuesBypassLivenessFilter() {
         when(channelRepository.findByStatus(ChannelStatus.CONNECTED)).thenReturn(List.of(channel));
-        when(pointSourceService.findOutputPointsForChannel("ch_001")).thenReturn(List.of(point));
+        when(pointRepository.findByChannelIdAndDirection("ch_001", PointDirection.OUTPUT)).thenReturn(List.of(point));
         ProtocolAdapter adapter = mock(ProtocolAdapter.class);
         when(protocolRegistry.getOrCreate(channel)).thenReturn(adapter);
         when(adapter.isConnected()).thenReturn(true);

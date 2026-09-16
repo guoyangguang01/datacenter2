@@ -151,8 +151,10 @@ public class CustomTcpAdapter implements ProtocolAdapter {
         synchronized (lock) {
             try {
                 List<String> pointIds = points.stream().map(MeasurementPoint::getPointId).toList();
+                List<String> addresses = points.stream().map(MeasurementPoint::getAddress).toList();
                 Map<String, Object> body = new HashMap<>();
                 body.put("pointIds", pointIds);
+                body.put("addresses", addresses);
 
                 TcpMessage request = new TcpMessage(TcpCommand.READ_REQUEST, objectMapper.writeValueAsString(body));
                 send(request);

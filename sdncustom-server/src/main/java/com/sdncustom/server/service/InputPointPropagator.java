@@ -19,10 +19,10 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * 输入测点传播：把已通过 ChangeGate 的输出测点变化扇出到引用它们的输入测点。
+ * 输入测点传播：把已通过 ChangeGate 的输出测点变化写到引用它们的输入测点的绑定通道。
  *
  * 值语义是「意图」而非「实际」——不论写出成功与否，都用输出测点的值更新输入测点，
- * 写出失败只记日志与指标，不降级值质量（见设计文档 §3.3）。
+ * 写出失败只记日志与指标，不降级值质量。
  * 输入测点不参与采集周期，因此传播值不会回流到 ChangeGate，无自我触发回路。
  */
 @Slf4j
@@ -31,7 +31,6 @@ import java.util.Set;
 public class InputPointPropagator {
 
     private final MeasurementPointRepository pointRepository;
-    private final PointSourceService pointSourceService;
     private final ChannelService channelService;
     private final ProtocolRegistry protocolRegistry;
     private final MeterRegistry meterRegistry;
@@ -62,7 +61,7 @@ public class InputPointPropagator {
             if (source == null) {
                 continue;
             }
-            String writtenChannel = writeToBindings(inputPoint, source.getValue());
+            String writtenChannel = writeToChannel(inputPoint, source.getValue());
             result.add(toInputValue(inputPoint, source, writtenChannel));
         }
         return result;
@@ -77,47 +76,47 @@ public class InputPointPropagator {
         return null;
     }
 
-    /** 广播到所有绑定通道，跳过已删除/未连接/只读的通道；返回首个写出成功的通道 */
-    private String writeToBindings(MeasurementPoint inputPoint, Object value) {
-        String writtenChannel = null;
-        for (MeasurementPoint view : pointSourceService.allBindingViews(inputPoint)) {
-            Channel channel = channelService.findByIdOrNull(view.getChannelId());
-            if (channel == null) {
-                log.warn("Propagation skipped: channel not found {} for point {}",
-                        view.getChannelId(), inputPoint.getPointId());
-                continue;
-            }
-            if (channel.getStatus() != ChannelStatus.CONNECTED) {
-                log.warn("Propagation skipped: channel not connected {} for point {}",
-                        channel.getChannelId(), inputPoint.getPointId());
-                continue;
-            }
-            if (channel.getDirection() == ChannelDirection.READ_ONLY) {
-                log.warn("Propagation skipped: channel read-only {} for point {}",
-                        channel.getChannelId(), inputPoint.getPointId());
-                continue;
-            }
-            try {
-                ProtocolAdapter adapter = protocolRegistry.getOrCreate(channel);
-                adapter.writePoint(view, value);
-                if (writtenChannel == null) {
-                    writtenChannel = channel.getChannelId();
-                }
-                meterRegistry.counter("sdncustom.propagation.writes",
-                        "channel", channel.getChannelId()).increment();
-            } catch (Exception e) {
-                meterRegistry.counter("sdncustom.propagation.failures",
-                        "channel", channel.getChannelId()).increment();
-                log.error("Propagation write failed to channel {} for point {}: {}",
-                        channel.getChannelId(), inputPoint.getPointId(), e.getMessage());
-            }
+    /** 写到 INPUT 测点的绑定通道；返回写出的通道 ID（失败返回 null） */
+    private String writeToChannel(MeasurementPoint inputPoint, Object value) {
+        String channelId = inputPoint.getChannelId();
+        if (channelId == null) {
+            log.warn("Propagation skipped: INPUT point {} has no channelId", inputPoint.getPointId());
+            return null;
         }
-        return writtenChannel;
+        Channel channel = channelService.findByIdOrNull(channelId);
+        if (channel == null) {
+            log.warn("Propagation skipped: channel not found {} for point {}",
+                    channelId, inputPoint.getPointId());
+            return null;
+        }
+        if (channel.getStatus() != ChannelStatus.CONNECTED) {
+            log.warn("Propagation skipped: channel not connected {} for point {}",
+                    channelId, inputPoint.getPointId());
+            return null;
+        }
+        if (channel.getDirection() == ChannelDirection.READ_ONLY) {
+            log.warn("Propagation skipped: channel read-only {} for point {}",
+                    channelId, inputPoint.getPointId());
+            return null;
+        }
+        try {
+            ProtocolAdapter adapter = protocolRegistry.getOrCreate(channel);
+            adapter.writePoint(inputPoint, value);
+            meterRegistry.counter("sdncustom.propagation.writes",
+                    "channel", channelId).increment();
+            return channelId;
+        } catch (Exception e) {
+            meterRegistry.counter("sdncustom.propagation.failures",
+                    "channel", channelId).increment();
+            log.error("Propagation write failed to channel {} for point {}: {}",
+                    channelId, inputPoint.getPointId(), e.getMessage());
+            return null;
+        }
     }
 
     /**
-     * 输入测点的新值：值/质量/时间戳复制自输出测点；来源通道取首个写出成功的通道，
-     * 全部失败时退回首个绑定通道（值仍要落库，只是没能送达）。
+     * 输入测点的新值：值/质量/时间戳复制自输出测点；来源通道取写出成功的通道，
+     * 失败时退回 INPUT 的 channelId（值仍要落库，只是没能送达）。
      */
     private PointValue toInputValue(MeasurementPoint inputPoint, PointValue source, String writtenChannel) {
         PointValue pv = new PointValue();
@@ -125,9 +124,7 @@ public class InputPointPropagator {
         pv.setValue(source.getValue());
         pv.setQuality(source.getQuality());
         pv.setTimestamp(source.getTimestamp());
-        pv.setSourceChannelId(writtenChannel != null
-                ? writtenChannel
-                : pointSourceService.bindingChannelIds(inputPoint.getPointId()).stream().findFirst().orElse(null));
+        pv.setSourceChannelId(writtenChannel != null ? writtenChannel : inputPoint.getChannelId());
         return pv;
     }
 }

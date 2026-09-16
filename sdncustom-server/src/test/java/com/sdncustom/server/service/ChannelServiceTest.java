@@ -7,6 +7,8 @@ import com.sdncustom.common.model.MeasurementPoint;
 import com.sdncustom.common.model.PointValue;
 import com.sdncustom.common.model.enums.ChannelDirection;
 import com.sdncustom.common.model.enums.ChannelStatus;
+import com.sdncustom.common.model.enums.PointDataType;
+import com.sdncustom.common.model.enums.PointDirection;
 import com.sdncustom.common.model.enums.ProtocolType;
 import com.sdncustom.protocol.ProtocolAdapter;
 import com.sdncustom.protocol.ProtocolRegistry;
@@ -23,10 +25,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Arrays;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -54,12 +54,6 @@ class ChannelServiceTest {
 
     @Mock
     private ChangeGate changeGate;
-
-    @Mock
-    private PointSourceService pointSourceService;
-
-    @Mock
-    private PointBindingRegistry pointBindingRegistry;
 
     @Mock
     private BusinessSystemService businessSystemService;
@@ -203,7 +197,6 @@ class ChannelServiceTest {
         testChannel.setAutoConnect(false);
         when(channelRepository.findById("ch_001")).thenReturn(Optional.of(testChannel));
         when(channelRepository.save(any(Channel.class))).thenReturn(testChannel);
-        when(pointSourceService.findOutputPointsForChannel("ch_001")).thenReturn(List.of());
 
         testDto.setConnectionConfig("{\"host\":\"localhost\",\"port\":9999}");
         channelService.update("ch_001", testDto);
@@ -225,7 +218,6 @@ class ChannelServiceTest {
         testChannel.setAutoConnect(true);
         when(channelRepository.findById("ch_001")).thenReturn(Optional.of(testChannel));
         when(channelRepository.save(any(Channel.class))).thenReturn(testChannel);
-        when(pointSourceService.findOutputPointsForChannel("ch_001")).thenReturn(List.of());
         when(protocolRegistry.getOrCreate(any(Channel.class))).thenReturn(adapter);
 
         testDto.setConnectionConfig("{\"host\":\"localhost\",\"port\":9999}");
@@ -243,7 +235,6 @@ class ChannelServiceTest {
         testChannel.setAutoConnect(true);
         when(channelRepository.findById("ch_001")).thenReturn(Optional.of(testChannel));
         when(channelRepository.save(any(Channel.class))).thenReturn(testChannel);
-        when(pointSourceService.findOutputPointsForChannel("ch_001")).thenReturn(List.of());
         when(protocolRegistry.getOrCreate(any(Channel.class))).thenReturn(adapter);
         doThrow(new RuntimeException("Connection refused")).when(adapter).connect(any(Channel.class));
 
@@ -262,12 +253,11 @@ class ChannelServiceTest {
     @DisplayName("删除通道 - 未连接状态")
     void deleteDisconnected() {
         when(channelRepository.findById("ch_001")).thenReturn(Optional.of(testChannel));
-        when(pointSourceService.findPointsForChannel("ch_001")).thenReturn(List.of());
+        when(pointRepository.findByChannelId("ch_001")).thenReturn(List.of());
         doNothing().when(channelRepository).deleteById("ch_001");
 
         channelService.delete("ch_001");
 
-        verify(pointSourceService).deleteByChannelId("ch_001");
         verify(channelRepository).deleteById("ch_001");
     }
 
@@ -276,36 +266,30 @@ class ChannelServiceTest {
     void deleteConnected() {
         testChannel.setStatus(ChannelStatus.CONNECTED);
         when(channelRepository.findById("ch_001")).thenReturn(Optional.of(testChannel));
-        when(pointSourceService.findPointsForChannel("ch_001")).thenReturn(List.of());
+        when(pointRepository.findByChannelId("ch_001")).thenReturn(List.of());
         doNothing().when(channelRepository).deleteById("ch_001");
 
         channelService.delete("ch_001");
 
-        verify(protocolRegistry).release("ch_001");
-        verify(pointSourceService).deleteByChannelId("ch_001");
         verify(channelRepository).deleteById("ch_001");
     }
 
     @Test
-    @DisplayName("删除通道：仅剩该通道绑定的点被删，多绑定点存活")
-    void deleteRemovesOrphanedPointsOnly() {
+    @DisplayName("删除通道：该通道关联的测点一起被删")
+    void deleteRemovesAssociatedPoints() {
         when(channelRepository.findById("ch_001")).thenReturn(Optional.of(testChannel));
         MeasurementPoint p1 = new MeasurementPoint();
         p1.setPointId("p1");
         MeasurementPoint p2 = new MeasurementPoint();
         p2.setPointId("p2");
-        when(pointSourceService.findPointsForChannel("ch_001")).thenReturn(List.of(p1, p2));
-        // 删除 ch_001 绑定后：p1 无剩余绑定 → 删；p2 仍绑定 ch_002 → 存活
-        when(pointSourceService.bindingChannelIds("p1")).thenReturn(java.util.Set.of());
-        when(pointSourceService.bindingChannelIds("p2")).thenReturn(java.util.Set.of("ch_002"));
+        when(pointRepository.findByChannelId("ch_001")).thenReturn(List.of(p1, p2));
         doNothing().when(channelRepository).deleteById("ch_001");
 
         channelService.delete("ch_001");
 
-        verify(pointSourceService).deleteByChannelId("ch_001");
-        verify(pointRepository).deleteById("p1");
-        verify(pointRepository, never()).deleteById("p2");
         verify(pointValueCache).delete("p1");
+        verify(pointValueCache).delete("p2");
+        verify(pointRepository).deleteByChannelId("ch_001");
         verify(channelRepository).deleteById("ch_001");
     }
 
@@ -314,7 +298,7 @@ class ChannelServiceTest {
     void connectSuccess() {
         when(channelRepository.findById("ch_001")).thenReturn(Optional.of(testChannel));
         when(channelRepository.save(any(Channel.class))).thenReturn(testChannel);
-        when(pointSourceService.findOutputPointsForChannel("ch_001")).thenReturn(List.of());
+        when(pointRepository.findByChannelIdAndDirection("ch_001", PointDirection.OUTPUT)).thenReturn(List.of());
         when(protocolRegistry.getOrCreate(testChannel)).thenReturn(adapter);
         when(adapter.isConnected()).thenReturn(false);
 
@@ -360,7 +344,6 @@ class ChannelServiceTest {
     void disconnect() {
         testChannel.setStatus(ChannelStatus.CONNECTED);
         when(channelRepository.findById("ch_001")).thenReturn(Optional.of(testChannel));
-        when(pointSourceService.findOutputPointsForChannel("ch_001")).thenReturn(Arrays.asList());
         when(channelRepository.save(any(Channel.class))).thenReturn(testChannel);
 
         channelService.disconnect("ch_001");
@@ -374,7 +357,6 @@ class ChannelServiceTest {
     void syncDisconnectedAlignsState() {
         testChannel.setStatus(ChannelStatus.CONNECTED);
         when(channelRepository.findById("ch_001")).thenReturn(Optional.of(testChannel));
-        when(pointSourceService.findOutputPointsForChannel("ch_001")).thenReturn(Arrays.asList());
         when(channelRepository.save(any(Channel.class))).thenReturn(testChannel);
 
         channelService.syncDisconnected("ch_001");
@@ -401,7 +383,7 @@ class ChannelServiceTest {
         when(channelRepository.findByAutoConnect(true)).thenReturn(Arrays.asList(testChannel));
         when(channelRepository.findById("ch_001")).thenReturn(Optional.of(testChannel));
         when(channelRepository.save(any(Channel.class))).thenReturn(testChannel);
-        when(pointSourceService.findOutputPointsForChannel("ch_001")).thenReturn(List.of());
+        when(pointRepository.findByChannelIdAndDirection("ch_001", PointDirection.OUTPUT)).thenReturn(List.of());
         when(protocolRegistry.getOrCreate(any())).thenReturn(adapter);
         when(adapter.isConnected()).thenReturn(false);
 
@@ -412,38 +394,18 @@ class ChannelServiceTest {
     }
 
     @Test
-    @DisplayName("断开通道：唯一来源的测点清基线并推 COMM_LOST")
-    void disconnectSoleSourceClearsBaseline() {
+    @DisplayName("断开通道：关联 OUTPUT 测点清基线并推 COMM_LOST")
+    void disconnectClearsBaselineAndPushesCommLost() {
         testChannel.setStatus(ChannelStatus.CONNECTED);
         when(channelRepository.findById("ch_001")).thenReturn(Optional.of(testChannel));
         when(channelRepository.save(any(Channel.class))).thenReturn(testChannel);
         MeasurementPoint point = new MeasurementPoint();
         point.setPointId("p1");
-        when(pointSourceService.findOutputPointsForChannel("ch_001")).thenReturn(List.of(point));
-        when(pointSourceService.bindingChannelIds("p1")).thenReturn(new LinkedHashSet<>(List.of("ch_001")));
+        when(pointRepository.findByChannelIdAndDirection("ch_001", PointDirection.OUTPUT)).thenReturn(List.of(point));
 
         channelService.disconnect("ch_001");
 
         verify(changeGate).removePoints(List.of("p1"));
         verify(pointValueCache).save(any(PointValue.class));
-    }
-
-    @Test
-    @DisplayName("断开多来源通道：只收敛来源集合，不清权威基线（否则幸存来源会被当变化重推）")
-    void disconnectMultiSourceKeepsBaseline() {
-        testChannel.setStatus(ChannelStatus.CONNECTED);
-        when(channelRepository.findById("ch_001")).thenReturn(Optional.of(testChannel));
-        when(channelRepository.save(any(Channel.class))).thenReturn(testChannel);
-        MeasurementPoint point = new MeasurementPoint();
-        point.setPointId("p1");
-        when(pointSourceService.findOutputPointsForChannel("ch_001")).thenReturn(List.of(point));
-        when(pointSourceService.bindingChannelIds("p1"))
-                .thenReturn(new LinkedHashSet<>(List.of("ch_001", "ch_002")));
-
-        channelService.disconnect("ch_001");
-
-        verify(changeGate).syncPointBindings("p1", Set.of("ch_002"));
-        verify(changeGate, never()).removePoints(anyList());
-        verify(pointValueCache, never()).save(any(PointValue.class));
     }
 }

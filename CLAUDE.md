@@ -33,9 +33,9 @@ SDNCustom/
 
 ## 核心概念
 
-- **测点 (MeasurementPoint)**：数据的最小单元，平台的一等公民。分方向：`OUTPUT` 输出测点（绑定通道用于**采集读取**，数据从外部流入平台，即旧语义）；`INPUT` 输入测点（`referencePointId` 引用一个**同业务、同 dataType** 的 OUTPUT 测点，其绑定通道用于**写出**——输出测点经 ChangeGate 的有效变化由 `InputPointPropagator` 事件驱动扇出，通过输入测点的绑定通道写到外部）。一个 INPUT 只引用一个 OUTPUT，多个 INPUT 可引用同一 OUTPUT。方向与引用创建后不可变更（update 静默忽略 DTO 中的 direction/referencePointId），删除被引用的 OUTPUT 返回 400
+- **测点 (MeasurementPoint)**：数据的最小单元，平台的一等公民。每个测点直接关联一个通道（`channelId` + `address`，一对一）。分方向：`OUTPUT` 输出测点（关联通道用于**采集读取**，数据从外部流入平台）；`INPUT` 输入测点（`referencePointId` 引用一个**同业务、同 dataType** 的 OUTPUT 测点，其关联通道用于**写出**——输出测点经 ChangeGate 的有效变化由 `InputPointPropagator` 事件驱动写到输入测点的关联通道）。一个 INPUT 只引用一个 OUTPUT，多个 INPUT 可引用同一 OUTPUT。方向与引用创建后不可变更（update 静默忽略 DTO 中的 direction/referencePointId），删除被引用的 OUTPUT 返回 400
 - **管道 (Channel)**：与外部设备/系统的连接通道，负责数据采集和写入
-- **业务系统 (BusinessSystem)**：多业务隔离的逻辑维度；通道与测点归属到某个业务，列表查询/创建校验按业务过滤。测点不跨业务共享（绑定只能绑本业务通道，引用也只能引用本业务测点）；归属创建后不可变更（update 静默忽略 DTO 中的 businessId）；删除业务前要求名下无通道、无测点。隔离是数据组织维度——单管理员、采集/推送/缓存/历史不感知业务
+- **业务系统 (BusinessSystem)**：多业务隔离的逻辑维度；通道与测点归属到某个业务，列表查询/创建校验按业务过滤。测点不跨业务共享（关联通道必须同业务，引用也只能引用本业务测点）；归属创建后不可变更（update 静默忽略 DTO 中的 businessId）；删除业务前要求名下无通道、无测点。删除通道时级联删除其关联的测点。隔离是数据组织维度——单管理员、采集/推送/缓存/历史不感知业务
 - **数据中枢**：平台是测点数据的唯一权威源，所有客户端通过平台读写数据
 
 ## 环境要求
@@ -62,7 +62,7 @@ mvn test -Dtest=ChannelServiceTest              # 运行单个测试类
 mvn test -Dtest=ChannelServiceTest#testMethod   # 运行单个测试方法
 ```
 
-测试只在 Java 模块里（`sdncustom-common` / `sdncustom-protocol` / `sdncustom-server`，28 个测试类、250 个 `@Test`，集中在 service/controller/security/config/monitor/repository）。`sdncustom-web` **没有测试框架**——`package.json` 无 `test` 脚本、无 vitest/jest，前端改动只能靠 `npm run build`（含 `tsc` 类型检查）、`npm run check:types`（比对后端 DTO/枚举与手写类型是否漂移）与手工验证。
+测试只在 Java 模块里（`sdncustom-common` / `sdncustom-protocol` / `sdncustom-server`，27 个测试类、162 个 `@Test`，集中在 service/controller/security/config/monitor/repository）。`sdncustom-web` **没有测试框架**——`package.json` 无 `test` 脚本、无 vitest/jest，前端改动只能靠 `npm run build`（含 `tsc` 类型检查）、`npm run check:types`（比对后端 DTO/枚举与手写类型是否漂移）与手工验证。
 
 ### 前端 (Vite)
 
@@ -95,7 +95,7 @@ scripts/start-frontend.bat           # 单独启动前端
 
 ## 协议适配器
 
-所有协议适配器实现 `ProtocolAdapter` 接口；每个协议有一个 `ProtocolAdapterFactory`（`@Component`），Spring 启动时由 `ProtocolRegistry` 收集所有工厂，并按 channelId 管理适配器实例的生命周期（`getOrCreate`/`release`/`remove`）。连接成功后统一调用 `adapter.onConnected(points)`，**测点删除/解绑时调用 `adapter.onPointsRemoved(points)`**，订阅型协议（MQTT）在这两个钩子里增量订阅/退订，上层不再用 `instanceof` 特判：
+所有协议适配器实现 `ProtocolAdapter` 接口；每个协议有一个 `ProtocolAdapterFactory`（`@Component`），Spring 启动时由 `ProtocolRegistry` 收集所有工厂，并按 channelId 管理适配器实例的生命周期（`getOrCreate`/`release`/`remove`）。连接成功后统一调用 `adapter.onConnected(points)`，**测点删除时调用 `adapter.onPointsRemoved(points)`**，订阅型协议（MQTT）在这两个钩子里增量订阅/退订，上层不再用 `instanceof` 特判：
 
 | 协议 | 适配器类 | 说明 |
 |------|---------|------|
@@ -104,7 +104,7 @@ scripts/start-frontend.bat           # 单独启动前端
 | MQTT | `MqttAdapter` | MQTT 订阅/发布 |
 | OPC-UA | `OpcUaAdapter` | OPC-UA 客户端 |
 
-**适配器读到的是"绑定视图"，不是持久化实体**（改动适配器前必读）：`MeasurementPoint.channelId` / `address` 是 `@Transient @JsonIgnore` 的视图字段，持久化实体上恒为空。`PointSourceService.findPointsForChannel`（不分方向）与 `allBindingViews`（写广播）按 `point_source` 表的每条绑定合成视图——覆盖 channelId/address 为该通道的绑定值，其余字段（pointId/dataType/direction/deadband/...）从实体拷贝。**采集与订阅路径必须用 `findOutputPointsForChannel`**（只含 OUTPUT），否则 INPUT 测点会被当成可读点交给适配器。所以适配器里 `point.getAddress()` 取地址是对的，但入参**不是**数据库实体（不含 businessId、bindings），别拿它做别的事。
+**每个测点直接关联一个通道**（`channelId` + `address` 持久化字段，一对一）。`MeasurementPointRepository.findByChannelIdAndDirection(channelId, OUTPUT)` 返回该通道的所有 OUTPUT 测点供采集/订阅使用。适配器里 `point.getAddress()` 取地址是对的。
 
 适配器是**普通类**（非 `@Component`），由对应 `XxxAdapterFactory`（`@Component`）按 `ProtocolType` 创建。新增协议 = 实现 `ProtocolAdapter` + 加一个工厂，无需改上层（订阅型重写 `onConnected` 即可，上层不 `instanceof` 特判）。
 
@@ -124,14 +124,12 @@ INT32/FLOAT32 占 **2 个连续寄存器**、FLOAT64 占 **4 个**，起始地�
 
 ## 关键服务
 
-- **AcquisitionEngine**：定时采集引擎，每 200ms 扫描 CONNECTED 状态的 Channel，**按通道在固定 8 线程池上并行采集**（`allOf` 限时 5s，慢通道不拖长整轮周期）；每个通道**只采 OUTPUT 测点**（`findOutputPointsForChannel`，INPUT 的值由传播写出，不从通道读），经 ChangeGate 过滤后**仅对有效变化**做批量落库与推送（无变化则零写入），并调用 `InputPointPropagator` 把有效变化扇出到 INPUT 测点——传播值与输出测点值**并入同一批次**落库与推送；推送前的 `onlyLiveSources` 复核**不适用于传播值**（INPUT 的来源通道是写出目标，掉线只代表没送达，不代表值失效）。适配器报 `isConnected()==false` 时，非 MQTT 协议会把 DB 状态修正为 DISCONNECTED（消除"假连接"）——所以 TCP/Modbus 适配器在**读失败时会主动关闭连接**，让 `isConnected()` 如实反映（否则 socket 死了标志还是 true，永远检测不到掉线）
-- **InputPointPropagator**：输入测点传播。值语义是「意图」而非「实际」——输出测点经 ChangeGate 的有效变化查其引用者（`findByReferencePointIdIn`），逐个通过 INPUT 的绑定视图**写出到该测点的所有绑定通道**（跳过已删除/未连接/只读通道），不论写出成功与否都用输出测点的值/质量/时间戳更新 INPUT（写出失败只记日志与指标 `sdncustom.propagation.failures`）。来源通道取首个写出成功的通道，全部失败则退回首个绑定通道。INPUT 不参与采集周期，传播值不会回流 ChangeGate，无自我触发回路
+- **AcquisitionEngine**：定时采集引擎，每 200ms 扫描 CONNECTED 状态的 Channel，**按通道在固定 8 线程池上并行采集**（`allOf` 限时 5s，慢通道不拖长整轮周期）；每个通道**只采 OUTPUT 测点**（`pointRepository.findByChannelIdAndDirection(channelId, OUTPUT)`），经 ChangeGate 过滤后**仅对有效变化**做批量落库与推送（无变化则零写入），并调用 `InputPointPropagator` 把有效变化写到 INPUT 测点——传播值与输出测点值**并入同一批次**落库与推送；推送前的 `onlyLiveSources` 复核**不适用于传播值**（INPUT 的关联通道是写出目标，掉线只代表没送达，不代表值失效）。适配器报 `isConnected()==false` 时，非 MQTT 协议会把 DB 状态修正为 DISCONNECTED（消除"假连接"）——所以 TCP/Modbus 适配器在**读失败时会主动关闭连接**，让 `isConnected()` 如实反映
+- **InputPointPropagator**：输入测点传播。值语义是「意图」而非「实际」——输出测点经 ChangeGate 的有效变化查其引用者（`findByReferencePointIdIn`），逐个**写出到 INPUT 测点的关联通道**（跳过未连接/只读通道），不论写出成功与否都用输出测点的值/质量/时间戳更新 INPUT（写出失败只记日志与指标 `sdncustom.propagation.failures`）。来源通道取写出成功的通道，失败则退回 INPUT 的 channelId。INPUT 不参与采集周期，传播值不会回流 ChangeGate，无自我触发回路
 - **ChannelReconnectScheduler**：断线自动重连。`ChannelService` 维护"期望连接"集合（`connect` 加入、`disconnect` 移除、掉线不移除），调度器按 `sdncustom.channel.reconnect.*` 退避重试（默认 2s 起、×2、封顶 60s，每 5s 扫一遍）。**只管非 MQTT**——Paho 自带重连，再叠一层会重建适配器实例。指标 `sdncustom.channel.reconnects` / `reconnect.failures`
-- **ChangeGate**：变更检测门 + 多来源合并。测点为**绑定集模型**（无主通道）：`MeasurementPoint` 不带 channelId/address，全部绑定在 `point_source` 表（每点≥1条，绑定通道互不相同），API 用 `bindings` 数组；权威值 = 质量优先（GOOD>UNCERTAIN>BAD>COMM_LOST）→ 时间戳最新 → 来源键稳定平局；数值型按 |新−旧| > 测点死区(deadband) 判断对权威值增量生效。测点值的写出（写广播）由 `InputPointPropagator` 按 INPUT 的绑定通道广播（跳过未连接/只读），WS 推送按绑定通道 fan-out（`PointBindingRegistry`）。门的状态用两个生命周期方法维护：`removePoints`（删点/断连时清该点状态）、`syncPointBindings`（改绑定后收敛来源集合、保留权威基线）。（手动写值已随 `PUT /api/points/{id}/value` 一起删除，原先配套的 `recordManualWrite` 不复存在。）
-- **ChannelService**：Channel 生命周期唯一入口（CRUD + connect/disconnect/syncDisconnected，按通道加锁 `ReentrantLock` 串行化；DB status 是适配器运行时状态的投影）。`update()` 检测到协议/connectionConfig 变化时会先销毁旧适配器、必要时以新配置重连（修复"改配置仍沿用旧连接"）
-- **PointSourceService**：`point_source` 绑定表的唯一入口——`findPointsForChannel`（**全部方向**，删通道/WS refresh 这类全量场景用）与 `findOutputPointsForChannel`（**只含 OUTPUT**，采集/订阅/掉线标记路径必须用它，否则 INPUT 会被当成可读点）生成绑定视图，`allBindingViews`（某点的全部绑定视图，传播写出用）与 `bindingChannelIds`，`replaceBindings`（整体替换）/`addBinding` 维护绑定，`validateBindings` 校验（≥1 条、通道存在、同点不重复、必须与测点同业务）
+- **ChangeGate**：变更检测门。每个测点只有一个来源通道（一对一关联），直接按 pointId 记录权威值；数值型按 |新−旧| > 测点死区(deadband) 判断有效变化，非数值按 equals 判断。门的状态用 `removePoints`（删点/断连时清该点状态）维护
+- **ChannelService**：Channel 生命周期唯一入口（CRUD + connect/disconnect/syncDisconnected，按通道加锁 `ReentrantLock` 串行化；DB status 是适配器运行时状态的投影）。`update()` 检测到协议/connectionConfig 变化时会先销毁旧适配器、必要时以新配置重连（修复"改配置仍沿用旧连接"）。`delete()` 级联删除该通道关联的所有测点
 - **PointDirectionValidator**：测点方向校验——INPUT 必须引用一个存在、同业务、同 dataType 的 OUTPUT 测点；OUTPUT 不得带引用。引用严格单向（INPUT→OUTPUT），不可能成环
-- **PointBindingRegistry**：测点→绑定通道 的内存路由缓存（WebSocket fan-out 用），首次访问冷加载、配置变更时 `invalidate`/`invalidateChannel`
 - **PointService**：测点 CRUD（创建/更新时校验方向与引用、删除被引用的 OUTPUT 报 400）、缓存批量更新
 - **HistoryService**：TDengine 历史存储（超级表初始化 + 批量写入）
 - **DistributionService**：WebSocket 实时数据推送（按通道合帧；采集线程仅向专用单线程队列提交任务，绝不因推送阻塞）
@@ -140,10 +138,9 @@ INT32/FLOAT32 占 **2 个连续寄存器**、FLOAT64 占 **4 个**，起始地�
 ## 数据流
 
 ```
-外部系统 ──→ Channel(读 OUTPUT 测点) ──→ AcquisitionEngine ──→ ChangeGate(死区/变更过滤)
+外部系统 ──→ Channel(读关联的 OUTPUT 测点) ──→ AcquisitionEngine ──→ ChangeGate(死区/变更过滤)
                                                     ↓ 仅有效变化（批量）
-                              InputPointPropagator（按引用者扇出到 INPUT 测点）
-                                                    ↓ 写出到 INPUT 的绑定通道；值并入同一批次
+                              InputPointPropagator（写到 INPUT 测点的关联通道；值并入同一批次）
                               Redis MSET(实时) + TDengine 多表INSERT(历史) + WebSocket按通道合帧推送
                                                     ↓
                           DistributionService ──→ WebSocket ──→ 前端
@@ -151,7 +148,7 @@ INT32/FLOAT32 占 **2 个连续寄存器**、FLOAT64 占 **4 个**，起始地�
 前端 ──→ REST API ──→ PointService ──→ H2 配置库（CRUD）+ Redis 实时值（查值）
 ```
 
-> 写出只有一条路径：OUTPUT 的变化经 `InputPointPropagator` 写到引用它的 INPUT 测点的绑定通道。
+> 写出只有一条路径：OUTPUT 的变化经 `InputPointPropagator` 写到引用它的 INPUT 测点的关联通道。
 > 前端没有直接写值的入口（`PUT /api/points/{id}/value` 已删除）。
 
 ## 启动时序
@@ -173,11 +170,11 @@ INT32/FLOAT32 占 **2 个连续寄存器**、FLOAT64 占 **4 个**，起始地�
 让它按当前实体重建（**删掉它即重置全部配置**，不会再有任何迁移或示例数据被回填）。
 删错路径不会报错，只会拿旧库跑完整个验证——这是本仓库踩过的坑。
 
-**空库引导**（顺序不能颠倒——测点绑定要求通道已存在）：
+**空库引导**：
 
-1. 通道管理页「导入通道配置」选 `mock/mock-channels.json`，逐个"连接"
-2. 测点管理页「导入数据」选 `mock/mock-data.json`（文件自带 `businesses` 段与每个测点的
-   `businessId`、`direction`）
+1. 测点管理页「导入数据」选 `mock/mock-data.json`（文件含 `businesses`、`channels`、`points` 三段，导入时自动创建业务和通道）
+2. 或：先在通道管理页创建通道，再在测点管理页选择业务和通道后「导入 CSV」
+3. 通道管理页逐个"连接"通道
 
 ## TDengine 历史存储
 
@@ -236,9 +233,6 @@ PUT    /api/channels/{id}      # 更新
 DELETE /api/channels/{id}      # 删除
 POST   /api/channels/{id}/connect     # 连接
 POST   /api/channels/{id}/disconnect  # 断开
-POST   /api/channels/import    # 仅导入通道配置（body 为 {channels:[...]} 或通道数组）；每条必填 businessId/
-                               # channelId/channelName/protocolType/direction；已存在则 upsert，
-                               # 省略 connectionConfig 时保留库中原值
 ```
 
 ### MeasurementPoint
@@ -246,24 +240,27 @@ POST   /api/channels/import    # 仅导入通道配置（body 为 {channels:[...
 ```
 GET    /api/points                     # 查询所有 (可选 ?channelId=xxx / ?businessId=xxx / ?direction=INPUT|OUTPUT，可叠加；
                                        # 传 ?size= 才分页返回 {items,total,page,size})
-POST   /api/points                     # 创建（body 必填 businessId、direction；bindings 通道必须与测点同业务；
-                                       # INPUT 必填 referencePointId，指向同业务同 dataType 的 OUTPUT）
-PUT    /api/points/{id}                # 更新（整体替换 bindings；direction/referencePointId 与 businessId 一样被静默忽略）
+POST   /api/points                     # 创建（body 必填 businessId、direction、channelId、address；
+                                       # channelId 通道必须与测点同业务；INPUT 必填 referencePointId）
+PUT    /api/points/{id}                # 更新（direction/referencePointId 与 businessId 一样被静默忽略）
 DELETE /api/points/{id}                # 删除（被 INPUT 引用时返回 400，并点名引用者）
-POST   /api/points/{id}/bindings       # 给既有测点加绑定（创建表单"关联既有测点"）
 GET    /api/points/{id}/value          # 获取当前值
 GET    /api/points/{id}/history        # 查询历史
 ```
 
 ### Data（数据导入导出）
 
-> **数据与连接配置分离**：数据 = 业务 + 测点（含 bindings）；连接配置 = 通道，走 `POST /api/channels/import`。
-> 测点靠 `bindings[].channelId` 绑定通道，所以**导入数据前通道必须已存在**，否则整体失败并点名缺失通道。
-> 导入的每个测点**必须自带 `businessId`**（不再回退默认业务），且绑定**只认 `bindings` 数组**（旧表单字段形式已删）。
+> **JSON 导入**（`POST /api/data/import`）：payload 可含可选的 `channels` 段——缺失的通道自动创建，已存在的跳过。测点的 `channelId` 必须指向已存在或本次 payload 中提供的通道，否则整体失败并点名缺失通道。导入的每个测点**必须自带 `businessId`**（不再回退默认业务），且必须带 `channelId` 和 `address`。
+>
+> **CSV 导入**（`POST /api/data/import-csv`）：前端先选择业务和通道，再上传 CSV 文件。CSV 只含测点属性列（pointId, pointName, address, dataType, unit, direction, referencePointId, deadband），businessId 和 channelId 从 UI 选择继承。UTF-8 编码（兼容 BOM 头）。业务/通道不存在时自动创建。
 
 ```
 GET    /api/data/export                # 导出 {businesses, points}；裸 payload（无 ApiResponse 信封），文件可直接回灌
-POST   /api/data/import                # 导入 {businesses?, points}；返回 {businessCount, pointCount}，事务性
+POST   /api/data/import                # 导入 {businesses?, channels?, points}；channels 自动创建缺失通道；
+                                       # 返回 {businessCount, channelCount, pointCount}，事务性
+POST   /api/data/import-csv            # CSV 导入测点（multipart/form-data）；参数 businessId、channelId 由前端 UI 选择传入；
+                                       # CSV 列：pointId,pointName,address,dataType,unit,direction,referencePointId,deadband
+                                       # 自动创建业务/通道（如不存在），返回 {businessCount, channelCount, pointCount}
 ```
 
 ### WebSocket
@@ -299,7 +296,7 @@ POST   /api/data/import                # 导入 {businesses?, points}；返回 {
 
 ## Mock 服务器
 
-模拟器**实现**在 `sdncustom-protocol/src/main/java/com/sdncustom/protocol/mock/`（随 protocol 模块编译）；`mock/` 目录只有启动脚本和两个数据文件（`mock-channels.json` / `mock-data.json`）：
+模拟器**实现**在 `sdncustom-protocol/src/main/java/com/sdncustom/protocol/mock/`（随 protocol 模块编译）；`mock/` 目录有启动脚本和数据文件（`mock-data.json`）：
 
 ```bash
 cd mock
@@ -316,7 +313,7 @@ cd mock
 
 > 注意：自定义 TCP 模拟服务器使用 **9002** 端口（9001 已被 Mosquitto 的 MQTT WebSocket 占用）。
 
-`mock/mock-channels.json` 是 `{channels}` 格式，正好是 `POST /api/channels/import` 的入参（每个通道带 `businessId: "default"`）；`mock/mock-data.json` 是 `{businesses, points}` 格式（绑定用 `bindings` 数组，每个测点带 `businessId` 与 `direction`），正好是 `POST /api/data/import` 的入参。引导分两步：① 通道管理页「导入通道配置」选 `mock-channels.json`，逐个"连接"；② 测点管理页「导入数据」选 `mock-data.json`。**顺序不能颠倒**——测点绑定要求通道已存在，且测点的 `businessId` 必须与绑定通道一致。所有示例通道 `autoConnect=false`，不会自动接上模拟器。
+`mock/mock-data.json` 是 `{businesses, channels, points}` 格式，正好是 `POST /api/data/import` 的入参——导入时自动创建业务和通道（已存在的跳过），然后创建测点。所有示例通道 `autoConnect=false`，导入后需手动连接。
 
 ## 安全配置
 

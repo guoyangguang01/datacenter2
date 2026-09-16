@@ -1,5 +1,6 @@
 package com.sdncustom.protocol.mock;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sdncustom.protocol.modbus.ModbusFunction;
 import lombok.extern.slf4j.Slf4j;
 
@@ -34,98 +35,90 @@ public class MockModbusTcpServer {
     // 线圈 (00001-00100)
     private final boolean[] coils = new boolean[100];
 
+    private static final ObjectMapper objectMapper = new ObjectMapper();
+    // 跟踪从 mock-data.json 加载的寄存器地址 -> 数据类型（用于动态更新）
+    private final Map<Integer, String> mockRegisterTypes = new LinkedHashMap<>();
+    // 跟踪从 mock-data.json 加载的线圈地址 -> 数据类型
+    private final Map<Integer, String> mockCoilTypes = new LinkedHashMap<>();
+
     public MockModbusTcpServer(int port) {
         this.port = port;
         initMockData();
     }
 
     /**
-     * 初始化模拟数据
+     * 初始化模拟数据，全部从 mock-data.json 加载。
      */
     private void initMockData() {
-        // 保持寄存器 (40001-40030) - 过程变量
-        holdingRegisters[0] = 2560;    // 40001: 温度1 25.6°C * 100
-        holdingRegisters[1] = 1013;    // 40002: 压力1 101.3kPa
-        holdingRegisters[2] = 5000;    // 40003: 流量1 50.00 L/min * 100
-        holdingRegisters[3] = 380;     // 40004: 电压 380V
-        holdingRegisters[4] = 1500;    // 40005: 转速1 1500 RPM
-        holdingRegisters[5] = 7500;    // 40006: 湿度 75.00% * 100
-        holdingRegisters[6] = 2340;    // 40007: 温度2 23.4°C * 100
-        holdingRegisters[7] = 2026;    // 40008: 压力2 202.6kPa
-        holdingRegisters[8] = 3000;    // 40009: 流量2 30.00 L/min * 100
-        holdingRegisters[9] = 1200;    // 40010: 转速2 1200 RPM
-        holdingRegisters[10] = 755;    // 40011: 液位1 75.5%
-        holdingRegisters[11] = 452;    // 40012: 液位2 45.2%
-        holdingRegisters[12] = 2205;   // 40013: 电压A相 220.5V
-        holdingRegisters[13] = 2198;   // 40014: 电压B相 219.8V
-        holdingRegisters[14] = 2210;   // 40015: 电压C相 221.0V
-        holdingRegisters[15] = 523;    // 40016: 电流A相 5.23A * 100
-        holdingRegisters[16] = 518;    // 40017: 电流B相 5.18A * 100
-        holdingRegisters[17] = 525;    // 40018: 电流C相 5.25A * 100
-        holdingRegisters[18] = 1145;   // 40019: 有功功率 1145W
-        holdingRegisters[19] = 850;    // 40020: 功率因数 0.85 * 1000
-        holdingRegisters[20] = 5001;   // 40021: 频率 50.01Hz * 100
-        holdingRegisters[21] = 301;    // 40022: 环境温度 30.1°C * 10
-        holdingRegisters[22] = 652;    // 40023: 环境湿度 65.2%
-        holdingRegisters[23] = 1013;   // 40024: 大气压力 101.3kPa
-        holdingRegisters[24] = 453;    // 40025: 进口温度 45.3°C * 10
-        holdingRegisters[25] = 678;    // 40026: 出口温度 67.8°C * 10
-        holdingRegisters[26] = 882;    // 40027: 湿度 88.2%
-        holdingRegisters[27] = 156;    // 40028: 振动1 15.6mm/s * 10
-        holdingRegisters[28] = 123;    // 40029: 振动2 12.3mm/s * 10
-        holdingRegisters[29] = 890;    // 40030: 噪声 89.0dB * 10
-
-        // 32/64 位值：占用连续寄存器，按「高字在前」(ABCD) 存放
-        putFloat32(30, 25.6f);         // 40031-40032: 32位浮点温度
-        putInt32(32, 123456);          // 40033-40034: 32位整数计数
-        putFloat64(34, Math.PI);       // 40035-40038: 64位浮点测量
-
-        // 输入寄存器 (30001-30020) - 传感器原始值
-        inputRegisters[0] = 234;       // 30001: 温度传感器1
-        inputRegisters[1] = 567;       // 30002: 压力传感器1
-        inputRegisters[2] = 890;       // 30003: 流量传感器1
-        inputRegisters[3] = 123;       // 30004: 液位传感器1
-        inputRegisters[4] = 456;       // 30005: 温度传感器2
-        inputRegisters[5] = 789;       // 30006: 压力传感器2
-        inputRegisters[6] = 321;       // 30007: 流量传感器2
-        inputRegisters[7] = 654;       // 30008: 液位传感器2
-        inputRegisters[8] = 987;       // 30009: 振动传感器1
-        inputRegisters[9] = 147;       // 30010: 振动传感器2
-        inputRegisters[10] = 258;      // 30011: 噪声传感器
-        inputRegisters[11] = 369;      // 30012: 电压传感器
-        inputRegisters[12] = 741;      // 30013: 电流传感器
-        inputRegisters[13] = 852;      // 30014: 功率传感器
-        inputRegisters[14] = 963;      // 30015: 频率传感器
-        inputRegisters[15] = 159;      // 30016: 湿度传感器
-        inputRegisters[16] = 357;      // 30017: CO2浓度传感器
-        inputRegisters[17] = 486;      // 30018: PM2.5传感器
-        inputRegisters[18] = 753;      // 30019: 光照传感器
-        inputRegisters[19] = 951;      // 30020: 风速传感器
-
-        // 线圈 (00001-00030) - 开关状态
-        coils[0] = true;   // 00001: 泵1 运行
-        coils[1] = false;  // 00002: 泵2 停止
-        coils[2] = true;   // 00003: 阀门1 开启
-        coils[3] = false;  // 00004: 阀门2 关闭
-        coils[4] = true;   // 00005: 加热器1 开启
-        coils[5] = false;  // 00006: 加热器2 关闭
-        coils[6] = true;   // 00007: 风机1 运行
-        coils[7] = false;  // 00008: 风机2 停止
-        coils[8] = true;   // 00009: 电磁阀1 开启
-        coils[9] = false;  // 00010: 电磁阀2 关闭
-        coils[10] = true;  // 00011: 指示灯1 亮
-        coils[11] = false; // 00012: 指示灯2 灭
-        coils[12] = true;  // 00013: 蜂鸣器 关闭
-        coils[13] = false; // 00014: 报警器 关闭
-        coils[14] = true;  // 00015: 安全门 关闭
-        coils[15] = false; // 00016: 急停 正常
-        coils[16] = true;  // 00017: 电源1 正常
-        coils[17] = true;  // 00018: 电源2 正常
-        coils[18] = false; // 00019: UPS 正常
-        coils[19] = true;  // 00020: 接地 正常
-        for (int i = 20; i < 100; i++) {
-            coils[i] = random.nextBoolean();
+        String mockDataPath = findMockDataPath();
+        if (mockDataPath != null) {
+            loadFromMockData(mockDataPath);
         }
+        if (mockRegisterTypes.isEmpty() && mockCoilTypes.isEmpty()) {
+            log.warn("No Modbus mock data loaded (mock-data.json not found or has no Modbus points)");
+        } else {
+            log.info("Mock Modbus data loaded: {} registers, {} coils",
+                    mockRegisterTypes.size(), mockCoilTypes.size());
+        }
+    }
+
+    /**
+     * 从 mock-data.json 加载 Modbus 通道的测点地址，初始化保持寄存器和线圈。
+     * 寄存器地址如 "40001" 映射到 holdingRegisters[0]；线圈地址如 "1" 映射到 coils[0]。
+     */
+    @SuppressWarnings("unchecked")
+    public void loadFromMockData(String mockDataPath) {
+        try {
+            Map<String, Object> data = objectMapper.readValue(new File(mockDataPath), Map.class);
+            List<Map<String, Object>> points = (List<Map<String, Object>>) data.get("points");
+            if (points == null) return;
+
+            for (Map<String, Object> p : points) {
+                String channelId = String.valueOf(p.getOrDefault("channelId", ""));
+                if (!"ch_modbus_mock".equals(channelId)) continue;
+                String address = String.valueOf(p.getOrDefault("address", ""));
+                String dataType = String.valueOf(p.getOrDefault("dataType", "INT16"));
+                if (address.isEmpty()) continue;
+
+                try {
+                    if (address.startsWith("4") || address.startsWith("3")) {
+                        // 保持寄存器: "40001" -> index 0, "30001" -> index 0
+                        int regIndex = Integer.parseInt(address.substring(1)) - 1;
+                        if (regIndex < 0 || regIndex >= holdingRegisters.length) continue;
+                        if (mockRegisterTypes.containsKey(regIndex)) continue;
+                        mockRegisterTypes.put(regIndex, dataType);
+                        switch (dataType) {
+                            case "INT16" -> holdingRegisters[regIndex] = 1000;
+                            case "INT32" -> putInt32(regIndex, 10000);
+                            case "FLOAT32" -> putFloat32(regIndex, 25.0f);
+                            case "FLOAT64" -> putFloat64(regIndex, 100.0);
+                            default -> holdingRegisters[regIndex] = 1000;
+                        }
+                    } else {
+                        // 线圈: "1" -> coils[0]
+                        int coilIndex = Integer.parseInt(address) - 1;
+                        if (coilIndex < 0 || coilIndex >= coils.length) continue;
+                        if (mockCoilTypes.containsKey(coilIndex)) continue;
+                        mockCoilTypes.put(coilIndex, dataType);
+                        coils[coilIndex] = false;
+                    }
+                } catch (NumberFormatException e) {
+                    log.debug("Skipping invalid Modbus address: {}", address);
+                }
+            }
+        } catch (IOException e) {
+            log.warn("Failed to load mock-data.json: {}", e.getMessage());
+        }
+    }
+
+    /** 从 mock/ 目录或当前目录向上查找 mock-data.json */
+    static String findMockDataPath() {
+        String[] candidates = {"mock/mock-data.json", "../mock/mock-data.json", "mock-data.json"};
+        for (String c : candidates) {
+            File f = new File(c);
+            if (f.exists()) return f.getAbsolutePath();
+        }
+        return null;
     }
 
     /**
@@ -376,56 +369,73 @@ public class MockModbusTcpServer {
     }
 
     /**
-     * 更新模拟数据
+     * 更新模拟数据 —— 动态迭代从 mock-data.json 加载的条目，
+     * 根据数据类型施加随机波动。
      */
     private void updateMockData() {
-        // 保持寄存器波动
-        holdingRegisters[0] = 2560 + random.nextInt(200) - 100;  // 温度1波动
-        holdingRegisters[1] = 1013 + random.nextInt(20) - 10;     // 压力1波动
-        holdingRegisters[2] = 5000 + random.nextInt(500) - 250;   // 流量1波动
-        holdingRegisters[4] = 1500 + random.nextInt(100) - 50;    // 转速1波动
-        holdingRegisters[5] = 7500 + random.nextInt(300) - 150;   // 湿度波动
-        holdingRegisters[6] = 2340 + random.nextInt(150) - 75;    // 温度2波动
-        holdingRegisters[7] = 2026 + random.nextInt(40) - 20;     // 压力2波动
-        holdingRegisters[8] = 3000 + random.nextInt(300) - 150;   // 流量2波动
-        holdingRegisters[9] = 1200 + random.nextInt(80) - 40;     // 转速2波动
-        holdingRegisters[10] = 755 + random.nextInt(100) - 50;    // 液位1波动
-        holdingRegisters[11] = 452 + random.nextInt(80) - 40;     // 液位2波动
-        holdingRegisters[12] = 2205 + random.nextInt(20) - 10;    // 电压A波动
-        holdingRegisters[13] = 2198 + random.nextInt(20) - 10;    // 电压B波动
-        holdingRegisters[14] = 2210 + random.nextInt(20) - 10;    // 电压C波动
-        holdingRegisters[15] = 523 + random.nextInt(40) - 20;     // 电流A波动
-        holdingRegisters[16] = 518 + random.nextInt(40) - 20;     // 电流B波动
-        holdingRegisters[17] = 525 + random.nextInt(40) - 20;     // 电流C波动
-        holdingRegisters[18] = 1145 + random.nextInt(200) - 100;  // 功率波动
-        holdingRegisters[19] = 850 + random.nextInt(100) - 50;    // 功率因数波动
-        holdingRegisters[20] = 5001 + random.nextInt(10) - 5;     // 频率波动
-        holdingRegisters[21] = 301 + random.nextInt(60) - 30;     // 环境温度波动
-        holdingRegisters[22] = 652 + random.nextInt(100) - 50;    // 环境湿度波动
-        holdingRegisters[24] = 453 + random.nextInt(40) - 20;     // 进口温度波动
-        holdingRegisters[25] = 678 + random.nextInt(40) - 20;     // 出口温度波动
-        holdingRegisters[26] = 882 + random.nextInt(60) - 30;     // 湿度波动
-        holdingRegisters[27] = 156 + random.nextInt(30) - 15;     // 振动1波动
-        holdingRegisters[28] = 123 + random.nextInt(20) - 10;     // 振动2波动
-        holdingRegisters[29] = 890 + random.nextInt(40) - 20;     // 噪声波动
-
-        // 32 位浮点（40031-40032）小幅波动；32/64 位整数保持稳定，便于写入回读验证
-        putFloat32(30, 25.6f + (random.nextInt(101) - 50) / 100.0f);
-
-        // 输入寄存器波动
-        for (int i = 0; i < 20; i++) {
-            inputRegisters[i] = Math.max(0, Math.min(4095, inputRegisters[i] + random.nextInt(21) - 10));
+        // 更新保持寄存器
+        for (Map.Entry<Integer, String> entry : mockRegisterTypes.entrySet()) {
+            int idx = entry.getKey();
+            String dataType = entry.getValue();
+            switch (dataType) {
+                case "INT16" -> {
+                    int amplitude = Math.max(Math.abs(holdingRegisters[idx]) / 50, 2);
+                    holdingRegisters[idx] += random.nextInt(amplitude * 2 + 1) - amplitude;
+                }
+                case "INT32" -> {
+                    int current = readInt32(idx);
+                    int amplitude = Math.max(Math.abs(current) / 50, 2);
+                    putInt32(idx, current + random.nextInt(amplitude * 2 + 1) - amplitude);
+                }
+                case "FLOAT32" -> {
+                    float current = readFloat32(idx);
+                    float amplitude = Math.max(Math.abs(current) * 0.02f, 0.5f);
+                    putFloat32(idx, current + (random.nextFloat() - 0.5f) * amplitude * 2);
+                }
+                case "FLOAT64" -> {
+                    double current = readFloat64(idx);
+                    double amplitude = Math.max(Math.abs(current) * 0.02, 0.5);
+                    putFloat64(idx, current + (random.nextDouble() - 0.5) * amplitude * 2);
+                }
+                default -> {
+                    int amplitude = Math.max(Math.abs(holdingRegisters[idx]) / 50, 2);
+                    holdingRegisters[idx] += random.nextInt(amplitude * 2 + 1) - amplitude;
+                }
+            }
         }
 
-        // 线圈随机切换
-        coils[0] = random.nextBoolean();   // 泵1
-        coils[1] = random.nextBoolean();   // 泵2
-        coils[2] = random.nextBoolean();   // 阀门1
-        coils[3] = random.nextBoolean();   // 阀门2
-        coils[4] = random.nextBoolean();   // 加热器1
-        coils[6] = random.nextBoolean();   // 风机1
-        coils[8] = random.nextBoolean();   // 电磁阀1
-        coils[14] = random.nextBoolean();  // 安全门
+        // 更新线圈
+        for (Map.Entry<Integer, String> entry : mockCoilTypes.entrySet()) {
+            coils[entry.getKey()] = random.nextBoolean();
+        }
+    }
+
+    /** 从连续两个保持寄存器读取 32 位整数（高字在前） */
+    private int readInt32(int startIndex) {
+        if (startIndex + 1 >= holdingRegisters.length) return 0;
+        return (holdingRegisters[startIndex] << 16) | (holdingRegisters[startIndex + 1] & 0xFFFF);
+    }
+
+    /** 从连续两个保持寄存器读取 32 位浮点（高字在前） */
+    private float readFloat32(int startIndex) {
+        byte[] bytes = new byte[4];
+        bytes[0] = (byte) (holdingRegisters[startIndex] >> 8);
+        bytes[1] = (byte) holdingRegisters[startIndex];
+        if (startIndex + 1 < holdingRegisters.length) {
+            bytes[2] = (byte) (holdingRegisters[startIndex + 1] >> 8);
+            bytes[3] = (byte) holdingRegisters[startIndex + 1];
+        }
+        return ByteBuffer.wrap(bytes).getFloat();
+    }
+
+    /** 从连续四个保持寄存器读取 64 位浮点（高字在前） */
+    private double readFloat64(int startIndex) {
+        byte[] bytes = new byte[8];
+        for (int i = 0; i < 4 && startIndex + i < holdingRegisters.length; i++) {
+            bytes[i * 2] = (byte) (holdingRegisters[startIndex + i] >> 8);
+            bytes[i * 2 + 1] = (byte) holdingRegisters[startIndex + i];
+        }
+        return ByteBuffer.wrap(bytes).getDouble();
     }
 
     public static void main(String[] args) {

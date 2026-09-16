@@ -7,6 +7,8 @@ import com.sdncustom.common.model.enums.PointDirection;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
@@ -16,13 +18,14 @@ import static org.junit.jupiter.api.Assertions.*;
 class ImportFieldsTest {
 
     @Test
-    @DisplayName("测点缺 businessId：不再回退默认业务，直接报错")
+    @DisplayName("测点缺 businessId：直接报错")
     void businessIdRequired() {
         Map<String, Object> pt = Map.of(
                 "pointId", "p1",
                 "pointName", "P1",
-                "dataType", "FLOAT32",
-                "bindings", List.of(Map.of("channelId", "ch_1", "address", "40001")));
+                "channelId", "ch_1",
+                "address", "40001",
+                "dataType", "FLOAT32");
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> ImportFields.parsePoint(pt));
@@ -31,41 +34,35 @@ class ImportFieldsTest {
     }
 
     @Test
-    @DisplayName("旧绑定格式（channelId+address）不再被接受")
-    void legacyBindingFormatRejected() {
+    @DisplayName("测点缺 channelId：报错")
+    void channelIdRequired() {
         Map<String, Object> pt = Map.of(
                 "pointId", "p1",
-                "channelId", "ch_1",
-                "address", "40001");
+                "pointName", "P1",
+                "businessId", "default",
+                "address", "40001",
+                "dataType", "FLOAT32");
 
         BusinessException ex = assertThrows(BusinessException.class,
-                () -> ImportFields.parseBindings(pt));
+                () -> ImportFields.parsePoint(pt));
 
-        assertTrue(ex.getMessage().contains("绑定"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("channelId"), ex.getMessage());
     }
 
     @Test
-    @DisplayName("additionalSources 旧字段不再被接受")
-    void legacyAdditionalSourcesRejected() {
+    @DisplayName("测点缺 address：报错")
+    void addressRequired() {
         Map<String, Object> pt = Map.of(
+                "pointId", "p1",
+                "pointName", "P1",
+                "businessId", "default",
                 "channelId", "ch_1",
-                "address", "40001",
-                "additionalSources", List.of(Map.of("channelId", "ch_2", "address", "reg2")));
+                "dataType", "FLOAT32");
 
-        assertThrows(BusinessException.class, () -> ImportFields.parseBindings(pt));
-    }
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> ImportFields.parsePoint(pt));
 
-    @Test
-    @DisplayName("新格式 bindings 数组正常解析")
-    void newBindingFormatParsed() {
-        Map<String, Object> pt = Map.of(
-                "bindings", List.of(Map.of("channelId", "ch_1", "address", "40001")));
-
-        var bindings = ImportFields.parseBindings(pt);
-
-        assertEquals(1, bindings.size());
-        assertEquals("ch_1", bindings.get(0).getChannelId());
-        assertEquals("40001", bindings.get(0).getAddress());
+        assertTrue(ex.getMessage().contains("address"), ex.getMessage());
     }
 
     @Test
@@ -76,7 +73,8 @@ class ImportFieldsTest {
                 "businessId", "default",
                 "pointName", "P1",
                 "dataType", "FLOAT32",
-                "bindings", List.of(Map.of("channelId", "ch_1", "address", "40001")));
+                "channelId", "ch_1",
+                "address", "40001");
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> ImportFields.parsePoint(pt));
@@ -96,7 +94,8 @@ class ImportFieldsTest {
                 "direction", "INPUT",
                 "referencePointId", "out_1",
                 "deadband", 0.5,
-                "bindings", List.of(Map.of("channelId", "ch_1", "address", "40001")));
+                "channelId", "ch_1",
+                "address", "40001");
 
         var dto = ImportFields.parsePoint(pt);
 
@@ -108,9 +107,8 @@ class ImportFieldsTest {
         assertEquals(PointDirection.INPUT, dto.getDirection());
         assertEquals("out_1", dto.getReferencePointId());
         assertEquals(0.5, dto.getDeadband());
-        assertEquals(1, dto.getBindings().size());
-        assertEquals("ch_1", dto.getBindings().get(0).getChannelId());
-        assertEquals("40001", dto.getBindings().get(0).getAddress());
+        assertEquals("ch_1", dto.getChannelId());
+        assertEquals("40001", dto.getAddress());
     }
 
     /**
@@ -124,13 +122,13 @@ class ImportFieldsTest {
         List<Object> raw = List.of(
                 Map.of("pointId", "no_dir", "businessId", "biz_a", "pointName", "P1",
                         "dataType", "FLOAT32",
-                        "bindings", List.of(Map.of("channelId", "ch_1", "address", "a"))),
+                        "channelId", "ch_1", "address", "a"),
                 Map.of("pointId", "bad_dir", "businessId", "biz_a", "pointName", "P2",
                         "dataType", "FLOAT32", "direction", "SIDEWAYS",
-                        "bindings", List.of(Map.of("channelId", "ch_1", "address", "b"))),
+                        "channelId", "ch_1", "address", "b"),
                 Map.of("pointId", "ok", "businessId", "biz_a", "pointName", "P3",
                         "dataType", "FLOAT32", "direction", "OUTPUT",
-                        "bindings", List.of(Map.of("channelId", "ch_1", "address", "c"))));
+                        "channelId", "ch_1", "address", "c"));
 
         ImportFields.ParseResult result = ImportFields.parsePoints(raw);
 
@@ -148,7 +146,7 @@ class ImportFieldsTest {
     void parsePointsNamesRecordWithoutPointId() {
         List<Object> raw = List.of(
                 Map.of("businessId", "biz_a", "pointName", "P1", "dataType", "FLOAT32",
-                        "bindings", List.of(Map.of("channelId", "ch_1", "address", "a"))));
+                        "channelId", "ch_1", "address", "a"));
 
         ImportFields.ParseResult result = ImportFields.parsePoints(raw);
 
@@ -167,11 +165,102 @@ class ImportFieldsTest {
                 "dataType", "FLOAT32",
                 "direction", "INPUT",
                 "referencePointId", "out_1",
-                "bindings", List.of(Map.of("channelId", "ch_1", "address", "40001")));
+                "channelId", "ch_1",
+                "address", "40001");
 
         var dto = ImportFields.parsePoint(pt);
 
         assertEquals(PointDirection.INPUT, dto.getDirection());
         assertEquals("out_1", dto.getReferencePointId());
+    }
+
+    // ===== CSV 解析测试 =====
+
+    private static ByteArrayInputStream csv(String s) {
+        return new ByteArrayInputStream(s.getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Test
+    @DisplayName("CSV happy path：解析完整数据")
+    void csvHappyPath() {
+        String content = "pointId,pointName,address,dataType,unit,direction,referencePointId,deadband\n"
+                + "p1,温度,40001,INT16,°C,OUTPUT,,0.5\n"
+                + "p2,压力,40002,INT16,kPa,OUTPUT,,\n";
+
+        ImportFields.ParseResult result = ImportFields.parseCsv(csv(content), "biz", "ch_1");
+
+        assertTrue(result.problems().isEmpty(), result.problems().toString());
+        assertEquals(2, result.points().size());
+        assertEquals("p1", result.points().get(0).getPointId());
+        assertEquals("biz", result.points().get(0).getBusinessId());
+        assertEquals("ch_1", result.points().get(0).getChannelId());
+        assertEquals("40001", result.points().get(0).getAddress());
+        assertEquals(PointDataType.INT16, result.points().get(0).getDataType());
+        assertEquals(PointDirection.OUTPUT, result.points().get(0).getDirection());
+        assertEquals(0.5, result.points().get(0).getDeadband());
+        assertNull(result.points().get(1).getDeadband());
+    }
+
+    @Test
+    @DisplayName("CSV BOM 头自动跳过")
+    void csvBomHandled() {
+        String content = "﻿pointId,pointName,address,dataType,direction\n"
+                + "p1,温度,40001,INT16,OUTPUT\n";
+
+        ImportFields.ParseResult result = ImportFields.parseCsv(csv(content), "biz", "ch_1");
+
+        assertTrue(result.problems().isEmpty(), result.problems().toString());
+        assertEquals(1, result.points().size());
+        assertEquals("p1", result.points().get(0).getPointId());
+    }
+
+    @Test
+    @DisplayName("CSV 缺必填列：累积问题")
+    void csvMissingRequiredColumn() {
+        String content = "pointId,pointName,address,dataType\n"
+                + "p1,温度,40001,INT16\n";
+
+        ImportFields.ParseResult result = ImportFields.parseCsv(csv(content), "biz", "ch_1");
+
+        assertTrue(result.points().isEmpty());
+        assertEquals(1, result.problems().size());
+        assertTrue(result.problems().get(0).contains("direction"), result.problems().get(0));
+    }
+
+    @Test
+    @DisplayName("CSV 空文件")
+    void csvEmpty() {
+        ImportFields.ParseResult result = ImportFields.parseCsv(csv(""), "biz", "ch_1");
+
+        assertTrue(result.points().isEmpty());
+        assertFalse(result.problems().isEmpty());
+    }
+
+    @Test
+    @DisplayName("CSV INPUT 测点解析 referencePointId")
+    void csvInputPoint() {
+        String content = "pointId,pointName,address,dataType,direction,referencePointId\n"
+                + "in1,输入1,50001,INT16,INPUT,out1\n";
+
+        ImportFields.ParseResult result = ImportFields.parseCsv(csv(content), "biz", "ch_1");
+
+        assertTrue(result.problems().isEmpty(), result.problems().toString());
+        assertEquals(1, result.points().size());
+        assertEquals(PointDirection.INPUT, result.points().get(0).getDirection());
+        assertEquals("out1", result.points().get(0).getReferencePointId());
+    }
+
+    @Test
+    @DisplayName("CSV 多行问题累积")
+    void csvAccumulatesProblems() {
+        String content = "pointId,pointName,address,dataType,direction\n"
+                + "p1,温度,40001,INT16,\n"
+                + "p2,压力,40002,INT16,\n"
+                + "p3,流量,40003,INT16,OUTPUT\n";
+
+        ImportFields.ParseResult result = ImportFields.parseCsv(csv(content), "biz", "ch_1");
+
+        assertEquals(1, result.points().size()); // 只有 p3 成功
+        assertEquals(2, result.problems().size()); // p1、p2 各一条问题
     }
 }

@@ -1,12 +1,10 @@
 package com.sdncustom.server.service;
 
 import com.sdncustom.common.dto.MeasurementPointDTO;
-import com.sdncustom.common.dto.PointSourceDTO;
 import com.sdncustom.common.exception.BusinessException;
 import com.sdncustom.common.exception.ResourceNotFoundException;
 import com.sdncustom.common.model.Channel;
 import com.sdncustom.common.model.MeasurementPoint;
-import com.sdncustom.common.model.PointSource;
 import com.sdncustom.common.model.PointValue;
 import com.sdncustom.common.model.enums.ChannelStatus;
 import com.sdncustom.common.model.enums.PointDataType;
@@ -15,7 +13,6 @@ import com.sdncustom.common.model.enums.PointQuality;
 import com.sdncustom.protocol.ProtocolAdapter;
 import com.sdncustom.protocol.ProtocolRegistry;
 import com.sdncustom.server.repository.MeasurementPointRepository;
-import com.sdncustom.server.repository.PointSourceRepository;
 import com.sdncustom.server.repository.PointValueCacheRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -55,15 +52,6 @@ class PointServiceTest {
     private ProtocolRegistry protocolRegistry;
 
     @Mock
-    private PointSourceRepository pointSourceRepository;
-
-    @Mock
-    private PointSourceService pointSourceService;
-
-    @Mock
-    private PointBindingRegistry pointBindingRegistry;
-
-    @Mock
     private BusinessSystemService businessSystemService;
 
     @Mock
@@ -96,17 +84,11 @@ class PointServiceTest {
         testDto.setPointId("test_point_001");
         testDto.setBusinessId("default");
         testDto.setPointName("测试测点");
-        testDto.setBindings(List.of(binding("ch_001", "40001")));
+        testDto.setChannelId("ch_001");
+        testDto.setAddress("40001");
         testDto.setDataType(PointDataType.INT16);
         testDto.setUnit("°C");
         testDto.setDirection(PointDirection.OUTPUT);
-    }
-
-    private static PointSourceDTO binding(String channelId, String address) {
-        PointSourceDTO dto = new PointSourceDTO();
-        dto.setChannelId(channelId);
-        dto.setAddress(address);
-        return dto;
     }
 
     /** 引用 test_point_001 的输入测点（删除保护用例用） */
@@ -131,14 +113,9 @@ class PointServiceTest {
     }
 
     @Test
-    @DisplayName("根据通道ID查询测点（绑定集：任意绑定命中）")
+    @DisplayName("根据通道ID查询测点")
     void findByChannelId() {
-        PointSource ps = new PointSource();
-        ps.setPointId("test_point_001");
-        ps.setChannelId("ch_001");
-        ps.setAddress("40001");
-        when(pointSourceRepository.findByChannelId("ch_001")).thenReturn(List.of(ps));
-        when(pointRepository.findAllById(List.of("test_point_001"))).thenReturn(Arrays.asList(testPoint));
+        when(pointRepository.findByChannelId("ch_001")).thenReturn(Arrays.asList(testPoint));
 
         List<MeasurementPoint> result = pointService.findByChannelId("ch_001");
 
@@ -169,7 +146,6 @@ class PointServiceTest {
     @DisplayName("创建测点")
     void create() {
         when(pointRepository.save(any(MeasurementPoint.class))).thenReturn(testPoint);
-        when(pointSourceService.viewForBinding(any(), any(), any())).thenReturn(testPoint);
 
         MeasurementPoint result = pointService.create(testDto);
 
@@ -179,7 +155,8 @@ class PointServiceTest {
         ArgumentCaptor<MeasurementPoint> captor = ArgumentCaptor.forClass(MeasurementPoint.class);
         verify(pointRepository).save(captor.capture());
         assertEquals("default", captor.getValue().getBusinessId());
-        verify(pointSourceService).replaceBindings("test_point_001", testDto.getBindings());
+        assertEquals("ch_001", captor.getValue().getChannelId());
+        assertEquals("40001", captor.getValue().getAddress());
     }
 
     @Test
@@ -195,17 +172,15 @@ class PointServiceTest {
     }
 
     @Test
-    @DisplayName("更新测点 - businessId 不可变更（绑定校验以现有业务为准）")
+    @DisplayName("更新测点 - businessId 不可变更")
     void updateDoesNotChangeBusinessId() {
         when(pointRepository.findById("test_point_001")).thenReturn(Optional.of(testPoint));
         when(pointRepository.save(any(MeasurementPoint.class))).thenReturn(testPoint);
-        when(pointSourceService.viewForBinding(any(), any(), any())).thenReturn(testPoint);
 
         testDto.setBusinessId("other");
         pointService.update("test_point_001", testDto);
 
         assertEquals("default", testPoint.getBusinessId());
-        verify(pointSourceService).validateBindings(testDto.getBindings(), "default");
     }
 
     @Test
@@ -219,7 +194,6 @@ class PointServiceTest {
 
         when(pointRepository.findById("test_point_001")).thenReturn(Optional.of(testPoint));
         when(pointRepository.save(any(MeasurementPoint.class))).thenReturn(testPoint);
-        when(pointSourceService.viewForBinding(any(), any(), any())).thenReturn(testPoint);
 
         pointService.update("test_point_001", testDto);
 
@@ -233,7 +207,6 @@ class PointServiceTest {
     void createOnConnectedChannelSubscribes() {
         ProtocolAdapter adapter = mock(ProtocolAdapter.class);
         when(pointRepository.save(any(MeasurementPoint.class))).thenReturn(testPoint);
-        when(pointSourceService.viewForBinding(any(), any(), any())).thenReturn(testPoint);
         when(protocolRegistry.get("ch_001")).thenReturn(Optional.of(adapter));
 
         pointService.create(testDto);
@@ -279,30 +252,10 @@ class PointServiceTest {
     }
 
     @Test
-    @DisplayName("给 INPUT 测点加绑定不触发订阅")
-    void addBindingOnInputPointDoesNotSubscribe() {
-        ProtocolAdapter adapter = mock(ProtocolAdapter.class);
-        lenient().when(protocolRegistry.get("ch_002")).thenReturn(Optional.of(adapter));
-        when(pointRepository.findById("in_1")).thenReturn(Optional.of(inputPoint("in_1")));
-        when(pointSourceService.bindingChannelIds("in_1")).thenReturn(java.util.Set.of("ch_002"));
-        // 绑定视图：真实路径由 PointSourceService 生成，方向随实体拷贝
-        MeasurementPoint view = inputPoint("in_1");
-        view.setChannelId("ch_002");
-        view.setAddress("reg2");
-        when(pointSourceService.viewForBinding(any(), any(), any())).thenReturn(view);
-
-        pointService.addBinding("in_1", "ch_002", "reg2");
-
-        verify(protocolRegistry, never()).get("ch_002");
-        verifyNoInteractions(adapter);
-    }
-
-    @Test
     @DisplayName("更新测点")
     void update() {
         when(pointRepository.findById("test_point_001")).thenReturn(Optional.of(testPoint));
         when(pointRepository.save(any(MeasurementPoint.class))).thenReturn(testPoint);
-        when(pointSourceService.viewForBinding(any(), any(), any())).thenReturn(testPoint);
 
         testDto.setPointName("更新后的名称");
         MeasurementPoint result = pointService.update("test_point_001", testDto);
@@ -391,38 +344,12 @@ class PointServiceTest {
     }
 
     @Test
-    @DisplayName("addBinding 给既有测点加绑定并触发订阅")
-    void addBinding() {
-        when(pointRepository.findById("test_point_001")).thenReturn(Optional.of(testPoint));
-        when(pointSourceRepository.findByPointId("test_point_001")).thenReturn(List.of());
-        when(pointSourceService.bindingChannelIds("test_point_001")).thenReturn(java.util.Set.of("ch_001", "ch_002"));
-        // 绑定视图：新绑定的通道是 ch_002（生产路径由 viewForBinding 把绑定值盖到视图上）
-        MeasurementPoint view = new MeasurementPoint();
-        view.setPointId("test_point_001");
-        view.setDirection(PointDirection.OUTPUT);
-        view.setChannelId("ch_002");
-        view.setAddress("reg2");
-        when(pointSourceService.viewForBinding(any(), any(), any())).thenReturn(view);
-        ProtocolAdapter adapter = mock(ProtocolAdapter.class);
-        when(protocolRegistry.get("ch_002")).thenReturn(Optional.of(adapter));
-
-        MeasurementPoint result = pointService.addBinding("test_point_001", "ch_002", "reg2");
-
-        verify(pointSourceService).addBinding("test_point_001", "ch_002", "reg2", "default");
-        verify(adapter).onConnected(anyList());
-        verify(pointBindingRegistry).invalidate("test_point_001");
-        verify(changeGate).syncPointBindings(eq("test_point_001"), anySet());
-        assertNotNull(result);
-    }
-
-    @Test
     @DisplayName("批量导入测点")
     void importPoints() {
         List<MeasurementPointDTO> dtos = Arrays.asList(testDto);
 
         when(pointRepository.findById("test_point_001")).thenReturn(Optional.empty());
         when(pointRepository.save(any(MeasurementPoint.class))).thenReturn(testPoint);
-        when(pointSourceService.viewForBinding(any(), any(), any())).thenReturn(testPoint);
 
         List<MeasurementPoint> result = pointService.importPoints(dtos);
 
@@ -437,7 +364,6 @@ class PointServiceTest {
 
         when(pointRepository.findById("test_point_001")).thenReturn(Optional.of(testPoint));
         when(pointRepository.save(any(MeasurementPoint.class))).thenReturn(testPoint);
-        when(pointSourceService.viewForBinding(any(), any(), any())).thenReturn(testPoint);
 
         List<MeasurementPoint> result = pointService.importPoints(dtos);
 

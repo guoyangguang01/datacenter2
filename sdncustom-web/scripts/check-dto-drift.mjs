@@ -18,12 +18,10 @@ const COMMON = 'sdncustom-common/src/main/java/com/sdncustom/common';
 
 const INTERFACES = [
   { java: `${COMMON}/model/Channel.java`, ts: 'Channel' },
-  // channelId/address 在实体上是 @Transient @JsonIgnore 的视图字段，不参与序列化
+  // channelId/address 现在是持久化字段，参与序列化
   { java: `${COMMON}/model/MeasurementPoint.java`, ts: 'MeasurementPoint' },
   { java: `${COMMON}/model/PointValue.java`, ts: 'PointValue' },
   { java: `${COMMON}/model/BusinessSystem.java`, ts: 'BusinessSystem' },
-  // PointSource 实体字段更多，前端只需要绑定用的两个
-  { java: `${COMMON}/model/PointSource.java`, ts: 'PointSourceDTO', only: ['channelId', 'address'] },
   { java: `${COMMON}/dto/SystemStatusDTO.java`, ts: 'SystemStatus' },
 ];
 
@@ -40,8 +38,7 @@ const read = (rel) => readFileSync(resolve(repoRoot, rel), 'utf8');
 
 /**
  * 提取 Java 类参与 JSON 序列化的私有字段名。
- * 只有 @JsonIgnore 才排除——@Transient 是 JPA 语义（不进表），Jackson 照样序列化，
- * 例如 MeasurementPoint.bindings 就是 @Transient 但会随响应返回。
+ * 只有 @JsonIgnore 才排除——@Transient 是 JPA 语义（不进表），Jackson 照样序列化。
  */
 function javaFields(source) {
   const fields = [];

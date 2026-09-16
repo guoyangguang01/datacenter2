@@ -1,7 +1,6 @@
 package com.sdncustom.server.service;
 
 import com.sdncustom.common.dto.MeasurementPointDTO;
-import com.sdncustom.common.dto.PointSourceDTO;
 import com.sdncustom.common.exception.BusinessException;
 import com.sdncustom.common.model.MeasurementPoint;
 import com.sdncustom.common.model.enums.PointDataType;
@@ -14,7 +13,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -53,10 +51,8 @@ class PointDirectionValidationTest {
         dto.setDataType(PointDataType.FLOAT32);
         dto.setDirection(direction);
         dto.setReferencePointId(referencePointId);
-        PointSourceDTO binding = new PointSourceDTO();
-        binding.setChannelId("ch_1");
-        binding.setAddress("40001");
-        dto.setBindings(List.of(binding));
+        dto.setChannelId("ch_1");
+        dto.setAddress("40001");
         return dto;
     }
 

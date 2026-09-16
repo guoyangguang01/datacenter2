@@ -1,13 +1,12 @@
 package com.sdncustom.server.service;
 
 import com.sdncustom.common.dto.ChannelDTO;
-import com.sdncustom.common.exception.BusinessException;
 import com.sdncustom.common.exception.ResourceNotFoundException;
 import com.sdncustom.common.model.Channel;
 import com.sdncustom.common.model.MeasurementPoint;
 import com.sdncustom.common.model.PointValue;
 import com.sdncustom.common.model.enums.ChannelStatus;
-import com.sdncustom.common.model.enums.PointQuality;
+import com.sdncustom.common.model.enums.PointDirection;
 import com.sdncustom.protocol.ProtocolAdapter;
 import com.sdncustom.protocol.ProtocolRegistry;
 import com.sdncustom.server.repository.ChannelRepository;
@@ -39,16 +38,11 @@ public class ChannelService {
 
     private final ChannelRepository channelRepository;
     private final MeasurementPointRepository pointRepository;
-    private final PointSourceService pointSourceService;
-    private final PointBindingRegistry pointBindingRegistry;
     private final PointValueCacheRepository pointValueCache;
     private final ProtocolRegistry protocolRegistry;
     private final ChangeGate changeGate;
     private final BusinessSystemService businessSystemService;
     private final DistributionService distributionService;
-
-    /** 导出脱敏占位符：它出现在导入文件里说明那是旧导出产物，不是真实凭据 */
-    private static final String MASKED_PLACEHOLDER = "******";
 
     // per-channel 生命周期锁：串行化用户操作与采集循环的状态修正
     private final ConcurrentHashMap<String, ReentrantLock> lifecycleLocks = new ConcurrentHashMap<>();
@@ -137,7 +131,6 @@ public class ChannelService {
 
         if (connectionChanged) {
             // 关旧适配器（要关 socket）与按新配置重连都是远端动作，放到提交之后。
-            // 原实现在事务里直接做，等于持着 DB 连接做网络 I/O，回滚了远端也已经动过。
             TransactionHooks.afterCommit(() -> {
                 protocolRegistry.release(channelId);
                 markPointsCommLost(channelId);
@@ -145,8 +138,6 @@ public class ChannelService {
                     try {
                         connect(channelId);
                     } catch (Exception e) {
-                        // 新配置连不上：connect() 已将状态收敛为 ERROR，这里吞掉异常，
-                        // 保证用户刚保存的配置不因回滚而丢失
                         log.warn("Auto-reconnect after config change failed for channel {}, status set to ERROR: {}",
                                 channelId, e.getMessage());
                     }
@@ -157,35 +148,7 @@ public class ChannelService {
     }
 
     /**
-     * 导入通道配置（仅通道）：已存在的通道 upsert。
-     * payload 省略 connectionConfig 时保留库中原值，避免"导入把配置清空"。
-     */
-    @Transactional
-    public int importConfigs(List<ChannelDTO> dtos) {
-        for (ChannelDTO dto : dtos) {
-            String config = dto.getConnectionConfig();
-            if (config != null && config.contains(MASKED_PLACEHOLDER)) {
-                throw new BusinessException(400, "通道 " + dto.getChannelId()
-                        + " 的 connectionConfig 含脱敏占位符 " + MASKED_PLACEHOLDER
-                        + "，那不是真实凭据；请提供真实连接配置");
-            }
-            Channel existing = findByIdOrNull(dto.getChannelId());
-            if (existing == null) {
-                businessSystemService.ensureExistsForImport(dto.getBusinessId());
-                create(dto);
-                continue;
-            }
-            if (config == null || config.isBlank()) {
-                dto.setConnectionConfig(existing.getConnectionConfig());
-            }
-            update(dto.getChannelId(), dto);
-        }
-        log.info("Imported {} channel config(s)", dtos.size());
-        return dtos.size();
-    }
-
-    /**
-     * 删除 Channel（先释放运行态，再级联删除测点）
+     * 删除 Channel（先释放运行态，再级联删除关联的测点）
      */
     @Transactional
     public void delete(String channelId) {
@@ -193,29 +156,14 @@ public class ChannelService {
         // 不再期望连接，重连调度器不该把它拉回来
         desiredConnected.remove(channelId);
 
-        List<MeasurementPoint> boundPoints = pointSourceService.findPointsForChannel(channelId);
-        List<String> boundPointIds = boundPoints.stream().map(MeasurementPoint::getPointId).distinct().toList();
-
-        // 删除该通道的所有绑定行
-        pointSourceService.deleteByChannelId(channelId);
-
-        // 仅剩该通道绑定的测点（无其余绑定）→ 删除；多绑定点存活（已失去本通道绑定）
-        for (String pointId : boundPointIds) {
-            Set<String> remaining = pointSourceService.bindingChannelIds(pointId);
-            if (remaining.isEmpty()) {
-                // 没有任何来源了：清基线并删除测点
-                changeGate.removePoints(List.of(pointId));
-                pointValueCache.delete(pointId);
-                pointSourceService.deleteByPointId(pointId);
-                pointRepository.deleteById(pointId);
-            } else {
-                // 还有其他来源：只收敛来源集合、保留权威基线。若在这里清基线，
-                // 幸存来源的未变化值会被当成变化重写历史并重推一次
-                changeGate.syncPointBindings(pointId, remaining);
-            }
+        // 删除该通道关联的所有测点（一对一：通道删则测点跟着删）
+        List<MeasurementPoint> points = pointRepository.findByChannelId(channelId);
+        for (MeasurementPoint point : points) {
+            pointValueCache.delete(point.getPointId());
+            changeGate.removePoints(List.of(point.getPointId()));
         }
+        pointRepository.deleteByChannelId(channelId);
         channelRepository.deleteById(channelId);
-        pointBindingRegistry.invalidateChannel(channelId);
 
         // 释放适配器要关 socket，是远端动作，放到提交之后
         TransactionHooks.afterCommit(() -> releaseRuntime(channelId));
@@ -258,8 +206,10 @@ public class ChannelService {
 
             try {
                 adapter.connect(channel);
-                // 统一连接后钩子：订阅型协议（MQTT）在此建立测点订阅（主绑定 + 附加来源）
-                adapter.onConnected(pointSourceService.findOutputPointsForChannel(channelId));
+                // 统一连接后钩子：订阅型协议（MQTT）在此建立测点订阅
+                List<MeasurementPoint> outputPoints = pointRepository.findByChannelIdAndDirection(
+                        channelId, PointDirection.OUTPUT);
+                adapter.onConnected(outputPoints);
                 channel.setStatus(ChannelStatus.CONNECTED);
                 channelRepository.save(channel);
                 distributionService.pushChannelStatus(channelId, ChannelStatus.CONNECTED.name());
@@ -341,26 +291,16 @@ public class ChannelService {
 
     private void markPointsCommLost(String channelId) {
         try {
-            // 只标 OUTPUT：INPUT 的值由传播驱动、与目标通道能否送达无关，
-            // 标 COMM_LOST 会在下一轮传播中被 GOOD 覆盖，产生无意义的抖动
-            List<MeasurementPoint> boundPoints = pointSourceService.findOutputPointsForChannel(channelId);
-            List<String> pointIds = boundPoints.stream().map(MeasurementPoint::getPointId).distinct().toList();
+            // 只标 OUTPUT：INPUT 的值由传播驱动、与目标通道能否送达无关
+            List<MeasurementPoint> outputPoints = pointRepository.findByChannelIdAndDirection(
+                    channelId, PointDirection.OUTPUT);
             List<PointValue> commLost = new ArrayList<>();
-            for (String pointId : pointIds) {
-                Set<String> remaining = pointSourceService.bindingChannelIds(pointId);
-                remaining.remove(channelId); // 本通道来源即将不可用
-                if (remaining.isEmpty()) {
-                    // 唯一来源：清基线并标记 COMM_LOST
-                    changeGate.removePoints(List.of(pointId));
-                    PointValue pv = PointValue.commLost(pointId);
-                    pv.setSourceChannelId(channelId);
-                    pointValueCache.save(pv);
-                    commLost.add(pv);
-                } else {
-                    // 多来源：只收敛来源集合、保留权威基线，让其余 GOOD 来源继续供给，
-                    // 不清基线（清了会把幸存来源的未变化值当变化重推）
-                    changeGate.syncPointBindings(pointId, remaining);
-                }
+            for (MeasurementPoint point : outputPoints) {
+                changeGate.removePoints(List.of(point.getPointId()));
+                PointValue pv = PointValue.commLost(point.getPointId());
+                pv.setSourceChannelId(channelId);
+                pointValueCache.save(pv);
+                commLost.add(pv);
             }
             // 推给订阅端：否则前端一直显示掉线前的旧 GOOD 值
             if (!commLost.isEmpty()) {

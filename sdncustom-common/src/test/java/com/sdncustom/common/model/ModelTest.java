@@ -165,7 +165,7 @@ class ModelTest {
         LocalDateTime now = LocalDateTime.now();
         MeasurementPoint point = new MeasurementPoint(
                 "point_001", "default", "测试测点", "ch_001", "40001",
-                PointDataType.INT16, "°C", PointDirection.OUTPUT, null, 0.5, now, now, null
+                PointDataType.INT16, "°C", PointDirection.OUTPUT, null, 0.5, now, now
         );
 
         assertEquals("point_001", point.getPointId());

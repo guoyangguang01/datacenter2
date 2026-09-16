@@ -5,1484 +5,1676 @@
       "pointName": "设备1运行状态",
       "dataType": "BOOL",
       "unit": "",
-      "bindings": [
-        {
-          "channelId": "ch_tcp_mock",
-          "address": "bool_001"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_tcp_mock",
+      "address": "bool_001"
     },
     {
       "pointId": "tcp_bool_002",
       "pointName": "设备2运行状态",
       "dataType": "BOOL",
       "unit": "",
-      "bindings": [
-        {
-          "channelId": "ch_tcp_mock",
-          "address": "bool_002"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_tcp_mock",
+      "address": "bool_002"
     },
     {
       "pointId": "tcp_bool_003",
       "pointName": "设备3运行状态",
       "dataType": "BOOL",
       "unit": "",
-      "bindings": [
-        {
-          "channelId": "ch_tcp_mock",
-          "address": "bool_003"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_tcp_mock",
+      "address": "bool_003"
     },
     {
       "pointId": "tcp_bool_004",
       "pointName": "报警信号",
       "dataType": "BOOL",
       "unit": "",
-      "bindings": [
-        {
-          "channelId": "ch_tcp_mock",
-          "address": "bool_004"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_tcp_mock",
+      "address": "bool_004"
     },
     {
       "pointId": "tcp_bool_005",
       "pointName": "联锁状态",
       "dataType": "BOOL",
       "unit": "",
-      "bindings": [
-        {
-          "channelId": "ch_tcp_mock",
-          "address": "bool_005"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_tcp_mock",
+      "address": "bool_005"
     },
     {
       "pointId": "tcp_bool_009",
       "pointName": "门禁状态",
       "dataType": "BOOL",
       "unit": "",
-      "bindings": [
-        {
-          "channelId": "ch_tcp_mock",
-          "address": "bool_009"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_tcp_mock",
+      "address": "bool_009"
     },
     {
       "pointId": "tcp_int16_001",
       "pointName": "温度设定值",
       "dataType": "INT16",
       "unit": "°C",
-      "bindings": [
-        {
-          "channelId": "ch_tcp_mock",
-          "address": "int16_001"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_tcp_mock",
+      "address": "int16_001"
     },
     {
       "pointId": "tcp_int16_004",
       "pointName": "液位设定值",
       "dataType": "INT16",
       "unit": "mm",
-      "bindings": [
-        {
-          "channelId": "ch_tcp_mock",
-          "address": "int16_004"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_tcp_mock",
+      "address": "int16_004"
     },
     {
       "pointId": "tcp_int16_005",
       "pointName": "转速设定值",
       "dataType": "INT16",
       "unit": "RPM",
-      "bindings": [
-        {
-          "channelId": "ch_tcp_mock",
-          "address": "int16_005"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_tcp_mock",
+      "address": "int16_005"
     },
     {
       "pointId": "tcp_int32_001",
       "pointName": "生产计数",
       "dataType": "INT32",
       "unit": "件",
-      "bindings": [
-        {
-          "channelId": "ch_tcp_mock",
-          "address": "int32_001"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_tcp_mock",
+      "address": "int32_001"
     },
     {
       "pointId": "tcp_int32_004",
       "pointName": "运行时间",
       "dataType": "INT32",
       "unit": "秒",
-      "bindings": [
-        {
-          "channelId": "ch_tcp_mock",
-          "address": "int32_004"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_tcp_mock",
+      "address": "int32_004"
     },
     {
       "pointId": "tcp_int32_007",
       "pointName": "产品A计数",
       "dataType": "INT32",
       "unit": "件",
-      "bindings": [
-        {
-          "channelId": "ch_tcp_mock",
-          "address": "int32_007"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_tcp_mock",
+      "address": "int32_007"
     },
     {
       "pointId": "tcp_float32_001",
       "pointName": "环境温度",
       "dataType": "FLOAT32",
       "unit": "°C",
-      "bindings": [
-        {
-          "channelId": "ch_tcp_mock",
-          "address": "float32_001"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_tcp_mock",
+      "address": "float32_001"
     },
     {
       "pointId": "tcp_float32_006",
       "pointName": "大气压力",
       "dataType": "FLOAT32",
       "unit": "kPa",
-      "bindings": [
-        {
-          "channelId": "ch_tcp_mock",
-          "address": "float32_006"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_tcp_mock",
+      "address": "float32_006"
     },
     {
       "pointId": "tcp_float32_008",
       "pointName": "主管流量",
       "dataType": "FLOAT32",
       "unit": "L/min",
-      "bindings": [
-        {
-          "channelId": "ch_tcp_mock",
-          "address": "float32_008"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_tcp_mock",
+      "address": "float32_008"
     },
     {
       "pointId": "tcp_float32_009",
       "pointName": "储罐液位",
       "dataType": "FLOAT32",
       "unit": "%",
-      "bindings": [
-        {
-          "channelId": "ch_tcp_mock",
-          "address": "float32_009"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_tcp_mock",
+      "address": "float32_009"
     },
     {
       "pointId": "tcp_float64_001",
       "pointName": "精确测量值1",
       "dataType": "FLOAT64",
       "unit": "mm",
-      "bindings": [
-        {
-          "channelId": "ch_tcp_mock",
-          "address": "float64_001"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_tcp_mock",
+      "address": "float64_001"
     },
     {
       "pointId": "tcp_float64_006",
       "pointName": "电压有效值",
       "dataType": "FLOAT64",
       "unit": "V",
-      "bindings": [
-        {
-          "channelId": "ch_tcp_mock",
-          "address": "float64_006"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_tcp_mock",
+      "address": "float64_006"
     },
     {
       "pointId": "tcp_float64_007",
       "pointName": "电流有效值",
       "dataType": "FLOAT64",
       "unit": "A",
-      "bindings": [
-        {
-          "channelId": "ch_tcp_mock",
-          "address": "float64_007"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_tcp_mock",
+      "address": "float64_007"
     },
     {
       "pointId": "tcp_float64_008",
       "pointName": "有功功率",
       "dataType": "FLOAT64",
       "unit": "W",
-      "bindings": [
-        {
-          "channelId": "ch_tcp_mock",
-          "address": "float64_008"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_tcp_mock",
+      "address": "float64_008"
     },
     {
       "pointId": "tcp_string_001",
       "pointName": "设备标识",
       "dataType": "STRING",
       "unit": "",
-      "bindings": [
-        {
-          "channelId": "ch_tcp_mock",
-          "address": "string_001"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_tcp_mock",
+      "address": "string_001"
     },
     {
       "pointId": "tcp_string_002",
       "pointName": "运行状态",
       "dataType": "STRING",
       "unit": "",
-      "bindings": [
-        {
-          "channelId": "ch_tcp_mock",
-          "address": "string_002"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_tcp_mock",
+      "address": "string_002"
     },
     {
       "pointId": "tcp_string_003",
       "pointName": "告警状态",
       "dataType": "STRING",
       "unit": "",
-      "bindings": [
-        {
-          "channelId": "ch_tcp_mock",
-          "address": "string_003"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_tcp_mock",
+      "address": "string_003"
     },
     {
       "pointId": "tcp_string_004",
       "pointName": "运行模式",
       "dataType": "STRING",
       "unit": "",
-      "bindings": [
-        {
-          "channelId": "ch_tcp_mock",
-          "address": "string_004"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_tcp_mock",
+      "address": "string_004"
     },
     {
       "pointId": "tcp_string_007",
       "pointName": "质量状态",
       "dataType": "STRING",
       "unit": "",
-      "bindings": [
-        {
-          "channelId": "ch_tcp_mock",
-          "address": "string_007"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_tcp_mock",
+      "address": "string_007"
     },
     {
       "pointId": "modbus_temp_001",
       "pointName": "管道温度1",
       "dataType": "INT16",
       "unit": "°C",
-      "bindings": [
-        {
-          "channelId": "ch_modbus_mock",
-          "address": "40001"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_modbus_mock",
+      "address": "40001"
     },
     {
       "pointId": "modbus_temp_002",
       "pointName": "管道温度2",
       "dataType": "INT16",
       "unit": "°C",
-      "bindings": [
-        {
-          "channelId": "ch_modbus_mock",
-          "address": "40007"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_modbus_mock",
+      "address": "40007"
     },
     {
       "pointId": "modbus_pressure_001",
       "pointName": "管道压力1",
       "dataType": "INT16",
       "unit": "kPa",
-      "bindings": [
-        {
-          "channelId": "ch_modbus_mock",
-          "address": "40002"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_modbus_mock",
+      "address": "40002"
     },
     {
       "pointId": "modbus_pressure_002",
       "pointName": "管道压力2",
       "dataType": "INT16",
       "unit": "kPa",
-      "bindings": [
-        {
-          "channelId": "ch_modbus_mock",
-          "address": "40008"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_modbus_mock",
+      "address": "40008"
     },
     {
       "pointId": "modbus_flow_001",
       "pointName": "主管流量",
       "dataType": "INT16",
       "unit": "L/min",
-      "bindings": [
-        {
-          "channelId": "ch_modbus_mock",
-          "address": "40003"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_modbus_mock",
+      "address": "40003"
     },
     {
       "pointId": "modbus_flow_002",
       "pointName": "支管流量",
       "dataType": "INT16",
       "unit": "L/min",
-      "bindings": [
-        {
-          "channelId": "ch_modbus_mock",
-          "address": "40009"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_modbus_mock",
+      "address": "40009"
     },
     {
       "pointId": "modbus_voltage_001",
       "pointName": "电压A相",
       "dataType": "INT16",
       "unit": "V",
-      "bindings": [
-        {
-          "channelId": "ch_modbus_mock",
-          "address": "40013"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_modbus_mock",
+      "address": "40013"
     },
     {
       "pointId": "modbus_voltage_002",
       "pointName": "电压B相",
       "dataType": "INT16",
       "unit": "V",
-      "bindings": [
-        {
-          "channelId": "ch_modbus_mock",
-          "address": "40014"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_modbus_mock",
+      "address": "40014"
     },
     {
       "pointId": "modbus_current_001",
       "pointName": "电流A相",
       "dataType": "INT16",
       "unit": "A",
-      "bindings": [
-        {
-          "channelId": "ch_modbus_mock",
-          "address": "40016"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_modbus_mock",
+      "address": "40016"
     },
     {
       "pointId": "modbus_power_001",
       "pointName": "有功功率",
       "dataType": "INT16",
       "unit": "W",
-      "bindings": [
-        {
-          "channelId": "ch_modbus_mock",
-          "address": "40019"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_modbus_mock",
+      "address": "40019"
     },
     {
       "pointId": "modbus_speed_001",
       "pointName": "电机转速1",
       "dataType": "INT16",
       "unit": "RPM",
-      "bindings": [
-        {
-          "channelId": "ch_modbus_mock",
-          "address": "40005"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_modbus_mock",
+      "address": "40005"
     },
     {
       "pointId": "modbus_speed_002",
       "pointName": "电机转速2",
       "dataType": "INT16",
       "unit": "RPM",
-      "bindings": [
-        {
-          "channelId": "ch_modbus_mock",
-          "address": "40010"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_modbus_mock",
+      "address": "40010"
     },
     {
       "pointId": "modbus_level_001",
       "pointName": "储罐液位1",
       "dataType": "INT16",
       "unit": "%",
-      "bindings": [
-        {
-          "channelId": "ch_modbus_mock",
-          "address": "40011"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_modbus_mock",
+      "address": "40011"
     },
     {
       "pointId": "modbus_level_002",
       "pointName": "储罐液位2",
       "dataType": "INT16",
       "unit": "%",
-      "bindings": [
-        {
-          "channelId": "ch_modbus_mock",
-          "address": "40012"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_modbus_mock",
+      "address": "40012"
     },
     {
       "pointId": "modbus_humidity_001",
       "pointName": "环境湿度",
       "dataType": "INT16",
       "unit": "%",
-      "bindings": [
-        {
-          "channelId": "ch_modbus_mock",
-          "address": "40006"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_modbus_mock",
+      "address": "40006"
     },
     {
       "pointId": "modbus_vibration_001",
       "pointName": "振动1",
       "dataType": "INT16",
       "unit": "mm/s",
-      "bindings": [
-        {
-          "channelId": "ch_modbus_mock",
-          "address": "40028"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_modbus_mock",
+      "address": "40028"
     },
     {
       "pointId": "modbus_coil_pump1",
       "pointName": "泵1运行",
       "dataType": "BOOL",
       "unit": "",
-      "bindings": [
-        {
-          "channelId": "ch_modbus_mock",
-          "address": "1"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_modbus_mock",
+      "address": "1"
     },
     {
       "pointId": "modbus_coil_pump2",
       "pointName": "泵2运行",
       "dataType": "BOOL",
       "unit": "",
-      "bindings": [
-        {
-          "channelId": "ch_modbus_mock",
-          "address": "2"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_modbus_mock",
+      "address": "2"
     },
     {
       "pointId": "modbus_coil_valve1",
       "pointName": "阀门1状态",
       "dataType": "BOOL",
       "unit": "",
-      "bindings": [
-        {
-          "channelId": "ch_modbus_mock",
-          "address": "3"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_modbus_mock",
+      "address": "3"
     },
     {
       "pointId": "modbus_coil_valve2",
       "pointName": "阀门2状态",
       "dataType": "BOOL",
       "unit": "",
-      "bindings": [
-        {
-          "channelId": "ch_modbus_mock",
-          "address": "4"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_modbus_mock",
+      "address": "4"
     },
     {
       "pointId": "modbus_coil_heater1",
       "pointName": "加热器1",
       "dataType": "BOOL",
       "unit": "",
-      "bindings": [
-        {
-          "channelId": "ch_modbus_mock",
-          "address": "5"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_modbus_mock",
+      "address": "5"
     },
     {
       "pointId": "modbus_coil_fan1",
       "pointName": "风机1",
       "dataType": "BOOL",
       "unit": "",
-      "bindings": [
-        {
-          "channelId": "ch_modbus_mock",
-          "address": "7"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_modbus_mock",
+      "address": "7"
     },
     {
       "pointId": "modbus_float32_001",
       "pointName": "32位浮点温度",
       "dataType": "FLOAT32",
       "unit": "°C",
-      "bindings": [
-        {
-          "channelId": "ch_modbus_mock",
-          "address": "40031"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_modbus_mock",
+      "address": "40031"
     },
     {
       "pointId": "modbus_int32_001",
       "pointName": "32位整数计数",
       "dataType": "INT32",
       "unit": "件",
-      "bindings": [
-        {
-          "channelId": "ch_modbus_mock",
-          "address": "40033"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_modbus_mock",
+      "address": "40033"
     },
     {
       "pointId": "modbus_float64_001",
       "pointName": "64位浮点测量",
       "dataType": "FLOAT64",
       "unit": "mm",
-      "bindings": [
-        {
-          "channelId": "ch_modbus_mock",
-          "address": "40035"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_modbus_mock",
+      "address": "40035"
     },
     {
       "pointId": "mqtt_temp_room1",
       "pointName": "房间1温度",
       "dataType": "FLOAT64",
       "unit": "°C",
-      "bindings": [
-        {
-          "channelId": "ch_mqtt_mock",
-          "address": "sensors/temperature/room1"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_mqtt_mock",
+      "address": "sensors/temperature/room1"
     },
     {
       "pointId": "mqtt_temp_room2",
       "pointName": "房间2温度",
       "dataType": "FLOAT64",
       "unit": "°C",
-      "bindings": [
-        {
-          "channelId": "ch_mqtt_mock",
-          "address": "sensors/temperature/room2"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_mqtt_mock",
+      "address": "sensors/temperature/room2"
     },
     {
       "pointId": "mqtt_temp_boiler",
       "pointName": "锅炉温度",
       "dataType": "FLOAT64",
       "unit": "°C",
-      "bindings": [
-        {
-          "channelId": "ch_mqtt_mock",
-          "address": "sensors/temperature/boiler"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_mqtt_mock",
+      "address": "sensors/temperature/boiler"
     },
     {
       "pointId": "mqtt_temp_coldroom",
       "pointName": "冷库温度",
       "dataType": "FLOAT64",
       "unit": "°C",
-      "bindings": [
-        {
-          "channelId": "ch_mqtt_mock",
-          "address": "sensors/temperature/coldroom"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_mqtt_mock",
+      "address": "sensors/temperature/coldroom"
     },
     {
       "pointId": "mqtt_humidity_room1",
       "pointName": "房间1湿度",
       "dataType": "FLOAT64",
       "unit": "%",
-      "bindings": [
-        {
-          "channelId": "ch_mqtt_mock",
-          "address": "sensors/humidity/room1"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_mqtt_mock",
+      "address": "sensors/humidity/room1"
     },
     {
       "pointId": "mqtt_humidity_cleanroom",
       "pointName": "洁净室湿度",
       "dataType": "FLOAT64",
       "unit": "%",
-      "bindings": [
-        {
-          "channelId": "ch_mqtt_mock",
-          "address": "sensors/humidity/cleanroom"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_mqtt_mock",
+      "address": "sensors/humidity/cleanroom"
     },
     {
       "pointId": "mqtt_pressure_pipeline1",
       "pointName": "管道1压力",
       "dataType": "FLOAT64",
       "unit": "kPa",
-      "bindings": [
-        {
-          "channelId": "ch_mqtt_mock",
-          "address": "sensors/pressure/pipeline1"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_mqtt_mock",
+      "address": "sensors/pressure/pipeline1"
     },
     {
       "pointId": "mqtt_pressure_steam",
       "pointName": "蒸汽压力",
       "dataType": "FLOAT64",
       "unit": "kPa",
-      "bindings": [
-        {
-          "channelId": "ch_mqtt_mock",
-          "address": "sensors/pressure/steam"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_mqtt_mock",
+      "address": "sensors/pressure/steam"
     },
     {
       "pointId": "mqtt_pressure_hydraulic",
       "pointName": "液压压力",
       "dataType": "FLOAT64",
       "unit": "kPa",
-      "bindings": [
-        {
-          "channelId": "ch_mqtt_mock",
-          "address": "sensors/pressure/hydraulic"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_mqtt_mock",
+      "address": "sensors/pressure/hydraulic"
     },
     {
       "pointId": "mqtt_flow_main",
       "pointName": "主管流量",
       "dataType": "FLOAT64",
       "unit": "L/min",
-      "bindings": [
-        {
-          "channelId": "ch_mqtt_mock",
-          "address": "sensors/flow/mainpipe"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_mqtt_mock",
+      "address": "sensors/flow/mainpipe"
     },
     {
       "pointId": "mqtt_level_tank1",
       "pointName": "储罐1液位",
       "dataType": "FLOAT64",
       "unit": "%",
-      "bindings": [
-        {
-          "channelId": "ch_mqtt_mock",
-          "address": "sensors/level/tank1"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_mqtt_mock",
+      "address": "sensors/level/tank1"
     },
     {
       "pointId": "mqtt_pump01_status",
       "pointName": "泵1状态",
       "dataType": "STRING",
       "unit": "",
-      "bindings": [
-        {
-          "channelId": "ch_mqtt_mock",
-          "address": "devices/pump01/status"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_mqtt_mock",
+      "address": "devices/pump01/status"
     },
     {
       "pointId": "mqtt_pump01_speed",
       "pointName": "泵1转速",
       "dataType": "INT32",
       "unit": "RPM",
-      "bindings": [
-        {
-          "channelId": "ch_mqtt_mock",
-          "address": "devices/pump01/speed"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_mqtt_mock",
+      "address": "devices/pump01/speed"
     },
     {
       "pointId": "mqtt_pump01_current",
       "pointName": "泵1电流",
       "dataType": "FLOAT64",
       "unit": "A",
-      "bindings": [
-        {
-          "channelId": "ch_mqtt_mock",
-          "address": "devices/pump01/current"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_mqtt_mock",
+      "address": "devices/pump01/current"
     },
     {
       "pointId": "mqtt_pump03_status",
       "pointName": "泵3状态",
       "dataType": "STRING",
       "unit": "",
-      "bindings": [
-        {
-          "channelId": "ch_mqtt_mock",
-          "address": "devices/pump03/status"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_mqtt_mock",
+      "address": "devices/pump03/status"
     },
     {
       "pointId": "mqtt_fan01_status",
       "pointName": "风机1状态",
       "dataType": "STRING",
       "unit": "",
-      "bindings": [
-        {
-          "channelId": "ch_mqtt_mock",
-          "address": "devices/fan01/status"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_mqtt_mock",
+      "address": "devices/fan01/status"
     },
     {
       "pointId": "mqtt_valve01_state",
       "pointName": "阀门1状态",
       "dataType": "BOOL",
       "unit": "",
-      "bindings": [
-        {
-          "channelId": "ch_mqtt_mock",
-          "address": "valves/valve01/state"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_mqtt_mock",
+      "address": "valves/valve01/state"
     },
     {
       "pointId": "mqtt_valve03_position",
       "pointName": "阀门3开度",
       "dataType": "FLOAT64",
       "unit": "%",
-      "bindings": [
-        {
-          "channelId": "ch_mqtt_mock",
-          "address": "valves/valve03/position"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_mqtt_mock",
+      "address": "valves/valve03/position"
     },
     {
       "pointId": "mqtt_voltage_001",
       "pointName": "电压",
       "dataType": "FLOAT64",
       "unit": "V",
-      "bindings": [
-        {
-          "channelId": "ch_mqtt_mock",
-          "address": "meters/emeter01/voltage"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_mqtt_mock",
+      "address": "meters/emeter01/voltage"
     },
     {
       "pointId": "mqtt_current_001",
       "pointName": "电流",
       "dataType": "FLOAT64",
       "unit": "A",
-      "bindings": [
-        {
-          "channelId": "ch_mqtt_mock",
-          "address": "meters/emeter01/current"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_mqtt_mock",
+      "address": "meters/emeter01/current"
     },
     {
       "pointId": "mqtt_power_001",
       "pointName": "功率",
       "dataType": "FLOAT64",
       "unit": "W",
-      "bindings": [
-        {
-          "channelId": "ch_mqtt_mock",
-          "address": "meters/emeter01/power"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_mqtt_mock",
+      "address": "meters/emeter01/power"
     },
     {
       "pointId": "mqtt_energy_001",
       "pointName": "累计电量",
       "dataType": "FLOAT64",
       "unit": "kWh",
-      "bindings": [
-        {
-          "channelId": "ch_mqtt_mock",
-          "address": "meters/emeter01/energy"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_mqtt_mock",
+      "address": "meters/emeter01/energy"
     },
     {
       "pointId": "mqtt_production_total",
       "pointName": "生产总数",
       "dataType": "INT32",
       "unit": "件",
-      "bindings": [
-        {
-          "channelId": "ch_mqtt_mock",
-          "address": "counters/production/total"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_mqtt_mock",
+      "address": "counters/production/total"
     },
     {
       "pointId": "mqtt_defects",
       "pointName": "缺陷数",
       "dataType": "INT32",
       "unit": "件",
-      "bindings": [
-        {
-          "channelId": "ch_mqtt_mock",
-          "address": "counters/production/defects"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_mqtt_mock",
+      "address": "counters/production/defects"
     },
     {
       "pointId": "mqtt_co2",
       "pointName": "CO2浓度",
       "dataType": "FLOAT64",
       "unit": "ppm",
-      "bindings": [
-        {
-          "channelId": "ch_mqtt_mock",
-          "address": "environment/co2"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_mqtt_mock",
+      "address": "environment/co2"
     },
     {
       "pointId": "mqtt_pm25",
       "pointName": "PM2.5",
       "dataType": "FLOAT64",
       "unit": "μg/m³",
-      "bindings": [
-        {
-          "channelId": "ch_mqtt_mock",
-          "address": "environment/pm25"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_mqtt_mock",
+      "address": "environment/pm25"
     },
     {
       "pointId": "mqtt_alarm_latest",
       "pointName": "最新告警",
       "dataType": "STRING",
       "unit": "",
-      "bindings": [
-        {
-          "channelId": "ch_mqtt_mock",
-          "address": "alarms/latest"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_mqtt_mock",
+      "address": "alarms/latest"
     },
     {
       "pointId": "mqtt_system_status",
       "pointName": "系统状态",
       "dataType": "STRING",
       "unit": "",
-      "bindings": [
-        {
-          "channelId": "ch_mqtt_mock",
-          "address": "system/status"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_mqtt_mock",
+      "address": "system/status"
     },
     {
       "pointId": "mqtt_system_cpu",
       "pointName": "CPU使用率",
       "dataType": "FLOAT64",
       "unit": "%",
-      "bindings": [
-        {
-          "channelId": "ch_mqtt_mock",
-          "address": "system/cpu"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_mqtt_mock",
+      "address": "system/cpu"
     },
     {
       "pointId": "opcua_temp_room1",
       "pointName": "房间1温度",
       "dataType": "FLOAT64",
       "unit": "°C",
-      "bindings": [
-        {
-          "channelId": "ch_opcua_mock",
-          "address": "ns=2;s=Temperature/Room1"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_opcua_mock",
+      "address": "ns=2;s=Temperature/Room1"
     },
     {
       "pointId": "opcua_temp_room2",
       "pointName": "房间2温度",
       "dataType": "FLOAT64",
       "unit": "°C",
-      "bindings": [
-        {
-          "channelId": "ch_opcua_mock",
-          "address": "ns=2;s=Temperature/Room2"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_opcua_mock",
+      "address": "ns=2;s=Temperature/Room2"
     },
     {
       "pointId": "opcua_temp_boiler",
       "pointName": "锅炉温度",
       "dataType": "FLOAT64",
       "unit": "°C",
-      "bindings": [
-        {
-          "channelId": "ch_opcua_mock",
-          "address": "ns=2;s=Temperature/Boiler"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_opcua_mock",
+      "address": "ns=2;s=Temperature/Boiler"
     },
     {
       "pointId": "opcua_temp_coldroom",
       "pointName": "冷库温度",
       "dataType": "FLOAT64",
       "unit": "°C",
-      "bindings": [
-        {
-          "channelId": "ch_opcua_mock",
-          "address": "ns=2;s=Temperature/ColdRoom"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_opcua_mock",
+      "address": "ns=2;s=Temperature/ColdRoom"
     },
     {
       "pointId": "opcua_pressure_001",
       "pointName": "管道1压力",
       "dataType": "FLOAT64",
       "unit": "kPa",
-      "bindings": [
-        {
-          "channelId": "ch_opcua_mock",
-          "address": "ns=2;s=Pressure/Pipeline1"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_opcua_mock",
+      "address": "ns=2;s=Pressure/Pipeline1"
     },
     {
       "pointId": "opcua_pressure_steam",
       "pointName": "蒸汽压力",
       "dataType": "FLOAT64",
       "unit": "kPa",
-      "bindings": [
-        {
-          "channelId": "ch_opcua_mock",
-          "address": "ns=2;s=Pressure/Steam"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_opcua_mock",
+      "address": "ns=2;s=Pressure/Steam"
     },
     {
       "pointId": "opcua_pressure_hydraulic",
       "pointName": "液压压力",
       "dataType": "FLOAT64",
       "unit": "kPa",
-      "bindings": [
-        {
-          "channelId": "ch_opcua_mock",
-          "address": "ns=2;s=Pressure/Hydraulic"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_opcua_mock",
+      "address": "ns=2;s=Pressure/Hydraulic"
     },
     {
       "pointId": "opcua_flow_001",
       "pointName": "主管流量",
       "dataType": "FLOAT64",
       "unit": "L/min",
-      "bindings": [
-        {
-          "channelId": "ch_opcua_mock",
-          "address": "ns=2;s=Flow/MainPipe"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_opcua_mock",
+      "address": "ns=2;s=Flow/MainPipe"
     },
     {
       "pointId": "opcua_flow_cooling",
       "pointName": "冷却流量",
       "dataType": "FLOAT64",
       "unit": "L/min",
-      "bindings": [
-        {
-          "channelId": "ch_opcua_mock",
-          "address": "ns=2;s=Flow/Cooling"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_opcua_mock",
+      "address": "ns=2;s=Flow/Cooling"
     },
     {
       "pointId": "opcua_level_001",
       "pointName": "罐1液位",
       "dataType": "FLOAT64",
       "unit": "%",
-      "bindings": [
-        {
-          "channelId": "ch_opcua_mock",
-          "address": "ns=2;s=Level/Tank1"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_opcua_mock",
+      "address": "ns=2;s=Level/Tank1"
     },
     {
       "pointId": "opcua_level_002",
       "pointName": "罐2液位",
       "dataType": "FLOAT64",
       "unit": "%",
-      "bindings": [
-        {
-          "channelId": "ch_opcua_mock",
-          "address": "ns=2;s=Level/Tank2"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_opcua_mock",
+      "address": "ns=2;s=Level/Tank2"
     },
     {
       "pointId": "opcua_pump01_status",
       "pointName": "泵1状态",
       "dataType": "BOOL",
       "unit": "",
-      "bindings": [
-        {
-          "channelId": "ch_opcua_mock",
-          "address": "ns=2;s=Status/Pump01"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_opcua_mock",
+      "address": "ns=2;s=Status/Pump01"
     },
     {
       "pointId": "opcua_pump03_status",
       "pointName": "泵3状态",
       "dataType": "BOOL",
       "unit": "",
-      "bindings": [
-        {
-          "channelId": "ch_opcua_mock",
-          "address": "ns=2;s=Status/Pump03"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_opcua_mock",
+      "address": "ns=2;s=Status/Pump03"
     },
     {
       "pointId": "opcua_valve01_status",
       "pointName": "阀门1状态",
       "dataType": "BOOL",
       "unit": "",
-      "bindings": [
-        {
-          "channelId": "ch_opcua_mock",
-          "address": "ns=2;s=Status/Valve01"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_opcua_mock",
+      "address": "ns=2;s=Status/Valve01"
     },
     {
       "pointId": "opcua_fan01_status",
       "pointName": "风机1状态",
       "dataType": "BOOL",
       "unit": "",
-      "bindings": [
-        {
-          "channelId": "ch_opcua_mock",
-          "address": "ns=2;s=Status/Fan01"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_opcua_mock",
+      "address": "ns=2;s=Status/Fan01"
     },
     {
       "pointId": "opcua_voltage",
       "pointName": "电压",
       "dataType": "FLOAT64",
       "unit": "V",
-      "bindings": [
-        {
-          "channelId": "ch_opcua_mock",
-          "address": "ns=2;s=Power/Voltage"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_opcua_mock",
+      "address": "ns=2;s=Power/Voltage"
     },
     {
       "pointId": "opcua_current",
       "pointName": "电流",
       "dataType": "FLOAT64",
       "unit": "A",
-      "bindings": [
-        {
-          "channelId": "ch_opcua_mock",
-          "address": "ns=2;s=Power/Current"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_opcua_mock",
+      "address": "ns=2;s=Power/Current"
     },
     {
       "pointId": "opcua_power",
       "pointName": "有功功率",
       "dataType": "FLOAT64",
       "unit": "W",
-      "bindings": [
-        {
-          "channelId": "ch_opcua_mock",
-          "address": "ns=2;s=Power/ActivePower"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_opcua_mock",
+      "address": "ns=2;s=Power/ActivePower"
     },
     {
       "pointId": "opcua_energy",
       "pointName": "累计电量",
       "dataType": "FLOAT64",
       "unit": "kWh",
-      "bindings": [
-        {
-          "channelId": "ch_opcua_mock",
-          "address": "ns=2;s=Power/Energy"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_opcua_mock",
+      "address": "ns=2;s=Power/Energy"
     },
     {
       "pointId": "opcua_production_counter",
       "pointName": "生产计数",
       "dataType": "INT32",
       "unit": "件",
-      "bindings": [
-        {
-          "channelId": "ch_opcua_mock",
-          "address": "ns=2;s=Counter/Production"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_opcua_mock",
+      "address": "ns=2;s=Counter/Production"
     },
     {
       "pointId": "opcua_defects_counter",
       "pointName": "缺陷计数",
       "dataType": "INT32",
       "unit": "件",
-      "bindings": [
-        {
-          "channelId": "ch_opcua_mock",
-          "address": "ns=2;s=Counter/Defects"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_opcua_mock",
+      "address": "ns=2;s=Counter/Defects"
     },
     {
       "pointId": "opcua_co2",
       "pointName": "CO2浓度",
       "dataType": "FLOAT64",
       "unit": "ppm",
-      "bindings": [
-        {
-          "channelId": "ch_opcua_mock",
-          "address": "ns=2;s=Environment/CO2"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_opcua_mock",
+      "address": "ns=2;s=Environment/CO2"
     },
     {
       "pointId": "opcua_pm25",
       "pointName": "PM2.5",
       "dataType": "FLOAT64",
       "unit": "μg/m³",
-      "bindings": [
-        {
-          "channelId": "ch_opcua_mock",
-          "address": "ns=2;s=Environment/PM25"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_opcua_mock",
+      "address": "ns=2;s=Environment/PM25"
     },
     {
       "pointId": "opcua_alarm_status",
       "pointName": "告警状态",
       "dataType": "STRING",
       "unit": "",
-      "bindings": [
-        {
-          "channelId": "ch_opcua_mock",
-          "address": "ns=2;s=Alarm/Status"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_opcua_mock",
+      "address": "ns=2;s=Alarm/Status"
     },
     {
       "pointId": "opcua_operation_mode",
       "pointName": "运行模式",
       "dataType": "STRING",
       "unit": "",
-      "bindings": [
-        {
-          "channelId": "ch_opcua_mock",
-          "address": "ns=2;s=Mode/Operation"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_opcua_mock",
+      "address": "ns=2;s=Mode/Operation"
     },
     {
       "pointId": "opcua_system_status",
       "pointName": "系统状态",
       "dataType": "STRING",
       "unit": "",
-      "bindings": [
-        {
-          "channelId": "ch_opcua_mock",
-          "address": "ns=2;s=Status/SystemStatus"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_opcua_mock",
+      "address": "ns=2;s=Status/SystemStatus"
     },
     {
       "pointId": "opcua_communication",
       "pointName": "通信状态",
       "dataType": "STRING",
       "unit": "",
-      "bindings": [
-        {
-          "channelId": "ch_opcua_mock",
-          "address": "ns=2;s=Status/Communication"
-        }
-      ],
       "businessId": "default",
-      "direction": "OUTPUT"
+      "direction": "OUTPUT",
+      "channelId": "ch_opcua_mock",
+      "address": "ns=2;s=Status/Communication"
+    },
+    {
+      "pointId": "in_tcp2mb_bool_001",
+      "pointName": "设备1运行→泵控制",
+      "dataType": "BOOL",
+      "unit": "",
+      "channelId": "ch_modbus_mock",
+      "address": "10",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "tcp_bool_001"
+    },
+    {
+      "pointId": "in_tcp2mb_bool_002",
+      "pointName": "设备2运行→泵控制",
+      "dataType": "BOOL",
+      "unit": "",
+      "channelId": "ch_modbus_mock",
+      "address": "11",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "tcp_bool_002"
+    },
+    {
+      "pointId": "in_tcp2mb_bool_004",
+      "pointName": "报警信号→阀控制",
+      "dataType": "BOOL",
+      "unit": "",
+      "channelId": "ch_modbus_mock",
+      "address": "12",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "tcp_bool_003"
+    },
+    {
+      "pointId": "in_tcp2mb_int16_001",
+      "pointName": "温度设定→Modbus写入",
+      "dataType": "INT16",
+      "unit": "°C",
+      "channelId": "ch_modbus_mock",
+      "address": "40050",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "tcp_int16_001"
+    },
+    {
+      "pointId": "in_tcp2mb_int16_004",
+      "pointName": "液位设定→Modbus写入",
+      "dataType": "INT16",
+      "unit": "mm",
+      "channelId": "ch_modbus_mock",
+      "address": "40051",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "tcp_int16_004"
+    },
+    {
+      "pointId": "in_tcp2mb_f32_001",
+      "pointName": "环境温度→Modbus转发",
+      "dataType": "FLOAT32",
+      "unit": "°C",
+      "channelId": "ch_modbus_mock",
+      "address": "40060",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "tcp_float32_001"
+    },
+    {
+      "pointId": "in_tcp2mb_f64_001",
+      "pointName": "精确测量→Modbus转发",
+      "dataType": "FLOAT64",
+      "unit": "mm",
+      "channelId": "ch_modbus_mock",
+      "address": "40070",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "tcp_float64_001"
+    },
+    {
+      "pointId": "in_tcp2mqtt_bool_001",
+      "pointName": "设备1运行→MQTT上报",
+      "dataType": "BOOL",
+      "unit": "",
+      "channelId": "ch_mqtt_mock",
+      "address": "actuators/device1/run",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "tcp_bool_004"
+    },
+    {
+      "pointId": "in_tcp2mqtt_bool_002",
+      "pointName": "设备2运行→MQTT上报",
+      "dataType": "BOOL",
+      "unit": "",
+      "channelId": "ch_mqtt_mock",
+      "address": "actuators/device2/run",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "tcp_bool_005"
+    },
+    {
+      "pointId": "in_tcp2mqtt_bool_004",
+      "pointName": "报警信号→MQTT上报",
+      "dataType": "BOOL",
+      "unit": "",
+      "channelId": "ch_mqtt_mock",
+      "address": "actuators/alarm/status",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "tcp_bool_009"
+    },
+    {
+      "pointId": "in_tcp2mqtt_int16_001",
+      "pointName": "温度设定→MQTT下发",
+      "dataType": "INT16",
+      "unit": "RPM",
+      "channelId": "ch_mqtt_mock",
+      "address": "actuators/temp/setpoint",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "tcp_int16_005"
+    },
+    {
+      "pointId": "in_tcp2mqtt_int32_001",
+      "pointName": "生产计数→MQTT上报",
+      "dataType": "INT32",
+      "unit": "件",
+      "channelId": "ch_mqtt_mock",
+      "address": "actuators/counter/produce",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "tcp_int32_001"
+    },
+    {
+      "pointId": "in_tcp2mqtt_f32_001",
+      "pointName": "环境温度→MQTT转发",
+      "dataType": "FLOAT32",
+      "unit": "kPa",
+      "channelId": "ch_mqtt_mock",
+      "address": "actuators/temperature",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "tcp_float32_006"
+    },
+    {
+      "pointId": "in_tcp2mqtt_str_001",
+      "pointName": "设备标识→MQTT上报",
+      "dataType": "STRING",
+      "unit": "",
+      "channelId": "ch_mqtt_mock",
+      "address": "actuators/device/id",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "tcp_string_001"
+    },
+    {
+      "pointId": "in_tcp2opc_f32_001",
+      "pointName": "环境温度→OPC转发",
+      "dataType": "FLOAT32",
+      "unit": "L/min",
+      "channelId": "ch_opcua_mock",
+      "address": "ns=2;s=Actuators/EnvTemperature",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "tcp_float32_008"
+    },
+    {
+      "pointId": "in_mb2tcp_temp_001",
+      "pointName": "管道温度→TCP写入",
+      "dataType": "INT16",
+      "unit": "°C",
+      "channelId": "ch_tcp_mock",
+      "address": "write_int16_001",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "modbus_temp_001"
+    },
+    {
+      "pointId": "in_mb2tcp_pres_001",
+      "pointName": "管道压力→TCP写入",
+      "dataType": "INT16",
+      "unit": "°C",
+      "channelId": "ch_tcp_mock",
+      "address": "write_int16_002",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "modbus_temp_002"
+    },
+    {
+      "pointId": "in_mb2tcp_flow_001",
+      "pointName": "主管流量→TCP写入",
+      "dataType": "INT16",
+      "unit": "kPa",
+      "channelId": "ch_tcp_mock",
+      "address": "write_int16_003",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "modbus_pressure_001"
+    },
+    {
+      "pointId": "in_mb2tcp_pump1",
+      "pointName": "泵1运行→TCP写入",
+      "dataType": "BOOL",
+      "unit": "",
+      "channelId": "ch_tcp_mock",
+      "address": "write_bool_001",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "modbus_coil_pump1"
+    },
+    {
+      "pointId": "in_mb2tcp_valve1",
+      "pointName": "阀门1→TCP写入",
+      "dataType": "BOOL",
+      "unit": "",
+      "channelId": "ch_tcp_mock",
+      "address": "write_bool_002",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "modbus_coil_pump2"
+    },
+    {
+      "pointId": "in_mb2tcp_f32_001",
+      "pointName": "32位温度→TCP转发",
+      "dataType": "FLOAT32",
+      "unit": "°C",
+      "channelId": "ch_tcp_mock",
+      "address": "write_float32_001",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "modbus_float32_001"
+    },
+    {
+      "pointId": "in_mb2tcp_f64_001",
+      "pointName": "64位测量→TCP转发",
+      "dataType": "FLOAT64",
+      "unit": "mm",
+      "channelId": "ch_tcp_mock",
+      "address": "write_float64_001",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "modbus_float64_001"
+    },
+    {
+      "pointId": "in_mb2mqtt_temp_001",
+      "pointName": "管道温度→MQTT上报",
+      "dataType": "INT16",
+      "unit": "kPa",
+      "channelId": "ch_mqtt_mock",
+      "address": "plc/temperature/pipe1",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "modbus_pressure_002"
+    },
+    {
+      "pointId": "in_mb2mqtt_temp_002",
+      "pointName": "管道温度2→MQTT上报",
+      "dataType": "INT16",
+      "unit": "L/min",
+      "channelId": "ch_mqtt_mock",
+      "address": "plc/temperature/pipe2",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "modbus_flow_001"
+    },
+    {
+      "pointId": "in_mb2mqtt_pres_001",
+      "pointName": "管道压力→MQTT上报",
+      "dataType": "INT16",
+      "unit": "L/min",
+      "channelId": "ch_mqtt_mock",
+      "address": "plc/pressure/pipe1",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "modbus_flow_002"
+    },
+    {
+      "pointId": "in_mb2mqtt_flow_001",
+      "pointName": "主管流量→MQTT上报",
+      "dataType": "INT16",
+      "unit": "V",
+      "channelId": "ch_mqtt_mock",
+      "address": "plc/flow/main",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "modbus_voltage_001"
+    },
+    {
+      "pointId": "in_mb2mqtt_pump1",
+      "pointName": "泵1运行→MQTT上报",
+      "dataType": "BOOL",
+      "unit": "",
+      "channelId": "ch_mqtt_mock",
+      "address": "plc/coils/pump1",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "modbus_coil_valve1"
+    },
+    {
+      "pointId": "in_mb2mqtt_pump2",
+      "pointName": "泵2运行→MQTT上报",
+      "dataType": "BOOL",
+      "unit": "",
+      "channelId": "ch_mqtt_mock",
+      "address": "plc/coils/pump2",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "modbus_coil_valve2"
+    },
+    {
+      "pointId": "in_mb2opc_temp_001",
+      "pointName": "管道温度→OPC写入",
+      "dataType": "INT16",
+      "unit": "V",
+      "channelId": "ch_opcua_mock",
+      "address": "ns=2;s=PLC/Temperature",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "modbus_voltage_002"
+    },
+    {
+      "pointId": "in_mb2opc_pres_001",
+      "pointName": "管道压力→OPC写入",
+      "dataType": "INT16",
+      "unit": "A",
+      "channelId": "ch_opcua_mock",
+      "address": "ns=2;s=PLC/Pressure",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "modbus_current_001"
+    },
+    {
+      "pointId": "in_mb2opc_pump1",
+      "pointName": "泵1运行→OPC写入",
+      "dataType": "BOOL",
+      "unit": "",
+      "channelId": "ch_opcua_mock",
+      "address": "ns=2;s=PLC/Pump1Run",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "modbus_coil_heater1"
+    },
+    {
+      "pointId": "in_mqtt2tcp_temp1",
+      "pointName": "房间1温度→TCP转发",
+      "dataType": "FLOAT64",
+      "unit": "°C",
+      "channelId": "ch_tcp_mock",
+      "address": "write_float64_mqtt_temp1",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "mqtt_temp_room1"
+    },
+    {
+      "pointId": "in_mqtt2tcp_temp2",
+      "pointName": "房间2温度→TCP转发",
+      "dataType": "FLOAT64",
+      "unit": "°C",
+      "channelId": "ch_tcp_mock",
+      "address": "write_float64_mqtt_temp2",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "mqtt_temp_room2"
+    },
+    {
+      "pointId": "in_mqtt2tcp_pres1",
+      "pointName": "管道1压力→TCP转发",
+      "dataType": "FLOAT64",
+      "unit": "°C",
+      "channelId": "ch_tcp_mock",
+      "address": "write_float64_mqtt_pres1",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "mqtt_temp_boiler"
+    },
+    {
+      "pointId": "in_mqtt2tcp_humid1",
+      "pointName": "房间1湿度→TCP转发",
+      "dataType": "FLOAT64",
+      "unit": "°C",
+      "channelId": "ch_tcp_mock",
+      "address": "write_float64_mqtt_humid",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "mqtt_temp_coldroom"
+    },
+    {
+      "pointId": "in_mqtt2tcp_pump1",
+      "pointName": "泵1状态→TCP转发",
+      "dataType": "STRING",
+      "unit": "",
+      "channelId": "ch_tcp_mock",
+      "address": "write_string_mqtt_pump1",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "mqtt_pump01_status"
+    },
+    {
+      "pointId": "in_mqtt2tcp_speed",
+      "pointName": "泵1转速→TCP写入",
+      "dataType": "INT32",
+      "unit": "RPM",
+      "channelId": "ch_tcp_mock",
+      "address": "write_int32_mqtt_speed",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "mqtt_pump01_speed"
+    },
+    {
+      "pointId": "in_mqtt2mb_temp1",
+      "pointName": "房间温度→Modbus转发",
+      "dataType": "FLOAT64",
+      "unit": "%",
+      "channelId": "ch_modbus_mock",
+      "address": "40080",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "mqtt_humidity_room1"
+    },
+    {
+      "pointId": "in_mqtt2mb_pres1",
+      "pointName": "管道压力→Modbus转发",
+      "dataType": "FLOAT64",
+      "unit": "%",
+      "channelId": "ch_modbus_mock",
+      "address": "40082",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "mqtt_humidity_cleanroom"
+    },
+    {
+      "pointId": "in_mqtt2mb_pres_h",
+      "pointName": "液压压力→Modbus转发",
+      "dataType": "FLOAT64",
+      "unit": "kPa",
+      "channelId": "ch_modbus_mock",
+      "address": "40084",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "mqtt_pressure_pipeline1"
+    },
+    {
+      "pointId": "in_mqtt2mb_total",
+      "pointName": "生产总数→Modbus转发",
+      "dataType": "INT32",
+      "unit": "件",
+      "channelId": "ch_modbus_mock",
+      "address": "40090",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "mqtt_production_total"
+    },
+    {
+      "pointId": "in_mqtt2mb_valve1",
+      "pointName": "阀门1→Modbus写入",
+      "dataType": "BOOL",
+      "unit": "",
+      "channelId": "ch_modbus_mock",
+      "address": "20",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "mqtt_valve01_state"
+    },
+    {
+      "pointId": "in_mqtt2opc_temp1",
+      "pointName": "房间温度→OPC转发",
+      "dataType": "FLOAT64",
+      "unit": "kPa",
+      "channelId": "ch_opcua_mock",
+      "address": "ns=2;s=MQTT/Temperature",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "mqtt_pressure_steam"
+    },
+    {
+      "pointId": "in_mqtt2opc_pres1",
+      "pointName": "管道压力→OPC转发",
+      "dataType": "FLOAT64",
+      "unit": "kPa",
+      "channelId": "ch_opcua_mock",
+      "address": "ns=2;s=MQTT/Pressure",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "mqtt_pressure_hydraulic"
+    },
+    {
+      "pointId": "in_mqtt2opc_co2",
+      "pointName": "CO2浓度→OPC转发",
+      "dataType": "FLOAT64",
+      "unit": "L/min",
+      "channelId": "ch_opcua_mock",
+      "address": "ns=2;s=MQTT/CO2",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "mqtt_flow_main"
+    },
+    {
+      "pointId": "in_opc2tcp_temp1",
+      "pointName": "OPC房间1温度→TCP转发",
+      "dataType": "FLOAT64",
+      "unit": "°C",
+      "channelId": "ch_tcp_mock",
+      "address": "write_float64_opc_temp1",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "opcua_temp_room1"
+    },
+    {
+      "pointId": "in_opc2tcp_pres1",
+      "pointName": "OPC管道压力→TCP转发",
+      "dataType": "FLOAT64",
+      "unit": "°C",
+      "channelId": "ch_tcp_mock",
+      "address": "write_float64_opc_pres1",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "opcua_temp_room2"
+    },
+    {
+      "pointId": "in_opc2tcp_flow1",
+      "pointName": "OPC主管流量→TCP转发",
+      "dataType": "FLOAT64",
+      "unit": "°C",
+      "channelId": "ch_tcp_mock",
+      "address": "write_float64_opc_flow1",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "opcua_temp_boiler"
+    },
+    {
+      "pointId": "in_opc2tcp_pump1",
+      "pointName": "OPC泵1→TCP写入",
+      "dataType": "BOOL",
+      "unit": "",
+      "channelId": "ch_tcp_mock",
+      "address": "write_bool_opc_pump1",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "opcua_pump01_status"
+    },
+    {
+      "pointId": "in_opc2tcp_counter",
+      "pointName": "OPC生产计数→TCP转发",
+      "dataType": "INT32",
+      "unit": "件",
+      "channelId": "ch_tcp_mock",
+      "address": "write_int32_opc_counter",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "opcua_production_counter"
+    },
+    {
+      "pointId": "in_opc2mb_temp1",
+      "pointName": "OPC温度→Modbus转发",
+      "dataType": "FLOAT64",
+      "unit": "°C",
+      "channelId": "ch_modbus_mock",
+      "address": "40100",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "opcua_temp_coldroom"
+    },
+    {
+      "pointId": "in_opc2mb_pres1",
+      "pointName": "OPC压力→Modbus转发",
+      "dataType": "FLOAT64",
+      "unit": "kPa",
+      "channelId": "ch_modbus_mock",
+      "address": "40102",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "opcua_pressure_001"
+    },
+    {
+      "pointId": "in_opc2mb_pump1",
+      "pointName": "OPC泵1→Modbus写入",
+      "dataType": "BOOL",
+      "unit": "",
+      "channelId": "ch_modbus_mock",
+      "address": "30",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "opcua_pump03_status"
+    },
+    {
+      "pointId": "in_opc2mqtt_temp1",
+      "pointName": "OPC房间温度→MQTT上报",
+      "dataType": "FLOAT64",
+      "unit": "kPa",
+      "channelId": "ch_mqtt_mock",
+      "address": "opcua/temperature/room1",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "opcua_pressure_steam"
+    },
+    {
+      "pointId": "in_opc2mqtt_pres1",
+      "pointName": "OPC管道压力→MQTT上报",
+      "dataType": "FLOAT64",
+      "unit": "kPa",
+      "channelId": "ch_mqtt_mock",
+      "address": "opcua/pressure/pipe1",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "opcua_pressure_hydraulic"
+    },
+    {
+      "pointId": "in_opc2mqtt_power",
+      "pointName": "OPC有功功率→MQTT上报",
+      "dataType": "FLOAT64",
+      "unit": "L/min",
+      "channelId": "ch_mqtt_mock",
+      "address": "opcua/power/active",
+      "businessId": "default",
+      "direction": "INPUT",
+      "referencePointId": "opcua_flow_001"
     }
   ],
   "businesses": [
@@ -1490,6 +1682,44 @@
       "businessId": "default",
       "businessName": "默认业务",
       "description": "从 mock-data.json 导入的示例业务"
+    }
+  ],
+  "channels": [
+    {
+      "channelId": "ch_tcp_mock",
+      "channelName": "自定义TCP模拟通道",
+      "protocolType": "CUSTOM_TCP",
+      "direction": "READ_WRITE",
+      "connectionConfig": "{\"host\":\"localhost\",\"port\":9002}",
+      "autoConnect": false,
+      "businessId": "default"
+    },
+    {
+      "channelId": "ch_modbus_mock",
+      "channelName": "Modbus TCP模拟通道",
+      "protocolType": "MODBUS_TCP",
+      "direction": "READ_WRITE",
+      "connectionConfig": "{\"host\":\"localhost\",\"port\":5020,\"unitId\":1,\"wordOrder\":\"big\"}",
+      "autoConnect": false,
+      "businessId": "default"
+    },
+    {
+      "channelId": "ch_mqtt_mock",
+      "channelName": "MQTT模拟通道",
+      "protocolType": "MQTT",
+      "direction": "READ_WRITE",
+      "connectionConfig": "{\"broker\":\"tcp://localhost:1883\",\"clientId\":\"sdncustom_mock\"}",
+      "autoConnect": false,
+      "businessId": "default"
+    },
+    {
+      "channelId": "ch_opcua_mock",
+      "channelName": "OPC-UA模拟通道",
+      "protocolType": "OPCUA",
+      "direction": "READ_WRITE",
+      "connectionConfig": "{\"endpoint\":\"opc.tcp://localhost:4840\"}",
+      "autoConnect": false,
+      "businessId": "default"
     }
   ]
 }

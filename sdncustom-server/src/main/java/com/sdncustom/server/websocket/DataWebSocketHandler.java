@@ -6,8 +6,6 @@ import com.sdncustom.common.model.PointValue;
 import com.sdncustom.server.config.WebSocketProperties;
 import com.sdncustom.server.repository.MeasurementPointRepository;
 import com.sdncustom.server.repository.PointValueCacheRepository;
-import com.sdncustom.server.service.PointBindingRegistry;
-import com.sdncustom.server.service.PointSourceService;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.annotation.PostConstruct;
@@ -36,8 +34,6 @@ public class DataWebSocketHandler extends TextWebSocketHandler {
     private final ObjectMapper objectMapper;
     private final MeasurementPointRepository pointRepository;
     private final PointValueCacheRepository pointValueCache;
-    private final PointBindingRegistry pointBindingRegistry;
-    private final PointSourceService pointSourceService;
     private final WebSocketProperties properties;
     private final MeterRegistry meterRegistry;
 
@@ -47,6 +43,8 @@ public class DataWebSocketHandler extends TextWebSocketHandler {
     private final Map<String, Set<String>> channelSubscribers = new ConcurrentHashMap<>();
     // sessionId -> 带独立发送队列的会话
     private final Map<String, SessionSender> sessions = new ConcurrentHashMap<>();
+    // pointId -> channelId 内存缓存（避免每次推送查 DB）
+    private final Map<String, String> pointChannelCache = new ConcurrentHashMap<>();
 
     @PostConstruct
     void registerMetrics() {
@@ -136,7 +134,7 @@ public class DataWebSocketHandler extends TextWebSocketHandler {
             Map<String, PointValue> uniqueValues = new LinkedHashMap<>();
             List<String> pointIds = new ArrayList<>();
             for (String channelId : channelIds) {
-                for (MeasurementPoint p : pointSourceService.findPointsForChannel(channelId)) {
+                for (MeasurementPoint p : pointRepository.findByChannelId(channelId)) {
                     pointIds.add(p.getPointId());
                 }
             }
@@ -163,9 +161,8 @@ public class DataWebSocketHandler extends TextWebSocketHandler {
     public void pushBatch(List<PointValue> pointValues) {
         Map<String, List<PointValue>> byChannel = new LinkedHashMap<>();
         for (PointValue pv : pointValues) {
-            // 多来源测点 fan-out 到所有绑定通道；点不存在时回退来源通道
-            Set<String> targets = resolvePushChannels(pv);
-            for (String channelId : targets) {
+            String channelId = resolvePushChannel(pv);
+            if (channelId != null) {
                 byChannel.computeIfAbsent(channelId, k -> new ArrayList<>()).add(pv);
             }
         }
@@ -180,27 +177,32 @@ public class DataWebSocketHandler extends TextWebSocketHandler {
     }
 
     /**
-     * 推送测点值到订阅的客户端（多来源 fan-out）
+     * 推送测点值到订阅的客户端
      */
     public void pushPointValue(PointValue pointValue) {
-        Set<String> targets = resolvePushChannels(pointValue);
+        String channelId = resolvePushChannel(pointValue);
+        if (channelId == null) return;
         try {
             String json = buildDataMessage(List.of(pointValue));
-            for (String channelId : targets) {
-                sendJsonToSubscribers(channelId, json);
-            }
+            sendJsonToSubscribers(channelId, json);
         } catch (Exception e) {
             log.error("Failed to push point value", e);
         }
     }
 
-    private Set<String> resolvePushChannels(PointValue pv) {
-        Set<String> targets = pointBindingRegistry.channelsOf(pv.getPointId());
-        if (!targets.isEmpty()) {
-            return targets;
-        }
-        String channelId = pv.getSourceChannelId();
-        return channelId != null ? Set.of(channelId) : Set.of();
+    private String resolvePushChannel(PointValue pv) {
+        // 先查缓存
+        String cached = pointChannelCache.get(pv.getPointId());
+        if (cached != null) return cached;
+        // 回退到 sourceChannelId
+        return pv.getSourceChannelId();
+    }
+
+    /**
+     * 使缓存失效（测点配置变更时调用）
+     */
+    public void invalidatePointChannel(String pointId) {
+        pointChannelCache.remove(pointId);
     }
 
     private String buildDataMessage(List<PointValue> values) throws Exception {

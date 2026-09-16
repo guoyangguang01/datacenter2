@@ -2,14 +2,10 @@ package com.sdncustom.common.dto;
 
 import com.sdncustom.common.model.enums.PointDataType;
 import com.sdncustom.common.model.enums.PointDirection;
-import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
 import lombok.Data;
-
-import java.util.List;
 
 @Data
 public class MeasurementPointDTO {
@@ -22,6 +18,14 @@ public class MeasurementPointDTO {
 
     @NotBlank(message = "pointName 不能为空")
     private String pointName;
+
+    /** 关联通道 ID（一对一） */
+    @NotBlank(message = "channelId 不能为空")
+    private String channelId;
+
+    /** 测点在通道上的地址 */
+    @NotBlank(message = "address 不能为空")
+    private String address;
 
     @NotNull(message = "dataType 不能为空")
     private PointDataType dataType;
@@ -42,9 +46,4 @@ public class MeasurementPointDTO {
 
     @PositiveOrZero(message = "deadband 不能为负")
     private Double deadband;
-
-    /** 绑定（全部通道来源，至少一条；创建/更新时整体替换） */
-    @Valid
-    @NotEmpty(message = "bindings 不能为空")
-    private List<PointSourceDTO> bindings;
 }

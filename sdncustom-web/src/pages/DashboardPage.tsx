@@ -211,7 +211,7 @@ export default function DashboardPage() {
       <Table
         columns={columns}
         dataSource={points.filter(
-          (p) => selectedChannels.length === 0 || (p.bindings ?? []).some((s) => selectedChannels.includes(s.channelId))
+          (p) => selectedChannels.length === 0 || selectedChannels.includes(p.channelId)
         )}
         rowKey="pointId"
         pagination={{

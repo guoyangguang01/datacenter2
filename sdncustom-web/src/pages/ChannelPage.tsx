@@ -1,8 +1,7 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { Table, Button, Modal, Form, Input, Select, Switch, Space, Tag, message, InputNumber, Popconfirm } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, LinkOutlined, DisconnectOutlined, EyeOutlined, UploadOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, LinkOutlined, DisconnectOutlined, EyeOutlined } from '@ant-design/icons';
 import { useChannelStore } from '../stores/channelStore';
-import { channelApi } from '../services/api';
 import { useBusinessStore } from '../stores/businessStore';
 import type { Channel } from '../types';
 
@@ -42,7 +41,6 @@ export default function ChannelPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Channel | null>(null);
   const [form] = Form.useForm();
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [protocolType, setProtocolType] = useState<string>('CUSTOM_TCP');
 
   useEffect(() => {
@@ -95,30 +93,6 @@ export default function ChannelPage() {
       message.success('已删除');
     } catch {
       // 错误信息已通过 store.error 展示
-    }
-  };
-
-  // 导入通道配置（仅通道；业务与测点走「测点管理」页的数据导入）
-  const handleImport = async (file: File) => {
-    try {
-      const text = await file.text();
-      const data = JSON.parse(text);
-      const channels = Array.isArray(data) ? data : data.channels;
-
-      if (!Array.isArray(channels)) {
-        message.error('不支持的文件格式：需要通道数组或 {channels: [...]}');
-        return;
-      }
-
-      const res = await channelApi.importConfig({ channels });
-      if (res.data.code !== 200) {
-        message.error(res.data.message || '导入失败');
-        return;
-      }
-      await fetchChannels();
-      message.success(`导入成功，共 ${res.data.data.channelCount} 个通道`);
-    } catch (e) {
-      message.error(e instanceof Error ? e.message : '导入失败，请检查文件格式');
     }
   };
 
@@ -258,22 +232,6 @@ export default function ChannelPage() {
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
         <h2>通道管理</h2>
         <Space>
-          <Button icon={<UploadOutlined />} onClick={() => fileInputRef.current?.click()}>
-            导入通道配置
-          </Button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".json"
-            style={{ display: 'none' }}
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) {
-                handleImport(file);
-                e.target.value = '';
-              }
-            }}
-          />
           <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd} disabled={!currentBusinessId}>
             添加通道
           </Button>

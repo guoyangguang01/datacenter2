@@ -7,8 +7,6 @@ import com.sdncustom.common.model.enums.PointQuality;
 import com.sdncustom.server.config.WebSocketProperties;
 import com.sdncustom.server.repository.MeasurementPointRepository;
 import com.sdncustom.server.repository.PointValueCacheRepository;
-import com.sdncustom.server.service.PointBindingRegistry;
-import com.sdncustom.server.service.PointSourceService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -16,7 +14,6 @@ import org.springframework.web.socket.WebSocketSession;
 
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
@@ -25,7 +22,6 @@ import static org.mockito.Mockito.*;
 class DataWebSocketHandlerTest {
 
     private MeasurementPointRepository pointRepository;
-    private PointBindingRegistry bindingRegistry;
     private WebSocketProperties properties;
     private DataWebSocketHandler handler;
 
@@ -33,11 +29,9 @@ class DataWebSocketHandlerTest {
     void setUp() {
         pointRepository = mock(MeasurementPointRepository.class);
         PointValueCacheRepository cache = mock(PointValueCacheRepository.class);
-        bindingRegistry = mock(PointBindingRegistry.class);
-        PointSourceService pointSourceService = mock(PointSourceService.class);
         properties = new WebSocketProperties();
-        handler = new DataWebSocketHandler(new ObjectMapper(), pointRepository, cache, bindingRegistry,
-                pointSourceService, properties, new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
+        handler = new DataWebSocketHandler(new ObjectMapper(), pointRepository, cache,
+                properties, new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
     }
 
     private PointValue value(String id) {
@@ -140,9 +134,8 @@ class DataWebSocketHandlerTest {
     }
 
     @Test
-    @DisplayName("多来源测点 pushPointValue fan-out 到所有绑定通道订阅者")
-    void multiSourcePushFansOutToAllBoundChannels() throws Exception {
-        when(bindingRegistry.channelsOf("p1")).thenReturn(Set.of("ch_1", "ch_2"));
+    @DisplayName("pushPointValue 按 sourceChannelId fan-out 到对应通道订阅者")
+    void pushPointValueFansOutBySourceChannel() throws Exception {
         WebSocketSession s1 = mock(WebSocketSession.class);
         when(s1.getId()).thenReturn("s1");
         when(s1.isOpen()).thenReturn(true);
@@ -154,9 +147,11 @@ class DataWebSocketHandlerTest {
         subscribe("s1", List.of("ch_1"));
         subscribe("s2", List.of("ch_2"));
 
-        handler.pushPointValue(value("p1"));
+        PointValue pv = value("p1");
+        pv.setSourceChannelId("ch_1");
+        handler.pushPointValue(pv);
 
         verify(s1, timeout(2000).times(1)).sendMessage(any());
-        verify(s2, timeout(2000).times(1)).sendMessage(any());
+        verify(s2, never()).sendMessage(any());
     }
 }

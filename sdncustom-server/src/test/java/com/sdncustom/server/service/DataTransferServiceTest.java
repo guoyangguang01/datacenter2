@@ -1,8 +1,8 @@
 package com.sdncustom.server.service;
 
 import com.sdncustom.common.dto.BusinessSystemDTO;
+import com.sdncustom.common.dto.ChannelDTO;
 import com.sdncustom.common.dto.MeasurementPointDTO;
-import com.sdncustom.common.dto.PointSourceDTO;
 import com.sdncustom.common.exception.BusinessException;
 import com.sdncustom.common.model.Channel;
 import com.sdncustom.common.model.MeasurementPoint;
@@ -18,7 +18,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
@@ -39,6 +38,9 @@ class DataTransferServiceTest {
     private BusinessSystemService businessSystemService;
 
     @Mock
+    private ChannelService channelService;
+
+    @Mock
     private PointService pointService;
 
     @Mock
@@ -50,6 +52,18 @@ class DataTransferServiceTest {
     @InjectMocks
     private DataTransferService dataTransferService;
 
+    /** 便捷调用：无通道、无解析问题 */
+    private DataTransferService.ImportResult importData(
+            List<BusinessSystemDTO> businesses, List<MeasurementPointDTO> points) {
+        return dataTransferService.importData(businesses, List.<ChannelDTO>of(), points, List.of());
+    }
+
+    /** 便捷调用：无通道、有解析问题 */
+    private DataTransferService.ImportResult importData(
+            List<BusinessSystemDTO> businesses, List<MeasurementPointDTO> points, List<String> parseProblems) {
+        return dataTransferService.importData(businesses, List.<ChannelDTO>of(), points, parseProblems);
+    }
+
     private BusinessSystemDTO business(String id) {
         BusinessSystemDTO dto = new BusinessSystemDTO();
         dto.setBusinessId(id);
@@ -57,21 +71,15 @@ class DataTransferServiceTest {
         return dto;
     }
 
-    private MeasurementPointDTO point(String pointId, String businessId, String... channelIds) {
+    private MeasurementPointDTO point(String pointId, String businessId, String channelId) {
         MeasurementPointDTO dto = new MeasurementPointDTO();
         dto.setPointId(pointId);
         dto.setBusinessId(businessId);
         dto.setPointName(pointId);
         dto.setDataType(PointDataType.FLOAT32);
         dto.setDirection(PointDirection.OUTPUT);
-        List<PointSourceDTO> bindings = new ArrayList<>();
-        for (String channelId : channelIds) {
-            PointSourceDTO binding = new PointSourceDTO();
-            binding.setChannelId(channelId);
-            binding.setAddress("addr_" + channelId);
-            bindings.add(binding);
-        }
-        dto.setBindings(bindings);
+        dto.setChannelId(channelId);
+        dto.setAddress("addr_" + channelId);
         return dto;
     }
 
@@ -81,7 +89,7 @@ class DataTransferServiceTest {
         when(channelRepository.findById("ch_1")).thenReturn(Optional.of(new Channel()));
         when(businessSystemService.exists("biz")).thenReturn(false);
 
-        DataTransferService.ImportResult result = dataTransferService.importData(
+        DataTransferService.ImportResult result = importData(
                 List.of(business("biz")), List.of(point("p1", "biz", "ch_1")));
 
         assertEquals(1, result.businessCount());
@@ -96,7 +104,7 @@ class DataTransferServiceTest {
         when(channelRepository.findById("ch_1")).thenReturn(Optional.of(new Channel()));
         when(businessSystemService.exists("biz")).thenReturn(true);
 
-        dataTransferService.importData(List.of(business("biz")), List.of(point("p1", "biz", "ch_1")));
+        importData(List.of(business("biz")), List.of(point("p1", "biz", "ch_1")));
 
         verify(businessSystemService).update(eq("biz"), any(BusinessSystemDTO.class));
         verify(businessSystemService, never()).create(any(BusinessSystemDTO.class));
@@ -107,11 +115,11 @@ class DataTransferServiceTest {
     void failsBeforeAnyWriteWhenChannelMissing() {
         when(channelRepository.findById("ch_x")).thenReturn(Optional.empty());
 
-        BusinessException ex = assertThrows(BusinessException.class, () -> dataTransferService.importData(
+        BusinessException ex = assertThrows(BusinessException.class, () -> importData(
                 List.of(business("biz")), List.of(point("p1", "biz", "ch_x"))));
 
         assertTrue(ex.getMessage().contains("p1->ch_x"), ex.getMessage());
-        assertTrue(ex.getMessage().contains("/api/channels/import"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("channels"), ex.getMessage());
 
         // 预检先于写库：业务与测点都不得被触碰
         verifyNoInteractions(pointService);
@@ -126,7 +134,7 @@ class DataTransferServiceTest {
         BusinessSystemDTO dto = business("biz");
         dto.setBusinessName("   ");
 
-        dataTransferService.importData(List.of(dto), List.of());
+        importData(List.of(dto), List.of());
 
         assertEquals("biz", dto.getBusinessName());
     }
@@ -142,7 +150,7 @@ class DataTransferServiceTest {
         input.setReferencePointId("out_missing");
 
         BusinessException ex = assertThrows(BusinessException.class, () ->
-                dataTransferService.importData(List.of(business("biz")), List.of(input)));
+                importData(List.of(business("biz")), List.of(input)));
 
         assertTrue(ex.getMessage().contains("out_missing"), ex.getMessage());
         verifyNoInteractions(pointService);
@@ -159,7 +167,7 @@ class DataTransferServiceTest {
         input.setDirection(PointDirection.INPUT);
         input.setReferencePointId("out_1");
 
-        DataTransferService.ImportResult result = dataTransferService.importData(
+        DataTransferService.ImportResult result = importData(
                 List.of(business("biz")), List.of(output, input));
 
         assertEquals(2, result.pointCount());
@@ -182,7 +190,7 @@ class DataTransferServiceTest {
         input.setReferencePointId("out_1");
 
         assertThrows(BusinessException.class, () ->
-                dataTransferService.importData(List.of(business("biz")), List.of(input)));
+                importData(List.of(business("biz")), List.of(input)));
         verifyNoInteractions(pointService);
     }
 
@@ -195,7 +203,7 @@ class DataTransferServiceTest {
         input.setDirection(PointDirection.INPUT);
 
         BusinessException ex = assertThrows(BusinessException.class, () ->
-                dataTransferService.importData(List.of(business("biz")), List.of(input)));
+                importData(List.of(business("biz")), List.of(input)));
 
         assertTrue(ex.getMessage().contains("in_1"), ex.getMessage());
         assertTrue(ex.getMessage().contains("referencePointId"), ex.getMessage());
@@ -211,7 +219,7 @@ class DataTransferServiceTest {
         output.setReferencePointId("other");
 
         BusinessException ex = assertThrows(BusinessException.class, () ->
-                dataTransferService.importData(List.of(business("biz")), List.of(output)));
+                importData(List.of(business("biz")), List.of(output)));
 
         assertTrue(ex.getMessage().contains("out_1"), ex.getMessage());
         assertTrue(ex.getMessage().contains("other"), ex.getMessage());
@@ -234,7 +242,7 @@ class DataTransferServiceTest {
         input.setReferencePointId("out_1");
 
         BusinessException ex = assertThrows(BusinessException.class, () ->
-                dataTransferService.importData(List.of(business("biz")), List.of(input)));
+                importData(List.of(business("biz")), List.of(input)));
 
         assertTrue(ex.getMessage().contains("out_1"), ex.getMessage());
         assertTrue(ex.getMessage().contains("不是输出测点"), ex.getMessage());
@@ -253,7 +261,7 @@ class DataTransferServiceTest {
         refsInput.setReferencePointId("in_no_ref");   // payload 内，但它不是输出测点
 
         BusinessException ex = assertThrows(BusinessException.class, () ->
-                dataTransferService.importData(List.of(business("biz")), List.of(noRef, refsInput)));
+                importData(List.of(business("biz")), List.of(noRef, refsInput)));
 
         assertTrue(ex.getMessage().contains("in_no_ref"), ex.getMessage());
         assertTrue(ex.getMessage().contains("in_refs_input"), ex.getMessage());
@@ -287,7 +295,7 @@ class DataTransferServiceTest {
         });
 
         // 引用预检能通过（payload 内解析得到），但 importPoints 逐条 create 时输出点必须先落库
-        dataTransferService.importData(List.of(business("biz")), List.of(input, output));
+        importData(List.of(business("biz")), List.of(input, output));
 
         assertEquals(Set.of("in_1", "out_1"), persisted);
         ArgumentCaptor<List<MeasurementPointDTO>> captor = ArgumentCaptor.forClass(List.class);
@@ -306,7 +314,7 @@ class DataTransferServiceTest {
         MeasurementPointDTO output = point("out_1", "biz", "ch_1");
 
         BusinessException ex = assertThrows(BusinessException.class, () ->
-                dataTransferService.importData(List.of(business("biz")), List.of(broken, output)));
+                importData(List.of(business("biz")), List.of(broken, output)));
 
         assertTrue(ex.getMessage().contains("no_dir"), ex.getMessage());
         assertTrue(ex.getMessage().contains("direction"), ex.getMessage());
@@ -325,7 +333,7 @@ class DataTransferServiceTest {
         input.setReferencePointId("out_1");
 
         BusinessException ex = assertThrows(BusinessException.class, () ->
-                dataTransferService.importData(List.of(business("biz")), List.of(output, input)));
+                importData(List.of(business("biz")), List.of(output, input)));
 
         // 报错必须点出要改的那条记录（INPUT），而不只是被引用方
         assertTrue(ex.getMessage().contains("in_1"), ex.getMessage());
@@ -349,7 +357,7 @@ class DataTransferServiceTest {
         // noId 必须排在 input **前面**：payload 内引用用 findFirst() 解析，命中 input 会短路，
         // 让缺 pointId 的那条永远不被扫到——那样这个用例钉不住它要钉的崩溃路径
         BusinessException ex = assertThrows(BusinessException.class, () ->
-                dataTransferService.importData(List.of(business("biz")), List.of(noId, input)));
+                importData(List.of(business("biz")), List.of(noId, input)));
 
         assertTrue(ex.getMessage().contains("in_1"), ex.getMessage());
         assertTrue(ex.getMessage().contains("<缺少 pointId 的测点>"), ex.getMessage());
@@ -369,7 +377,7 @@ class DataTransferServiceTest {
         noRef.setDirection(PointDirection.INPUT);
 
         BusinessException ex = assertThrows(BusinessException.class, () ->
-                dataTransferService.importData(List.of(business("biz")), List.of(noRef),
+                importData(List.of(business("biz")), List.of(noRef),
                         List.of("no_dir 缺少必填字段: direction")));
 
         assertTrue(ex.getMessage().contains("no_dir"), ex.getMessage());
@@ -390,7 +398,7 @@ class DataTransferServiceTest {
         noRef.setDirection(PointDirection.INPUT);
 
         BusinessException ex = assertThrows(BusinessException.class, () ->
-                dataTransferService.importData(List.of(business("biz")), List.of(noDirection, noRef)));
+                importData(List.of(business("biz")), List.of(noDirection, noRef)));
 
         assertTrue(ex.getMessage().contains("no_dir"), ex.getMessage());
         assertTrue(ex.getMessage().contains("in_no_ref"), ex.getMessage());

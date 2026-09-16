@@ -3,7 +3,6 @@ package com.sdncustom.server.controller;
 import com.sdncustom.common.dto.ApiResponse;
 import com.sdncustom.common.dto.MeasurementPointDTO;
 import com.sdncustom.common.dto.PageResult;
-import com.sdncustom.common.dto.PointSourceDTO;
 import com.sdncustom.common.exception.BusinessException;
 import com.sdncustom.common.model.MeasurementPoint;
 import com.sdncustom.common.model.PointHistory;
@@ -39,8 +38,7 @@ public class PointController {
             points = pointService.findByBusinessId(businessId);
             if (channelId != null) {
                 points = points.stream()
-                        .filter(p -> p.getBindings() != null && p.getBindings().stream()
-                                .anyMatch(b -> channelId.equals(b.getChannelId())))
+                        .filter(p -> channelId.equals(p.getChannelId()))
                         .toList();
             }
         } else if (channelId != null) {
@@ -73,14 +71,6 @@ public class PointController {
     public ApiResponse<Void> delete(@PathVariable String id) {
         pointService.delete(id);
         return ApiResponse.success();
-    }
-
-    /**
-     * 给既有测点增加一条绑定（创建表单"关联既有测点"走这里）
-     */
-    @PostMapping("/{id}/bindings")
-    public ApiResponse<MeasurementPoint> addBinding(@PathVariable String id, @Valid @RequestBody PointSourceDTO binding) {
-        return ApiResponse.success(pointService.addBinding(id, binding.getChannelId(), binding.getAddress()));
     }
 
     @GetMapping("/{id}/value")

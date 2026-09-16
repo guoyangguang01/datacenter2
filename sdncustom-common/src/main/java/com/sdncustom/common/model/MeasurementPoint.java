@@ -1,17 +1,13 @@
 package com.sdncustom.common.model;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.sdncustom.common.model.enums.PointDataType;
 import com.sdncustom.common.model.enums.PointDirection;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
-import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
-import lombok.ToString;
 
 import java.time.LocalDateTime;
-import java.util.List;
 
 @Data
 @NoArgsConstructor
@@ -19,6 +15,7 @@ import java.util.List;
 @Entity
 @Table(name = "measurement_point", indexes = {
         @Index(name = "idx_point_business", columnList = "business_id"),
+        @Index(name = "idx_point_channel", columnList = "channel_id"),
         @Index(name = "idx_point_reference", columnList = "reference_point_id")
 })
 public class MeasurementPoint {
@@ -34,17 +31,12 @@ public class MeasurementPoint {
     @Column(name = "point_name", length = 128, nullable = false)
     private String pointName;
 
-    /** 视图传输字段（非持久化、无权威）：采集/写入时按绑定通道设置，供协议适配器读取地址；API 响应忽略 */
-    @Transient
-    @JsonIgnore
-    @EqualsAndHashCode.Exclude
-    @ToString.Exclude
+    /** 该测点关联的通道 ID（一对一）：OUTPUT 从该通道采集，INPUT 写到该通道 */
+    @Column(name = "channel_id", length = 64)
     private String channelId;
 
-    @Transient
-    @JsonIgnore
-    @EqualsAndHashCode.Exclude
-    @ToString.Exclude
+    /** 测点在通道上的地址（如寄存器号 40001、MQTT topic 等） */
+    @Column(name = "address", length = 256)
     private String address;
 
     @Enumerated(EnumType.STRING)
@@ -73,12 +65,6 @@ public class MeasurementPoint {
 
     @Column(name = "update_time")
     private LocalDateTime updateTime;
-
-    /** 绑定（REST/导出回填用，非持久化字段）：该测点绑定的全部 (通道,地址)，无主从之分 */
-    @Transient
-    @EqualsAndHashCode.Exclude
-    @ToString.Exclude
-    private List<PointSource> bindings;
 
     @PrePersist
     protected void onCreate() {

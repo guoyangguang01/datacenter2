@@ -47,7 +47,7 @@ class PointApiIntegrationTest {
     /**
      * C1：编辑测点的请求体不带 direction（前端刻意不传，方向创建后不可变更），必须能存下去。
      * DTO 上的 {@code @NotNull} 会让 {@code @Valid} 在 service 之前把请求拦成 400——
-     * 名称、单位、死区、绑定就全都改不了。
+     * 名称、单位、死区就全都改不了。
      */
     @Test
     @DisplayName("PUT 测点不传 direction：编辑成功（方向不可变更，缺失时静默忽略）")
@@ -76,7 +76,7 @@ class PointApiIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"pointId\":\"p_c1\",\"businessId\":\"biz_c1\",\"pointName\":\"改名前\","
                                 + "\"dataType\":\"FLOAT32\",\"direction\":\"OUTPUT\","
-                                + "\"bindings\":[{\"channelId\":\"ch_c1\",\"address\":\"40001\"}]}"))
+                                + "\"channelId\":\"ch_c1\",\"address\":\"40001\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200));
 
@@ -86,7 +86,7 @@ class PointApiIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"pointId\":\"p_c1\",\"pointName\":\"改名后\",\"dataType\":\"FLOAT32\","
                                 + "\"unit\":\"C\",\"deadband\":0.5,"
-                                + "\"bindings\":[{\"channelId\":\"ch_c1\",\"address\":\"40001\"}]}"))
+                                + "\"channelId\":\"ch_c1\",\"address\":\"40001\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.pointName").value("改名后"))
@@ -107,10 +107,10 @@ class PointApiIntegrationTest {
 
         String payload = "{\"points\":["
                 + "{\"pointId\":\"no_dir\",\"businessId\":\"biz_x\",\"pointName\":\"无方向\","
-                + "\"dataType\":\"FLOAT32\",\"bindings\":[{\"channelId\":\"ch_x\",\"address\":\"a\"}]},"
+                + "\"dataType\":\"FLOAT32\",\"channelId\":\"ch_x\",\"address\":\"a\"},"
                 + "{\"pointId\":\"bad_dir\",\"businessId\":\"biz_x\",\"pointName\":\"方向非法\","
                 + "\"dataType\":\"FLOAT32\",\"direction\":\"SIDEWAYS\","
-                + "\"bindings\":[{\"channelId\":\"ch_x\",\"address\":\"b\"}]}"
+                + "\"channelId\":\"ch_x\",\"address\":\"b\"}"
                 + "]}";
 
         mockMvc.perform(post("/api/data/import")

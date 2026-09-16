@@ -48,7 +48,7 @@ spring:
 
 # TDengine 配置（url 可用环境变量覆盖；前缀 TAOS-RS 走 REST 免客户端，TAOS 走原生）
 tdengine:
-  url: ${TDENGINE_URL:jdbc:TAOS://localhost:6030/sdncustom}
+  url: ${TDENGINE_URL:jdbc:TAOS-RS://localhost:6041/sdncustom}
   username: ${TDENGINE_USERNAME:root}
   password: ${TDENGINE_PASSWORD:taosdata}
 

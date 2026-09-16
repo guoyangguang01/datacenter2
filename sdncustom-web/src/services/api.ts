@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { ApiResponse, BusinessSystem, Channel, ChannelImportResult, DataExportPayload, DataImportResult, MeasurementPoint, PointDirection, PointSourceDTO, PointValue, SystemStatus } from '../types';
+import type { ApiResponse, BusinessSystem, Channel, DataExportPayload, DataImportResult, MeasurementPoint, PointDirection, PointValue, SystemStatus } from '../types';
 import { authUtil } from '../utils/auth';
 
 const api = axios.create({
@@ -69,14 +69,20 @@ export const channelApi = {
   delete: (id: string) => api.delete<ApiResponse<void>>(`/channels/${id}`),
   connect: (id: string) => api.post<ApiResponse<void>>(`/channels/${id}/connect`),
   disconnect: (id: string) => api.post<ApiResponse<void>>(`/channels/${id}/disconnect`),
-  importConfig: (data: { channels: Partial<Channel>[] }) =>
-    api.post<ApiResponse<ChannelImportResult>>('/channels/import', data),
 };
 
 // Data API — 只承载业务与测点；连接配置走 channelApi.importConfig
 export const dataApi = {
   export: () => api.get('/data/export', { responseType: 'blob' }),
   import: (data: DataExportPayload) => api.post<ApiResponse<DataImportResult>>('/data/import', data),
+  importCsv: (file: File, businessId: string, channelId: string) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post<ApiResponse<DataImportResult>>('/data/import-csv', form, {
+      params: { businessId, channelId },
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
 };
 
 // MeasurementPoint API
@@ -88,5 +94,4 @@ export const pointApi = {
   update: (id: string, data: Partial<MeasurementPoint>) => api.put<ApiResponse<MeasurementPoint>>(`/points/${id}`, data),
   delete: (id: string) => api.delete<ApiResponse<void>>(`/points/${id}`),
   getValue: (id: string) => api.get<ApiResponse<PointValue>>(`/points/${id}/value`),
-  addBinding: (id: string, binding: PointSourceDTO) => api.post<ApiResponse<MeasurementPoint>>(`/points/${id}/bindings`, binding),
 };

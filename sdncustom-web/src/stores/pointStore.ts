@@ -37,6 +37,7 @@ interface PointStore {
   updateValue: (value: PointValue) => void;
   exportData: () => Promise<void>;
   importData: (data: DataExportPayload) => Promise<number>;
+  importCsv: (file: File, businessId: string, channelId: string) => Promise<number>;
 }
 
 export const usePointStore = create<PointStore>((set, get) => ({
@@ -219,6 +220,23 @@ export const usePointStore = create<PointStore>((set, get) => ({
       return res.data.data?.pointCount ?? 0;
     } catch (e) {
       if (!get().error) set({ error: toErrorMessage(e, '导入数据失败') });
+      throw e;
+    }
+  },
+
+  importCsv: async (file, businessId, channelId) => {
+    set({ error: null });
+    try {
+      const res = await dataApi.importCsv(file, businessId, channelId);
+      if (res.data.code !== 200) {
+        const msg = res.data.message || 'CSV 导入失败';
+        set({ error: msg });
+        throw new Error(msg);
+      }
+      await get().fetchPoints();
+      return res.data.data?.pointCount ?? 0;
+    } catch (e) {
+      if (!get().error) set({ error: toErrorMessage(e, 'CSV 导入失败') });
       throw e;
     }
   },

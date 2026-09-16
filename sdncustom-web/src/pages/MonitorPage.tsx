@@ -5,6 +5,7 @@ import {
   PlayCircleOutlined,
   ClearOutlined,
   DownloadOutlined,
+  SyncOutlined,
   WifiOutlined,
   DisconnectOutlined,
 } from '@ant-design/icons';
@@ -218,9 +219,7 @@ export default function MonitorPage() {
       title: '地址',
       key: 'address',
       width: 160,
-      // 地址不在测点实体上，只存在于 bindings[]（多绑定时逐个列出）
-      render: (_: unknown, record: MeasurementPoint) =>
-        record.bindings?.length ? record.bindings.map((b) => b.address).join(', ') : '-',
+      render: (_: unknown, record: MeasurementPoint) => record.address ?? '-',
     },
     {
       title: '方向',
@@ -336,7 +335,7 @@ export default function MonitorPage() {
               }))}
           />
           <Tooltip title="刷新数据">
-            <Button icon={<DownloadOutlined />} onClick={handleRefresh} />
+            <Button icon={<SyncOutlined />} onClick={handleRefresh} />
           </Tooltip>
         </Space>
       </div>
@@ -352,8 +351,7 @@ export default function MonitorPage() {
           columns={columns}
           dataSource={points.filter((p) => {
             if (selectedChannels.length === 0) return true;
-            // 绑定集：任一绑定通道命中选中通道即展示
-            return (p.bindings ?? []).some((s) => selectedChannels.includes(s.channelId));
+            return selectedChannels.includes(p.channelId);
           })}
           rowKey="pointId"
           size="small"

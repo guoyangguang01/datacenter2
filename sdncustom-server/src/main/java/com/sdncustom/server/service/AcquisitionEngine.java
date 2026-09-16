@@ -4,10 +4,12 @@ import com.sdncustom.common.model.Channel;
 import com.sdncustom.common.model.MeasurementPoint;
 import com.sdncustom.common.model.PointValue;
 import com.sdncustom.common.model.enums.ChannelStatus;
+import com.sdncustom.common.model.enums.PointDirection;
 import com.sdncustom.common.model.enums.ProtocolType;
 import com.sdncustom.protocol.ProtocolAdapter;
 import com.sdncustom.protocol.ProtocolRegistry;
 import com.sdncustom.server.repository.ChannelRepository;
+import com.sdncustom.server.repository.MeasurementPointRepository;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.annotation.PostConstruct;
@@ -35,7 +37,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class AcquisitionEngine {
 
     private final ChannelRepository channelRepository;
-    private final PointSourceService pointSourceService;
+    private final MeasurementPointRepository pointRepository;
     private final ChannelService channelService;
     private final PointService pointService;
     private final HistoryService historyService;
@@ -145,7 +147,8 @@ public class AcquisitionEngine {
      */
     private List<PointValue> acquireChannel(Channel channel) {
         // 只读 OUTPUT：INPUT 测点的值由传播写出，不从通道读
-        List<MeasurementPoint> points = pointSourceService.findOutputPointsForChannel(channel.getChannelId());
+        List<MeasurementPoint> points = pointRepository.findByChannelIdAndDirection(
+                channel.getChannelId(), PointDirection.OUTPUT);
 
         if (points.isEmpty()) {
             log.debug("No points configured for channel: {}", channel.getChannelId());

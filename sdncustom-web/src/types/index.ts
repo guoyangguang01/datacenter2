@@ -31,21 +31,17 @@ export interface Channel {
   updateTime: string;
 }
 
-export interface PointSourceDTO {
-  channelId: string;
-  address: string;
-}
-
 export interface MeasurementPoint {
   pointId: string;
   businessId: string;
   pointName: string;
+  channelId: string;
+  address: string;
   dataType: PointDataType;
   unit: string;
   direction: PointDirection;
   referencePointId?: string;
   deadband?: number;
-  bindings: PointSourceDTO[];
   createTime: string;
   updateTime: string;
 }
@@ -58,19 +54,16 @@ export interface PointValue {
   timestamp: number;
 }
 
-// 数据导入导出 payload：只含业务与测点，通道（连接配置）不在其中
+// 数据导入导出 payload：含业务、通道（可选，自动创建）、测点
 export interface DataExportPayload {
   businesses?: BusinessSystem[];
+  channels?: Channel[];
   points?: MeasurementPoint[];
 }
 
 export interface DataImportResult {
   businessCount: number;
   pointCount: number;
-}
-
-export interface ChannelImportResult {
-  channelCount: number;
 }
 
 export interface ApiResponse<T> {
