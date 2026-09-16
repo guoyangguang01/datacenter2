@@ -35,6 +35,8 @@ public class PointHistoryRepository {
     private static final long RETRY_INTERVAL_MS = 15_000;
     // 多表 INSERT 每条语句最多包含的值数量，控制 SQL 长度
     static final int MAX_VALUES_PER_STMT = 200;
+    // 单条建表语句最多包含的子表数：TDengine 建议 1000~3000 时建表速度最佳
+    static final int MAX_TABLES_PER_CREATE_STMT = 1000;
     private volatile long nextRetryTime = 0L;
     private final AtomicInteger circuitOpen = new AtomicInteger(0);
 
@@ -100,13 +102,7 @@ public class PointHistoryRepository {
             String pointId = history.getPointId();
             String tableName = tableNameOf(pointId);
 
-            if (createdTables.add(tableName)) {
-                // 表不存在则创建（按测点分表）
-                String createTableSql = String.format(
-                        "CREATE TABLE IF NOT EXISTS %s USING point_history TAGS ('%s')",
-                        tableName, escapeSql(pointId));
-                jdbcTemplate.execute(createTableSql);
-            }
+            ensureSubtables(jdbcTemplate, List.of(pointId));
 
             String insertSql = String.format("INSERT INTO %s VALUES (?, ?, ?, ?)", tableName);
             jdbcTemplate.update(insertSql,
@@ -134,15 +130,7 @@ public class PointHistoryRepository {
             JdbcTemplate jdbcTemplate = jdbc();
 
             // 确保子表存在
-            for (PointHistory h : histories) {
-                String tableName = tableNameOf(h.getPointId());
-                if (createdTables.add(tableName)) {
-                    String createTableSql = String.format(
-                            "CREATE TABLE IF NOT EXISTS %s USING point_history TAGS ('%s')",
-                            tableName, escapeSql(h.getPointId()));
-                    jdbcTemplate.execute(createTableSql);
-                }
-            }
+            ensureSubtables(jdbcTemplate, histories.stream().map(PointHistory::getPointId).toList());
 
             for (String sql : buildBatchInsertStatements(histories)) {
                 jdbcTemplate.execute(sql);
@@ -181,6 +169,58 @@ public class PointHistoryRepository {
             sb.append('\'').append(h.getQuality().name()).append("', ");
             sb.append('\'').append(escapeSql(h.getSourceChannelId() == null ? "" : h.getSourceChannelId())).append('\'');
             sb.append(") ");
+            count++;
+        }
+        if (count > 0) {
+            statements.add(sb.toString());
+        }
+        return statements;
+    }
+
+    /**
+     * 建立尚未创建的子表。把同批未知子表合并成少量语句：逐表一次 {@code execute}
+     * 在 TAOS-RS 下就是逐表一次 HTTP 往返，而这段代码跑在采集调度线程的串行段里
+     * （{@code AcquisitionEngine.acquire} 是 {@code @Scheduled(fixedDelay)}），
+     * 会 1:1 吃掉采集频率。重启后首轮要为所有当轮有变化的测点补建，规模越大越明显。
+     */
+    private void ensureSubtables(JdbcTemplate jdbcTemplate, List<String> pointIds) {
+        List<String> unknown = new ArrayList<>();
+        for (String pointId : pointIds) {
+            if (createdTables.add(tableNameOf(pointId))) {
+                unknown.add(pointId);
+            }
+        }
+        if (unknown.isEmpty()) {
+            return;
+        }
+        for (String sql : buildCreateStatements(unknown)) {
+            jdbcTemplate.execute(sql);
+        }
+        meterRegistry.counter("sdncustom.history.subtables.created").increment(unknown.size());
+    }
+
+    /**
+     * 构建 TDengine 多表建表语句：
+     * {@code CREATE TABLE IF NOT EXISTS t1 USING point_history TAGS ('p1') IF NOT EXISTS t2 USING ...}，
+     * 每 {@link #MAX_TABLES_PER_CREATE_STMT} 张分片一条语句——N 张子表从 N 次往返降到 ceil(N/1000) 次。
+     * 表名经白名单化，TAGS 值经单引号转义。
+     */
+    static List<String> buildCreateStatements(List<String> pointIds) {
+        List<String> statements = new ArrayList<>();
+        StringBuilder sb = new StringBuilder();
+        int count = 0;
+        for (String pointId : pointIds) {
+            if (count >= MAX_TABLES_PER_CREATE_STMT) {
+                statements.add(sb.toString());
+                sb = new StringBuilder();
+                count = 0;
+            }
+            // 只有第一条写 CREATE TABLE，后续子表只重复 IF NOT EXISTS
+            sb.append(count == 0 ? "CREATE TABLE IF NOT EXISTS " : "IF NOT EXISTS ");
+            sb.append(tableNameOf(pointId))
+                    .append(" USING point_history TAGS ('")
+                    .append(escapeSql(pointId))
+                    .append("') ");
             count++;
         }
         if (count > 0) {

@@ -38,6 +38,7 @@ URL 会进代理/网关/浏览器历史与访问日志。
 - **Redis 故障时采集路径被拖慢**：`PointValueCacheRepository` 失败吞异常但每次调用要等 `spring.data.redis.timeout: 3000`，而它在采集环上；`saveBatch` 失败只 WARN。考虑本地降级缓存或异步写。
 - **`markPointsCommLost` 里逐点查绑定**：`ChannelService` 中 `bindingChannelIds(pointId)` 按点循环查询（N+1）。不在 200ms 热路径上（仅断开/掉线时触发），量级不大时可不改。
 - **无审计日志**：写操作只有 `log.info`（含用户名），不落库，事后无法查证谁改了什么。
+- **历史单条写入路径是死代码**：`HistoryService.save(pv)` 与 `PointHistoryRepository.save(h)` 无任何调用者——只有 `saveBatch` 在采集环上被用（`AcquisitionEngine`）。子表建立逻辑已统一到 `ensureSubtables`，但这份死代码会让人误以为存在"单条写历史"的能力，可直接删。
 
 ---
 
