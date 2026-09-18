@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Button, Layout, Menu, Select, Space } from 'antd';
 import { AppstoreOutlined, DashboardOutlined, LogoutOutlined, NodeIndexOutlined, SettingOutlined } from '@ant-design/icons';
+import SdnLogo from './components/SdnLogo';
 import BusinessPage from './pages/BusinessPage';
 import ChannelPage from './pages/ChannelPage';
 import PointPage from './pages/PointPage';
@@ -63,8 +64,9 @@ function AppLayout() {
   return (
     <Layout style={{ minHeight: '100vh' }}>
       <Sider collapsible>
-        <div style={{ height: 32, margin: 16, color: 'white', textAlign: 'center', fontWeight: 'bold' }}>
-          SDNCustom
+        <div style={{ height: 32, margin: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+          <SdnLogo size={28} />
+          <span style={{ color: 'white', fontWeight: 'bold', fontSize: 14 }}>SDNCustom</span>
         </div>
         <Menu
           theme="dark"

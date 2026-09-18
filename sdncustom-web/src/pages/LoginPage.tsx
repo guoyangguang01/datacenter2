@@ -4,6 +4,7 @@ import { LockOutlined, UserOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { authApi, toErrorMessage } from '../services/api';
 import { authUtil } from '../utils/auth';
+import SdnLogo from '../components/SdnLogo';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -37,7 +38,17 @@ export default function LoginPage() {
         background: '#f0f2f5',
       }}
     >
-      <Card title="SDNCustom 物联网数据中心" style={{ width: 360 }}>
+      <Card
+        style={{ width: 360 }}
+        styles={{ header: { textAlign: 'center' } }}
+        title={
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+            <SdnLogo size={56} />
+            <span style={{ fontSize: 18, fontWeight: 600 }}>SDNCustom</span>
+            <span style={{ fontSize: 13, color: '#8c8c8c', fontWeight: 400 }}>物联网数据中心</span>
+          </div>
+        }
+      >
         <Form name="login" onFinish={onFinish} autoComplete="off">
           <Form.Item
             name="username"

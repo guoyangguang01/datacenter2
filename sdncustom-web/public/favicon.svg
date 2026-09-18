@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="hubGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1677ff"/>
+      <stop offset="100%" stop-color="#0958d9"/>
+    </linearGradient>
+    <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4096ff"/>
+      <stop offset="100%" stop-color="#1677ff"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background circle -->
+  <circle cx="32" cy="32" r="31" fill="#f0f5ff"/>
+
+  <!-- Connecting lines from center to nodes -->
+  <line x1="32" y1="32" x2="32" y2="9"  stroke="#91caff" stroke-width="1.5" opacity="0.7"/>
+  <line x1="32" y1="32" x2="51.9" y2="21" stroke="#91caff" stroke-width="1.5" opacity="0.7"/>
+  <line x1="32" y1="32" x2="51.9" y2="43" stroke="#91caff" stroke-width="1.5" opacity="0.7"/>
+  <line x1="32" y1="32" x2="32" y2="55" stroke="#91caff" stroke-width="1.5" opacity="0.7"/>
+  <line x1="32" y1="32" x2="12.1" y2="43" stroke="#91caff" stroke-width="1.5" opacity="0.7"/>
+  <line x1="32" y1="32" x2="12.1" y2="21" stroke="#91caff" stroke-width="1.5" opacity="0.7"/>
+
+  <!-- Outer connection ring (subtle) -->
+  <polygon points="32,9 51.9,21 51.9,43 32,55 12.1,43 12.1,21"
+           fill="none" stroke="#bae0ff" stroke-width="1" opacity="0.5"/>
+
+  <!-- Outer measurement-point nodes -->
+  <circle cx="32"  cy="9"  r="5" fill="#36cfc9"/>
+  <circle cx="51.9" cy="21" r="5" fill="#4096ff"/>
+  <circle cx="51.9" cy="43" r="5" fill="#36cfc9"/>
+  <circle cx="32"  cy="55" r="5" fill="#4096ff"/>
+  <circle cx="12.1" cy="43" r="5" fill="#36cfc9"/>
+  <circle cx="12.1" cy="21" r="5" fill="#4096ff"/>
+
+  <!-- Inner ring decoration -->
+  <circle cx="32" cy="32" r="14" fill="none" stroke="url(#ringGrad)" stroke-width="2" opacity="0.4"/>
+
+  <!-- Central hub -->
+  <circle cx="32" cy="32" r="11" fill="url(#hubGrad)"/>
+
+  <!-- Up/Down arrows inside hub: representing data concentration & distribution -->
+  <!-- Up arrow (data in) -->
+  <path d="M28 33 L32 28 L36 33" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- Down arrow (data out) -->
+  <path d="M28 36 L32 41 L36 36" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>
