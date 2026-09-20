@@ -218,6 +218,13 @@ git commit -m "refactor(server): 抽存活来源过滤为 LiveSourceChecker（�
 
 ### Task 2: 新增 `PropagationService`（传播阶段）
 
+> **实施时的两处偏离（已落地，最终以代码为准）**：本节下面的代码块是初稿，实施中经评审修了两处——
+> ① 删除了只为测试存在的 `backlogWarningActive()`；② `backlogIsVisibleAndWarnsOnce` 改为用
+> `OutputCaptureExtension` 断言**真实日志**（恰好一条 WARN、积压期内不重复），并新增
+> `backlogWarningResetsAfterBacklogDrains` 覆盖重置路径；③ 关机丢弃日志改为
+> `dropping N batch(es) (M queued plus the in-flight one)`。最终形态见
+> `PropagationServiceTest`（9 条）与 `PropagationService`。
+
 这是本次改动的核心：设备写出 + 合并批次提交落库/推送，全部在一个后台单线程上完成。
 
 **Files:**
@@ -797,7 +804,8 @@ Expected: 三个类全绿
 - [ ] **Step 5: 全量回归**
 
 Run: `mvn clean test`
-Expected: BUILD SUCCESS，server 模块用例数 = 199 - 4（删掉的）+ 1（新增的 `livenessFilterRunsBeforeSubmit`）+ 2（`LiveSourceCheckerTest`）+ 8（`PropagationServiceTest`）= 206
+Expected: BUILD SUCCESS，server 模块用例数 = 207（实测 210 − 删掉的 4 + 新增的 `livenessFilterRunsBeforeSubmit` 1），合计 279。
+（Task 2 的修复轮给 `PropagationServiceTest` 加了一条重置用例，所以是 9 条而非 8 条——本节的旧算式 206/278 随之 +1。）
 
 - [ ] **Step 6: 提交**
 
@@ -858,7 +866,7 @@ git commit -m "refactor(server): 采集周期只提交传播阶段，不再同�
    - `acquisition.cycle` **不再包含设备写出**（历史 P99 不可直接比较）
    - 旧 `sdncustom.propagation.errors`（原 `AcquisitionEngine.propagateSafely` 的）**已由 `propagation.batch.errors` 接替**，不要再按旧名字找
 
-6. **测试计数**：更新为实际值（Task 3 Step 5 的 `mvn clean test` 输出为准；预计 common 25 / protocol 47 / server 206，总数 278）。
+6. **测试计数**：更新为实际值（**以 Task 3 完成后 `mvn clean test` 的输出为准**；预计 common 25 / protocol 47 / server 207，总数 279）。同时把 `PropagationServiceTest` 记为 9 条（含修复轮新增的重置用例）。
 
 - [ ] **Step 2: 更新 `docs/tcp-pipeline.md`**
 
