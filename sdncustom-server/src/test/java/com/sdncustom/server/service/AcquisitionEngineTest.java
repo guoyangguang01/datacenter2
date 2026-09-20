@@ -37,6 +37,9 @@ class AcquisitionEngineTest {
     private ChannelRepository channelRepository;
 
     @Mock
+    private LiveSourceChecker liveSourceChecker;
+
+    @Mock
     private ChannelService channelService;
 
     @Mock
@@ -78,6 +81,9 @@ class AcquisitionEngineTest {
         point.setPointId("p1");
         point.setChannelId("ch_001");
         point.setDataType(PointDataType.FLOAT32);
+
+        // 存活过滤逻辑由 LiveSourceCheckerTest 覆盖，这里放行全部值
+        lenient().when(liveSourceChecker.onlyLive(anyList())).thenAnswer(inv -> inv.getArgument(0));
     }
 
     private PointValue value(String pointId, Object v) {

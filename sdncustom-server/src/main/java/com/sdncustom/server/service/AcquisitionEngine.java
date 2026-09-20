@@ -23,8 +23,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.stream.Collectors;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -37,6 +35,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class AcquisitionEngine {
 
     private final ChannelRepository channelRepository;
+    private final LiveSourceChecker liveSourceChecker;
     private final MeasurementPointRepository pointRepository;
     private final ChannelService channelService;
     private final PersistenceService persistenceService;
@@ -110,7 +109,7 @@ public class AcquisitionEngine {
             // 本轮无有效变化则零写入，避免重复数据打爆存储与推送通道
             if (!changedValues.isEmpty()) {
                 // 读取期间用户可能已断开通道：断开来源的迟到值不写缓存/历史
-                List<PointValue> publishable = onlyLiveSources(changedValues);
+                List<PointValue> publishable = liveSourceChecker.onlyLive(changedValues);
                 if (!publishable.isEmpty()) {
                     meterRegistry.counter("sdncustom.acquisition.changed.values")
                             .increment(publishable.size());
@@ -131,7 +130,7 @@ public class AcquisitionEngine {
                     // COMM_LOST 之后把前端刷回正常。过滤放在推送前一刻，窗口就只剩一次查询的距离。
                     // 输入测点值不过这道滤网：它们的来源通道是**写出目标**，
                     // 目标掉线只代表没送达，不代表这个值本身失效（决策 A）。
-                    List<PointValue> pushable = new ArrayList<>(onlyLiveSources(publishable));
+                    List<PointValue> pushable = new ArrayList<>(liveSourceChecker.onlyLive(publishable));
                     pushable.addAll(inputValues);
                     if (!pushable.isEmpty()) {
                         distributionService.pushBatch(pushable);
@@ -189,19 +188,6 @@ public class AcquisitionEngine {
             log.error("Input point propagation failed; committing output values only", e);
             return List.of();
         }
-    }
-
-    /**
-     * 丢弃来源通道已不在 CONNECTED 的迟到值。通道断开时 markPointsCommLost 会推 COMM_LOST，
-     * 若这些迟到值随后再推送，客户端会被刷回 GOOD——按 DB 状态（客户端看到的状态投影）过滤。
-     */
-    private List<PointValue> onlyLiveSources(List<PointValue> values) {
-        Set<String> live = channelRepository.findByStatus(ChannelStatus.CONNECTED).stream()
-                .map(Channel::getChannelId)
-                .collect(Collectors.toSet());
-        return values.stream()
-                .filter(pv -> pv.getSourceChannelId() == null || live.contains(pv.getSourceChannelId()))
-                .toList();
     }
 
     @PreDestroy
