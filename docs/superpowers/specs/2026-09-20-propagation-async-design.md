@@ -114,7 +114,7 @@ propagation 线程:  ① propagate（设备写出）→ ② persistenceService.s
 - 队列**无界**（用户决策）。**保留 `InputPointPropagator.writeToChannel` 现有的"通道未连接即跳过"规则**——
   这是把无界增长限制在"**已连接但写得慢**"这一种场景的关键：设备掉线时写会失败并置 `connected=false`，
   后续写被直接跳过，队列立刻停止增长。否则设备掉线一小时、恢复后会把一小时的陈旧设定值全灌给设备。
-- 安全阀：`sdncustom.propagation.queue.warn-depth`（默认 100 批）——队列深度超过它时打一次 WARN
+- 安全阀：`sdncustom.propagation.queue-warn-depth`（默认 100 批，**连字符**，见 §9 与 `application.yml`）——队列深度超过它时打一次 WARN
   （同一积压期间不重复刷屏），并暴露 `sdncustom.propagation.queue.depth` Gauge。
   无界队列的 OOM 必须**在 OOM 之前可见**。
 
