@@ -86,7 +86,7 @@ mvn test -Dtest=ChannelServiceTest#testMethod   # 运行单个测试方法
 >
 > 另外仍建议核对基线：`git stash` 后跑同一个测试类，能复现即与本次改动无关。
 
-测试只在 Java 模块里（`sdncustom-common` / `sdncustom-protocol` / `sdncustom-server`，29 个测试类、279 个 `@Test`——common 25 / protocol 47 / server 207，集中在 service/controller/security/config/monitor/repository；server 侧本轮新增的 `PropagationServiceTest` 有 9 条，含修复轮补的积压告警重置用例）。`sdncustom-web` **没有测试框架**——`package.json` 无 `test` 脚本、无 vitest/jest，前端改动只能靠 `npm run build`（含 `tsc` 类型检查）、`npm run check:types`（比对后端 DTO/枚举与手写类型是否漂移）与手工验证。
+测试只在 Java 模块里（`sdncustom-common` / `sdncustom-protocol` / `sdncustom-server`，29 个测试类、280 个 `@Test`——common 25 / protocol 47 / server 208，集中在 service/controller/security/config/monitor/repository；server 侧本轮新增的 `PropagationServiceTest` 有 10 条，含修复轮补的积压告警重置用例与跨批次顺序用例）。`sdncustom-web` **没有测试框架**——`package.json` 无 `test` 脚本、无 vitest/jest，前端改动只能靠 `npm run build`（含 `tsc` 类型检查）、`npm run check:types`（比对后端 DTO/枚举与手写类型是否漂移）与手工验证。
 
 ### 前端 (Vite)
 
