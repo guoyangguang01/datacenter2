@@ -68,7 +68,6 @@ class ModelTest {
         channel.setChannelName("测试通道");
         channel.setCode("FZXT");
         channel.setProtocolType(ProtocolType.CUSTOM_TCP);
-        channel.setDirection(ChannelDirection.READ_WRITE);
         channel.setConnectionConfig("{\"host\":\"localhost\",\"port\":9001}");
         channel.setAutoConnect(true);
         channel.setStatus(ChannelStatus.DISCONNECTED);
@@ -77,7 +76,6 @@ class ModelTest {
         assertEquals("测试通道", channel.getChannelName());
         assertEquals("FZXT", channel.getCode());
         assertEquals(ProtocolType.CUSTOM_TCP, channel.getProtocolType());
-        assertEquals(ChannelDirection.READ_WRITE, channel.getDirection());
         assertEquals("{\"host\":\"localhost\",\"port\":9001}", channel.getConnectionConfig());
         assertTrue(channel.isAutoConnect());
         assertEquals(ChannelStatus.DISCONNECTED, channel.getStatus());
@@ -150,15 +148,6 @@ class ModelTest {
         assertNotNull(ChannelStatus.CONNECTED);
         assertNotNull(ChannelStatus.DISCONNECTED);
         assertNotNull(ChannelStatus.ERROR);
-    }
-
-    @Test
-    @DisplayName("ChannelDirection 枚举值")
-    void channelDirection() {
-        assertEquals(3, ChannelDirection.values().length);
-        assertNotNull(ChannelDirection.READ_ONLY);
-        assertNotNull(ChannelDirection.WRITE_ONLY);
-        assertNotNull(ChannelDirection.READ_WRITE);
     }
 
     @Test

@@ -13,16 +13,14 @@ import static org.junit.jupiter.api.Assertions.*;
 class MockModbusTcpServerTest {
 
     private static MockModbusTcpServer server;
-    private static final int TEST_PORT = 15020;
+    /** 实际监听端口：用临时端口（0）而非固定端口，避免被上一次运行的遗留进程占住后连到僵尸服务器 */
+    private static int port;
 
     @BeforeAll
     static void startServer() {
-        server = new MockModbusTcpServer(TEST_PORT);
-        server.start();
-        try {
-            Thread.sleep(1000); // 等待服务器启动
-        } catch (InterruptedException ignored) {
-        }
+        server = new MockModbusTcpServer(0);
+        server.start(); // 同步 bind：端口被占会在这里抛，而不是静默失败
+        port = server.getPort();
     }
 
     @AfterAll
@@ -37,7 +35,7 @@ class MockModbusTcpServerTest {
     void serverStarted() {
         assertDoesNotThrow(() -> {
             ModbusTcpClient client = new ModbusTcpClient();
-            client.connect("localhost", TEST_PORT);
+            client.connect("localhost", port);
             client.disconnect();
         });
     }
@@ -47,7 +45,7 @@ class MockModbusTcpServerTest {
     void readHoldingRegisters() throws Exception {
         ModbusTcpClient client = new ModbusTcpClient();
         try {
-            client.connect("localhost", TEST_PORT);
+            client.connect("localhost", port);
 
             // 读取寄存器 40001-40003 (地址 0-2)——这些地址在 mock-data.json 中存在
             int[] values = client.readHoldingRegisters(0, 3);
@@ -69,7 +67,7 @@ class MockModbusTcpServerTest {
     void readInputRegisters() throws Exception {
         ModbusTcpClient client = new ModbusTcpClient();
         try {
-            client.connect("localhost", TEST_PORT);
+            client.connect("localhost", port);
 
             // 读取输入寄存器 30001-30005 (地址 0-4)
             int[] values = client.readInputRegisters(0, 5);
@@ -91,7 +89,7 @@ class MockModbusTcpServerTest {
     void readCoils() throws Exception {
         ModbusTcpClient client = new ModbusTcpClient();
         try {
-            client.connect("localhost", TEST_PORT);
+            client.connect("localhost", port);
 
             // 读取线圈 00001-00010 (地址 0-9)
             boolean[] values = client.readCoils(0, 10);
@@ -108,7 +106,7 @@ class MockModbusTcpServerTest {
     void writeHoldingRegister() throws Exception {
         ModbusTcpClient client = new ModbusTcpClient();
         try {
-            client.connect("localhost", TEST_PORT);
+            client.connect("localhost", port);
 
             // 写入寄存器 40001 (地址 0)
             client.writeSingleRegister(0, 12345);
@@ -126,7 +124,7 @@ class MockModbusTcpServerTest {
     void writeMultipleRegisters() throws Exception {
         ModbusTcpClient client = new ModbusTcpClient();
         try {
-            client.connect("localhost", TEST_PORT);
+            client.connect("localhost", port);
 
             // 25.6f 高字在前 = [0x41CC, 0xCCCD]；用未占用的寄存器区避免被定时波动覆盖
             client.writeMultipleRegisters(60, new int[]{0x41CC, 0xCCCD});
@@ -143,7 +141,7 @@ class MockModbusTcpServerTest {
     void readPreset32BitRegisters() throws Exception {
         ModbusTcpClient client = new ModbusTcpClient();
         try {
-            client.connect("localhost", TEST_PORT);
+            client.connect("localhost", port);
 
             // 40033-40034: INT32（从 mock-data.json 加载，默认 10000）
             int[] int32 = client.readHoldingRegisters(32, 2);
@@ -166,7 +164,7 @@ class MockModbusTcpServerTest {
     void writeCoil() throws Exception {
         ModbusTcpClient client = new ModbusTcpClient();
         try {
-            client.connect("localhost", TEST_PORT);
+            client.connect("localhost", port);
 
             // 写入线圈 00001 (地址 0) 为 true
             client.writeSingleCoil(0, true);
@@ -191,7 +189,7 @@ class MockModbusTcpServerTest {
     void readMultipleRegisters() throws Exception {
         ModbusTcpClient client = new ModbusTcpClient();
         try {
-            client.connect("localhost", TEST_PORT);
+            client.connect("localhost", port);
 
             // 读取 20 个保持寄存器
             int[] values = client.readHoldingRegisters(0, 20);
@@ -208,7 +206,7 @@ class MockModbusTcpServerTest {
     void dataUpdate() throws Exception {
         ModbusTcpClient client = new ModbusTcpClient();
         try {
-            client.connect("localhost", TEST_PORT);
+            client.connect("localhost", port);
 
             // 读取初始值
             int[] values1 = client.readHoldingRegisters(0, 1);
@@ -233,7 +231,7 @@ class MockModbusTcpServerTest {
         ModbusTcpClient client = new ModbusTcpClient();
 
         // 连接
-        client.connect("localhost", TEST_PORT);
+        client.connect("localhost", port);
         assertTrue(client.isConnected());
 
         // 断开
@@ -246,7 +244,7 @@ class MockModbusTcpServerTest {
     void multipleConnectDisconnect() throws Exception {
         for (int i = 0; i < 3; i++) {
             ModbusTcpClient client = new ModbusTcpClient();
-            client.connect("localhost", TEST_PORT);
+            client.connect("localhost", port);
             assertTrue(client.isConnected());
 
             int[] values = client.readHoldingRegisters(0, 1);

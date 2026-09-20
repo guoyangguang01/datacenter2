@@ -101,7 +101,6 @@ public class ChannelService {
         channel.setChannelName(dto.getChannelName());
         channel.setCode(dto.getCode());
         channel.setProtocolType(dto.getProtocolType());
-        channel.setDirection(dto.getDirection());
         channel.setConnectionConfig(dto.getConnectionConfig());
         channel.setAutoConnect(dto.isAutoConnect());
         channel.setStatus(ChannelStatus.DISCONNECTED);
@@ -131,7 +130,6 @@ public class ChannelService {
         channel.setChannelName(dto.getChannelName());
         channel.setCode(dto.getCode());
         channel.setProtocolType(dto.getProtocolType());
-        channel.setDirection(dto.getDirection());
         channel.setConnectionConfig(dto.getConnectionConfig());
         channel.setAutoConnect(dto.isAutoConnect());
         Channel saved = channelRepository.save(channel);

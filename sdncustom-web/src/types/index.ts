@@ -1,7 +1,5 @@
 export type ProtocolType = 'CUSTOM_TCP' | 'MODBUS_TCP' | 'MQTT' | 'OPCUA';
 
-export type ChannelDirection = 'READ_ONLY' | 'WRITE_ONLY' | 'READ_WRITE';
-
 export type ChannelStatus = 'DISCONNECTED' | 'CONNECTED' | 'ERROR';
 
 export type PointDataType = 'BOOL' | 'INT16' | 'INT32' | 'FLOAT32' | 'FLOAT64' | 'STRING';
@@ -25,7 +23,6 @@ export interface Channel {
   /** 外部系统代码（如 FZXT / SWGZ）；空值表示未编码，非空时业务内唯一 */
   code?: string;
   protocolType: ProtocolType;
-  direction: ChannelDirection;
   connectionConfig: string;
   status: ChannelStatus;
   autoConnect: boolean;

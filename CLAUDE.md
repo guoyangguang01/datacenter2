@@ -30,11 +30,14 @@ SDNCustom/
 > 原始设计文档：`docs/superpowers/specs/2026-08-26-sdncustom-design.md`（数据模型/协议层/存储设计的完整背景）。注意其中"多 Channel 写冲突"、第一期范围等章节已被后续绑定集模型与业务隔离迭代**取代**，以本文件为准。
 >
 > 未处理的问题与需要决策的事项集中在 **`docs/backlog.md`**（含「核实后确认不是问题」一节，避免重复讨论）。
+>
+> 仓库根的 **`README.md` 是面向使用者的概览**（快速开始、登录凭据、协议命令码表），模型与 API 以**本文件为准**——
+> README 的 API 段只列出主要端点，且更新滞后于代码。
 
 ## 核心概念
 
 - **测点 (MeasurementPoint)**：数据的最小单元，平台的一等公民。每个测点直接关联一个通道（`channelId` + `address`，一对一）。分方向：`OUTPUT` 输出测点（关联通道用于**采集读取**，数据从外部流入平台）；`INPUT` 输入测点（`referencePointId` 引用一个**同业务、同 dataType** 的 OUTPUT 测点，其关联通道用于**写出**——输出测点经 ChangeGate 的有效变化由 `InputPointPropagator` 事件驱动写到输入测点的关联通道）。一个 INPUT 只引用一个 OUTPUT，多个 INPUT 可引用同一 OUTPUT。方向与引用创建后不可变更（update 静默忽略 DTO 中的 direction/referencePointId），删除被引用的 OUTPUT 返回 400
-- **管道 (Channel)**：与外部设备/系统的连接通道，负责数据采集和写入。可选字段 `code` 承载**外部系统代码**（如 `FZXT` 仿真系统、`SWGZ` 三维感知），供外部数据源总表按代码定位通道；`code` 可空（空值表示未编码），非空时要求**同一业务内不重复**——唯一性由 `ChannelService.requireCodeAvailable` 在服务层校验（DB 层不加约束），空值直接跳过校验，故现有调用方不传该字段不受影响
+- **管道 (Channel)**：与外部设备/系统的连接通道，负责数据采集和写入。**通道本身没有读写开关**——能力由挂在它上面的测点方向决定（挂 OUTPUT 点即被采集读取，挂 INPUT 点即被写出，两者可兼有），且唯一的行为依据就是测点自身的方向。可选字段 `code` 承载**外部系统代码**（如 `FZXT` 仿真系统、`SWGZ` 三维感知），供外部数据源总表按代码定位通道；`code` 可空（空值表示未编码），非空时要求**同一业务内不重复**——唯一性由 `ChannelService.requireCodeAvailable` 在服务层校验（DB 层不加约束），空值直接跳过校验，故现有调用方不传该字段不受影响
 - **业务系统 (BusinessSystem)**：多业务隔离的逻辑维度；通道与测点归属到某个业务，列表查询/创建校验按业务过滤。测点不跨业务共享（关联通道必须同业务，引用也只能引用本业务测点）；归属创建后不可变更（update 静默忽略 DTO 中的 businessId）；删除业务前要求名下无通道、无测点。删除通道时级联删除其关联的测点。隔离是数据组织维度——单管理员、采集/推送/缓存/历史不感知业务
 - **数据中枢**：平台是测点数据的唯一权威源，所有客户端通过平台读写数据
 
@@ -70,14 +73,20 @@ mvn test -Dtest=ChannelServiceTest#testMethod   # 运行单个测试方法
 > 会把**编译错误桩**写进 `target/classes`，覆盖掉 Maven 刚编译出的正确 class；测试 JVM 懒加载到
 > 那些桩就抛这个错。**这不是代码问题**，也很容易被误判成"自己改坏了"。
 >
-> **处理办法就是原地重新编译**：`mvn clean test`。实测：**停止编辑后原地重跑即全绿**
-> （255 个测试）。触发条件是"边改文件边跑测试"——每次保存都会让编辑器重启后台编译，与 Maven
+> **处理办法就是原地重新编译**：`mvn clean test`。实测：**停止编辑后原地重跑即全绿**（262 个测试）。
+> 触发条件是"边改文件边跑测试"——每次保存都会让编辑器重启后台编译，与 Maven
 > 争抢 `target/classes`。所以偶发失败时**等编辑器编译停下再重跑**，不要为此换目录构建，
-> 那只会掩盖问题。想根治就让编辑器也用 JDK 23（本机 `.vscode/` 尚未配置）。
+> 那只会掩盖问题。
+>
+> **最快的判定方法**：报错出现在**本次没改过的**测试类上（例如只改了 A，却连 B、C 一起报
+> `Unresolved compilation problem`），就基本可以断定是它，而不是自己改坏了。
+>
+> **本机现状（2026-09-20）**：Java 扩展已卸载 + VS Code 已重启，该污染源在本机消失。
+> 此后若重装 Java 扩展，**务必让它用 JDK 23**（本机 `.vscode/` 仍未配置），否则此症状回归。
 >
 > 另外仍建议核对基线：`git stash` 后跑同一个测试类，能复现即与本次改动无关。
 
-测试只在 Java 模块里（`sdncustom-common` / `sdncustom-protocol` / `sdncustom-server`，27 个测试类、255 个 `@Test`——common 26 / protocol 46 / server 183，集中在 service/controller/security/config/monitor/repository）。`sdncustom-web` **没有测试框架**——`package.json` 无 `test` 脚本、无 vitest/jest，前端改动只能靠 `npm run build`（含 `tsc` 类型检查）、`npm run check:types`（比对后端 DTO/枚举与手写类型是否漂移）与手工验证。
+测试只在 Java 模块里（`sdncustom-common` / `sdncustom-protocol` / `sdncustom-server`，27 个测试类、262 个 `@Test`——common 25 / protocol 47 / server 190，集中在 service/controller/security/config/monitor/repository）。`sdncustom-web` **没有测试框架**——`package.json` 无 `test` 脚本、无 vitest/jest，前端改动只能靠 `npm run build`（含 `tsc` 类型检查）、`npm run check:types`（比对后端 DTO/枚举与手写类型是否漂移）与手工验证。
 
 ### 前端 (Vite)
 
@@ -104,6 +113,7 @@ scripts/build.bat                    # 构建后端（mvn clean install -DskipTe
 scripts/start.bat                    # 启动服务（后端+前端独立窗口，关闭窗口即停止）
 scripts/start-backend.bat            # 单独启动后端（需先执行 build.bat）
 scripts/start-frontend.bat           # 单独启动前端
+scripts/build.sh / start.sh / stop.sh / restart.sh   # Linux/Mac 等价脚本
 ```
 
 > 注意：`scripts/start.bat` 依赖已构建的 jar，首次运行请先执行 `scripts/build.bat`。
@@ -140,7 +150,7 @@ INT32/FLOAT32 占 **2 个连续寄存器**、FLOAT64 占 **4 个**，起始地�
 ## 关键服务
 
 - **AcquisitionEngine**：定时采集引擎，每 200ms 扫描 CONNECTED 状态的 Channel，**按通道在固定 8 线程池上并行采集**（`allOf` 限时 5s，慢通道不拖长整轮周期）；每个通道**只采 OUTPUT 测点**（`pointRepository.findByChannelIdAndDirection(channelId, OUTPUT)`），经 ChangeGate 过滤后**仅对有效变化**做处理（无变化则零写入），并调用 `InputPointPropagator` 把有效变化写到 INPUT 测点——传播值与输出测点值**并入同一批次**；该批次**异步移交** `PersistenceService` 队列落库、交给 `DistributionService` 队列推送，采集周期**不等**任何落库或推送完成；推送前的 `onlyLiveSources` 复核**不适用于传播值**（INPUT 的关联通道是写出目标，掉线只代表没送达，不代表值失效）。适配器报 `isConnected()==false` 时，非 MQTT 协议会把 DB 状态修正为 DISCONNECTED（消除"假连接"）——所以 TCP/Modbus 适配器在**读失败时会主动关闭连接**，让 `isConnected()` 如实反映
-- **InputPointPropagator**：输入测点传播。值语义是「意图」而非「实际」——输出测点经 ChangeGate 的有效变化查其引用者（`findByReferencePointIdIn`），逐个**写出到 INPUT 测点的关联通道**（跳过未连接/只读通道），不论写出成功与否都用输出测点的值/质量/时间戳更新 INPUT（写出失败只记日志与指标 `sdncustom.propagation.failures`）。来源通道取写出成功的通道，失败则退回 INPUT 的 channelId。INPUT 不参与采集周期，传播值不会回流 ChangeGate，无自我触发回路
+- **InputPointPropagator**：输入测点传播。值语义是「意图」而非「实际」——输出测点经 ChangeGate 的有效变化查其引用者（`findByReferencePointIdIn`），逐个**写出到 INPUT 测点的关联通道**（只跳过"通道不存在/未连接"——通道没有只读一说，读写由测点方向决定），不论写出成功与否都用输出测点的值/质量/时间戳更新 INPUT（写出失败只记日志与指标 `sdncustom.propagation.failures`）。来源通道取写出成功的通道，失败则退回 INPUT 的 channelId。INPUT 不参与采集周期，传播值不会回流 ChangeGate，无自我触发回路
 - **ChannelReconnectScheduler**：断线自动重连。`ChannelService` 维护"期望连接"集合（`connect` 加入、`disconnect` 移除、掉线不移除），调度器按 `sdncustom.channel.reconnect.*` 退避重试（默认 2s 起、×2、封顶 60s，每 5s 扫一遍）。**只管非 MQTT**——Paho 自带重连，再叠一层会重建适配器实例。指标 `sdncustom.channel.reconnects` / `reconnect.failures`
 - **ChangeGate**：变更检测门。每个测点只有一个来源通道（一对一关联），直接按 pointId 记录权威值；数值型按 |新−旧| > 测点死区(deadband) 判断有效变化，非数值按 equals 判断。门的状态用 `removePoints`（删点/断连时清该点状态）维护
 - **ChannelService**：Channel 生命周期唯一入口（CRUD + connect/disconnect/syncDisconnected，按通道加锁 `ReentrantLock` 串行化；DB status 是适配器运行时状态的投影）。`update()` 检测到协议/connectionConfig 变化时会先销毁旧适配器、必要时以新配置重连（修复"改配置仍沿用旧连接"）。`delete()` 级联删除该通道关联的所有测点
@@ -175,9 +185,10 @@ INT32/FLOAT32 占 **2 个连续寄存器**、FLOAT64 占 **4 个**，起始地�
 `BusinessSystemMigration` / `DemoDataInitializer` 已全部删除。表结构完全由 JPA
 `ddl-auto: update` 依实体建出。
 
-启动期唯一的 `CommandLineRunner` 是 `AppStartupRunner`：① `HistoryService.init()`
+启动期有两个 Runner，都不写库：`AppStartupRunner`（唯一的 `CommandLineRunner`）：① `HistoryService.init()`
 建 TDengine 库/超级表（失败仅告警，不阻断启动）→ ② 守护线程 sleep 2s 后
-`ChannelService.autoConnectAll()`（并行连接 `autoConnect=true` 通道）。
+`ChannelService.autoConnectAll()`（并行连接 `autoConnect=true` 通道）；另一个是 `SecurityConfig.securityDefaultsWarning`
+（`ApplicationRunner`，密码仍是 `changeme` 时打 WARN，不改数据）。
 
 运行时产物：H2 配置库是文件库 **`sdncustom-server/data/sdncustom.mv.db`**——路径相对后端的
 工作目录（`scripts/start-backend.bat` 会 `cd sdncustom-server`），**不是仓库根目录的 `data/`**。
@@ -270,7 +281,7 @@ GET    /api/points/{id}/history        # 查询历史
 
 > **JSON 导入**（`POST /api/data/import`）：payload 可含可选的 `channels` 段——缺失的通道自动创建，已存在的跳过。测点的 `channelId` 必须指向已存在或本次 payload 中提供的通道，否则整体失败并点名缺失通道。导入的每个测点**必须自带 `businessId`**（不再回退默认业务），且必须带 `channelId` 和 `address`。
 >
-> **CSV 导入**（`POST /api/data/import-csv`）：前端先选择业务和通道，再上传 CSV 文件。CSV 只含测点属性列（pointId, pointName, address, dataType, unit, direction, referencePointId, deadband），businessId 和 channelId 从 UI 选择继承。UTF-8 编码（兼容 BOM 头）。业务/通道不存在时自动创建——自动建的通道是 `CUSTOM_TCP`/`READ_WRITE`、`code` 取 channelId、且 **`autoConnect=false`**（它没有 `connectionConfig`，自动连接只会在启动时拿空配置去连并失败；`ChannelDTO` 的字段默认值是 `true`，所以必须显式关掉）。
+> **CSV 导入**（`POST /api/data/import-csv`）：前端先选择业务和通道，再上传 CSV 文件。CSV 只含测点属性列（pointId, pointName, address, dataType, unit, direction, referencePointId, deadband），businessId 和 channelId 从 UI 选择继承。UTF-8 编码（兼容 BOM 头）。业务/通道不存在时自动创建——自动建的通道是 `CUSTOM_TCP`、`code` 取 channelId、且 **`autoConnect=false`**（它没有 `connectionConfig`，自动连接只会在启动时拿空配置去连并失败；`ChannelDTO` 的字段默认值是 `true`，所以必须显式关掉）。
 
 ```
 GET    /api/data/export                # 导出 {businesses, points}；裸 payload（无 ApiResponse 信封），文件可直接回灌
@@ -332,6 +343,10 @@ cd mock
 > 注意：自定义 TCP 模拟服务器使用 **9002** 端口（9001 已被 Mosquitto 的 MQTT WebSocket 占用）。
 
 `mock/mock-data.json` 是 `{businesses, channels, points}` 格式，正好是 `POST /api/data/import` 的入参——导入时自动创建业务和通道（已存在的跳过），然后创建测点。所有示例通道 `autoConnect=false`，导入后需手动连接。
+
+> **`mock/mock-channels.json` 目前无人消费**：通道没有独立导入端点（`POST /api/channels/import` 不存在），前端通道页也没有「导入」按钮——
+> 那是早期版本的遗留文件，`mock/README.md` 里"在通道页导入 mock-channels.json"的步骤已失效。建通道只有两条路：
+> 手工建、或随 `mock-data.json` 一起导入（它自带 `channels` 段）。
 
 ## 安全配置
 

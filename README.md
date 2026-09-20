@@ -4,15 +4,15 @@
 
 ## 核心概念
 
-- **测点 (MeasurementPoint)**：数据的最小单元，平台的一等公民。分方向：`OUTPUT`（绑定通道用于采集读取，数据从外部流入平台）与 `INPUT`（引用一个同业务、同数据类型的 OUTPUT，其绑定通道用于写出——输出测点的变化会传播到引用它的输入测点并写到外部）
-- **管道 (Channel)**：与外部系统的连接通道，负责数据同步
+- **测点 (MeasurementPoint)**：数据的最小单元，平台的一等公民。每个测点直接关联一个通道。分方向：`OUTPUT`（关联通道用于采集读取，数据从外部流入平台）与 `INPUT`（引用一个同业务、同数据类型的 OUTPUT，其关联通道用于写出——输出测点的变化会传播到引用它的输入测点并写到外部）
+- **管道 (Channel)**：与外部系统的连接通道，负责数据同步。通道本身没有读写开关——读写能力由挂在它上面的测点方向决定
 - **数据中枢**：平台是测点数据的唯一权威源，所有客户端通过平台读写数据
 
 ## 技术栈
 
 | 层级 | 技术 |
 |------|------|
-| 后端 | Java 17+ / Spring Boot 3.2 / Spring Data JPA |
+| 后端 | Java 23 / Spring Boot 3.2 / Spring Data JPA |
 | 前端 | React 18 / TypeScript / Ant Design 5 / Zustand |
 | 配置存储 | H2 (嵌入式) |
 | 实时缓存 | Redis |
@@ -33,8 +33,8 @@ SDNCustom/
 
 ### 前置条件
 
-- JDK 17+ (推荐 JDK 23)
-- Maven 3.8+
+- JDK 23（根 pom 固定 `<java.version>23</java.version>`；本机版本较低时用 `-Djava.version=<版本>` 覆盖，如 21）
+- Maven 3.9+
 - Node.js 18+
 - Redis (可选，用于实时缓存)
 - TDengine (可选，用于历史数据)
@@ -77,6 +77,25 @@ npm run dev
 
 ## API 文档
 
+> 除 `POST /api/auth/login` 与 `/actuator/health` 外，所有接口都需要 `Authorization: Bearer <token>`。
+> 下面只列主要端点，完整清单（含业务、导入导出、系统状态）见 `CLAUDE.md`。
+
+### Auth
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | /api/auth/login | 登录，返回 JWT |
+| GET | /api/auth/me | 当前身份 |
+
+### BusinessSystem API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /api/businesses | 查询所有业务 |
+| POST | /api/businesses | 创建业务 |
+| PUT | /api/businesses/{id} | 更新业务（仅名称/描述） |
+| DELETE | /api/businesses/{id} | 删除业务（名下有通道/测点时返回 400） |
+
 ### Channel API
 
 | 方法 | 路径 | 说明 |
@@ -101,7 +120,21 @@ npm run dev
 | PUT | /api/points/{id} | 更新测点 |
 | DELETE | /api/points/{id} | 删除测点（被输入测点引用时返回 400） |
 | GET | /api/points/{id}/value | 获取测点当前值 |
-| GET | /api/points/{id}/history | 查询历史数据 |
+| GET | /api/points/{id}/history | 查询历史数据（必填 `startTime` / `endTime`） |
+
+### Data（导入导出）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /api/data/export | 导出 `{businesses, points}`（裸 payload，可直接回灌） |
+| POST | /api/data/import | 导入 `{businesses?, channels?, points}`，事务性 |
+| POST | /api/data/import-csv | CSV 导入测点（multipart，业务与通道由表单选择） |
+
+### System
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /api/system/status | 仪表盘状态卡聚合数据（10s 轮询） |
 
 ### WebSocket
 
@@ -147,19 +180,20 @@ npm run dev
 ## 第一期范围
 
 - [x] Channel 管理 (CRUD + 连接/断开)
-- [x] 测点管理 (CRUD)
-- [x] 自定义 TCP 协议适配器
-- [x] 实时数据采集引擎 (200ms)
+- [x] 测点管理 (CRUD + 方向/引用校验)
+- [x] 业务系统隔离
+- [x] 协议适配器：自定义 TCP、Modbus TCP（含 32/64 位多寄存器）、MQTT、OPC-UA
+- [x] 实时数据采集引擎 (200ms) + 断线自动重连
+- [x] 输入测点传播（OUTPUT 变化写到 INPUT 的关联通道）
 - [x] Redis 实时缓存
 - [x] TDengine 历史存储
 - [x] WebSocket 实时推送
-- [x] 前端三个页面 (Channel 管理、测点管理、实时看板)
+- [x] 前端五个页面 (仪表盘、业务、Channel 管理、测点管理、实时监控)
+- [x] 数据导入导出（JSON / CSV）
 - [x] 认证鉴权 (JWT，默认账号 admin / changeme，可通过环境变量覆盖)
 
 ## 后续迭代
 
-- [ ] Modbus TCP/RTU 适配器
-- [ ] MQTT 适配器
-- [ ] OPC-UA 适配器
-- [ ] 历史数据查询页面
+- [ ] 历史数据查询页面（后端接口已就绪，前端未实现）
 - [ ] 告警管理
+- [ ] 数据库迁移工具（目前只支持空库，无就地升级路径）

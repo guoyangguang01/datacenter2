@@ -20,9 +20,15 @@ public class MockModbusTcpServer {
 
     private static final int MBAP_HEADER_SIZE = 7;
     private final int port;
-    private ServerSocket serverSocket;
+    private volatile ServerSocket serverSocket;
     private volatile boolean running = false;
-    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+    // 守护线程：调用方忘了 stop()（测试卡死、被中断）时也不会把 JVM 拖住不退出
+    private final ScheduledExecutorService scheduler =
+            Executors.newScheduledThreadPool(1, r -> {
+                Thread t = new Thread(r, "mock-modbus-data");
+                t.setDaemon(true);
+                return t;
+            });
     private final Random random = new Random();
 
     // 已接受的客户端连接，用于 stop() 时统一关闭，避免线程/连接泄漏
@@ -125,25 +131,41 @@ public class MockModbusTcpServer {
      * 启动模拟服务器
      */
     public void start() {
+        try {
+            serverSocket = new ServerSocket(port);
+        } catch (IOException e) {
+            throw new IllegalStateException("Mock Modbus Server 绑定端口 " + port + " 失败"
+                    + "（端口被占用？查一下是否残留着上一次运行的进程）: " + e.getMessage(), e);
+        }
         running = true;
-        new Thread(() -> {
+        log.info("Mock Modbus TCP Server started on port {}", getPort());
+
+        Thread acceptThread = new Thread(() -> {
             try {
-                serverSocket = new ServerSocket(port);
-                log.info("Mock Modbus TCP Server started on port {}", port);
                 while (running) {
                     Socket client = serverSocket.accept();
                     log.info("Modbus client connected: {}", client.getRemoteSocketAddress());
-                    new Thread(() -> handleClient(client)).start();
+                    Thread handler = new Thread(() -> handleClient(client));
+                    handler.setDaemon(true);
+                    handler.start();
                 }
             } catch (IOException e) {
                 if (running) {
                     log.error("Mock Modbus Server error", e);
                 }
             }
-        }, "mock-modbus-server").start();
+        }, "mock-modbus-server");
+        acceptThread.setDaemon(true);
+        acceptThread.start();
 
         // 定时更新模拟数据
         scheduler.scheduleAtFixedRate(this::updateMockData, 1, 3, TimeUnit.SECONDS);
+    }
+
+    /** 实际监听端口（构造时传 0 则由系统分配，只在这里能拿到） */
+    public int getPort() {
+        ServerSocket socket = serverSocket;
+        return socket != null ? socket.getLocalPort() : port;
     }
 
     /**

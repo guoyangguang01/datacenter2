@@ -65,7 +65,7 @@ class PointApiIntegrationTest {
                         .header("Authorization", auth)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"channelId\":\"ch_c1\",\"channelName\":\"C1 通道\",\"businessId\":\"biz_c1\","
-                                + "\"protocolType\":\"CUSTOM_TCP\",\"direction\":\"READ_WRITE\","
+                                + "\"protocolType\":\"CUSTOM_TCP\","
                                 + "\"connectionConfig\":\"{\\\"host\\\":\\\"127.0.0.1\\\",\\\"port\\\":9002}\","
                                 + "\"autoConnect\":false}"))
                 .andExpect(status().isOk())

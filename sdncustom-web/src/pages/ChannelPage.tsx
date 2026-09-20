@@ -12,12 +12,6 @@ const protocolOptions = [
   { label: 'OPC-UA', value: 'OPCUA' },
 ];
 
-const directionOptions = [
-  { label: '只读', value: 'READ_ONLY' },
-  { label: '只写', value: 'WRITE_ONLY' },
-  { label: '读/写', value: 'READ_WRITE' },
-];
-
 const statusColors = {
   CONNECTED: 'green',
   DISCONNECTED: 'default',
@@ -70,7 +64,6 @@ export default function ChannelPage() {
       channelName: record.channelName,
       code: record.code,
       protocolType: record.protocolType,
-      direction: record.direction,
       autoConnect: record.autoConnect,
       // TCP / Modbus
       host: config.host || 'localhost',
@@ -156,7 +149,6 @@ export default function ChannelPage() {
       channelName: values.channelName,
       code: values.code,
       protocolType: values.protocolType,
-      direction: values.direction,
       autoConnect: values.autoConnect || false,
       connectionConfig,
       ...(!editing && currentBusinessId ? { businessId: currentBusinessId } : {}),
@@ -181,7 +173,6 @@ export default function ChannelPage() {
     { title: '名称', dataIndex: 'channelName', key: 'channelName' },
     { title: '编码', dataIndex: 'code', key: 'code' },
     { title: '协议', dataIndex: 'protocolType', key: 'protocolType' },
-    { title: '方向', dataIndex: 'direction', key: 'direction' },
     {
       title: '状态',
       dataIndex: 'status',
@@ -275,10 +266,6 @@ export default function ChannelPage() {
               onChange={(value) => setProtocolType(value)}
             />
           </Form.Item>
-          <Form.Item name="direction" label="方向" rules={[{ required: true }]}>
-            <Select options={directionOptions} />
-          </Form.Item>
-
           {/* 自定义 TCP / Modbus TCP 配置 */}
           {(protocolType === 'CUSTOM_TCP' || protocolType === 'MODBUS_TCP') && (
             <>

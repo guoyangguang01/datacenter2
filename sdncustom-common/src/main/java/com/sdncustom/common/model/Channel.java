@@ -1,6 +1,5 @@
 package com.sdncustom.common.model;
 
-import com.sdncustom.common.model.enums.ChannelDirection;
 import com.sdncustom.common.model.enums.ChannelStatus;
 import com.sdncustom.common.model.enums.ProtocolType;
 import jakarta.persistence.*;
@@ -45,10 +44,6 @@ public class Channel {
     @Enumerated(EnumType.STRING)
     @Column(name = "protocol_type", length = 32, nullable = false)
     private ProtocolType protocolType;
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "direction", length = 16, nullable = false)
-    private ChannelDirection direction;
 
     @Column(name = "connection_config", columnDefinition = "TEXT")
     private String connectionConfig;

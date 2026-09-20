@@ -1690,7 +1690,6 @@
       "channelName": "自定义TCP模拟通道",
       "code": "TCP",
       "protocolType": "CUSTOM_TCP",
-      "direction": "READ_WRITE",
       "connectionConfig": "{\"host\":\"localhost\",\"port\":9002}",
       "autoConnect": false,
       "businessId": "default"
@@ -1700,7 +1699,6 @@
       "channelName": "Modbus TCP模拟通道",
       "code": "MODBUS",
       "protocolType": "MODBUS_TCP",
-      "direction": "READ_WRITE",
       "connectionConfig": "{\"host\":\"localhost\",\"port\":5020,\"unitId\":1,\"wordOrder\":\"big\"}",
       "autoConnect": false,
       "businessId": "default"
@@ -1710,7 +1708,6 @@
       "channelName": "MQTT模拟通道",
       "code": "MQTT",
       "protocolType": "MQTT",
-      "direction": "READ_WRITE",
       "connectionConfig": "{\"broker\":\"tcp://localhost:1883\",\"clientId\":\"sdncustom_mock\"}",
       "autoConnect": false,
       "businessId": "default"
@@ -1720,7 +1717,6 @@
       "channelName": "OPC-UA模拟通道",
       "code": "OPCUA",
       "protocolType": "OPCUA",
-      "direction": "READ_WRITE",
       "connectionConfig": "{\"endpoint\":\"opc.tcp://localhost:4840\"}",
       "autoConnect": false,
       "businessId": "default"

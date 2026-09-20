@@ -3,7 +3,6 @@ package com.sdncustom.server.service;
 import com.sdncustom.common.model.Channel;
 import com.sdncustom.common.model.MeasurementPoint;
 import com.sdncustom.common.model.PointValue;
-import com.sdncustom.common.model.enums.ChannelDirection;
 import com.sdncustom.common.model.enums.ChannelStatus;
 import com.sdncustom.protocol.ProtocolAdapter;
 import com.sdncustom.protocol.ProtocolRegistry;
@@ -91,11 +90,6 @@ public class InputPointPropagator {
         }
         if (channel.getStatus() != ChannelStatus.CONNECTED) {
             log.warn("Propagation skipped: channel not connected {} for point {}",
-                    channelId, inputPoint.getPointId());
-            return null;
-        }
-        if (channel.getDirection() == ChannelDirection.READ_ONLY) {
-            log.warn("Propagation skipped: channel read-only {} for point {}",
                     channelId, inputPoint.getPointId());
             return null;
         }

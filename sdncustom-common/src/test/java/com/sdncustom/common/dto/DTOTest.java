@@ -1,6 +1,5 @@
 package com.sdncustom.common.dto;
 
-import com.sdncustom.common.model.enums.ChannelDirection;
 import com.sdncustom.common.model.enums.PointDataType;
 import com.sdncustom.common.model.enums.PointDirection;
 import com.sdncustom.common.model.enums.PointQuality;
@@ -96,7 +95,6 @@ class DTOTest {
         dto.setChannelId("ch_001");
         dto.setChannelName("测试通道");
         dto.setProtocolType(ProtocolType.CUSTOM_TCP);
-        dto.setDirection(ChannelDirection.READ_WRITE);
         dto.setConnectionConfig("{\"host\":\"localhost\",\"port\":9001}");
         dto.setAutoConnect(false);
 
@@ -225,7 +223,6 @@ class DTOTest {
         tcpDto.setChannelId("ch_tcp");
         tcpDto.setChannelName("TCP Channel");
         tcpDto.setProtocolType(ProtocolType.CUSTOM_TCP);
-        tcpDto.setDirection(ChannelDirection.READ_WRITE);
         tcpDto.setConnectionConfig("{\"host\":\"localhost\",\"port\":9001}");
         assertTrue(validator.validate(tcpDto).isEmpty());
 
@@ -234,7 +231,6 @@ class DTOTest {
         modbusDto.setChannelId("ch_modbus");
         modbusDto.setChannelName("Modbus Channel");
         modbusDto.setProtocolType(ProtocolType.MODBUS_TCP);
-        modbusDto.setDirection(ChannelDirection.READ_WRITE);
         modbusDto.setConnectionConfig("{\"host\":\"localhost\",\"port\":502,\"unitId\":1}");
         assertTrue(validator.validate(modbusDto).isEmpty());
 
@@ -243,7 +239,6 @@ class DTOTest {
         mqttDto.setChannelId("ch_mqtt");
         mqttDto.setChannelName("MQTT Channel");
         mqttDto.setProtocolType(ProtocolType.MQTT);
-        mqttDto.setDirection(ChannelDirection.READ_WRITE);
         mqttDto.setConnectionConfig("{\"broker\":\"tcp://localhost:1883\"}");
         assertTrue(validator.validate(mqttDto).isEmpty());
 
@@ -252,7 +247,6 @@ class DTOTest {
         opcuaDto.setChannelId("ch_opcua");
         opcuaDto.setChannelName("OPC-UA Channel");
         opcuaDto.setProtocolType(ProtocolType.OPCUA);
-        opcuaDto.setDirection(ChannelDirection.READ_WRITE);
         opcuaDto.setConnectionConfig("{\"endpoint\":\"opc.tcp://localhost:4840\"}");
         assertTrue(validator.validate(opcuaDto).isEmpty());
     }

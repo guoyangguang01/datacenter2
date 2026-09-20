@@ -20,9 +20,15 @@ public class MockTcpServer {
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
     private final int port;
-    private ServerSocket serverSocket;
+    private volatile ServerSocket serverSocket;
     private volatile boolean running = false;
-    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
+    // 守护线程：调用方忘了 stop()（测试卡死、被中断）时也不会把 JVM 拖住不退出
+    private final ScheduledExecutorService scheduler =
+            Executors.newScheduledThreadPool(2, r -> {
+                Thread t = new Thread(r, "mock-tcp-data");
+                t.setDaemon(true);
+                return t;
+            });
     private final Map<String, Object> pointValues = new ConcurrentHashMap<>();
     private final Random random = new Random();
 
@@ -96,28 +102,51 @@ public class MockTcpServer {
     }
 
     /**
-     * 启动模拟服务器
+     * 启动模拟服务器。
+     *
+     * <p>**同步 bind**：端口在这里就绑好，绑不上直接抛异常——原先在后台线程里 bind 且只
+     * {@code log.error}，端口被占（例如上一次测试运行遗留的进程）时调用方毫不知情，
+     * 客户端会连到别人的服务器上傻等。返回即代表端口已在监听，无需再 sleep 等待。
+     *
+     * @param port 监听端口；传 {@code 0} 表示由系统分配临时端口，之后用 {@link #getPort()} 取实际端口
+     * @throws IllegalStateException 端口绑定失败
      */
     public void start() {
+        try {
+            serverSocket = new ServerSocket(port);
+        } catch (IOException e) {
+            throw new IllegalStateException("Mock TCP Server 绑定端口 " + port + " 失败"
+                    + "（端口被占用？查一下是否残留着上一次运行的进程）: " + e.getMessage(), e);
+        }
         running = true;
-        new Thread(() -> {
+        log.info("Mock TCP Server started on port {}", getPort());
+
+        Thread acceptThread = new Thread(() -> {
             try {
-                serverSocket = new ServerSocket(port);
-                log.info("Mock TCP Server started on port {}", port);
                 while (running) {
                     Socket client = serverSocket.accept();
                     log.info("Client connected: {}", client.getRemoteSocketAddress());
-                    new Thread(() -> handleClient(client)).start();
+                    Thread handler = new Thread(() -> handleClient(client));
+                    handler.setDaemon(true);
+                    handler.start();
                 }
             } catch (IOException e) {
                 if (running) {
                     log.error("Mock TCP Server error", e);
                 }
             }
-        }, "mock-tcp-server").start();
+        }, "mock-tcp-server");
+        acceptThread.setDaemon(true);
+        acceptThread.start();
 
         // 定时更新模拟数据（模拟数据变化）
         scheduler.scheduleAtFixedRate(this::updateMockData, 1, 2, TimeUnit.SECONDS);
+    }
+
+    /** 实际监听端口（构造时传 0 则由系统分配，只在这里能拿到） */
+    public int getPort() {
+        ServerSocket socket = serverSocket;
+        return socket != null ? socket.getLocalPort() : port;
     }
 
     /**

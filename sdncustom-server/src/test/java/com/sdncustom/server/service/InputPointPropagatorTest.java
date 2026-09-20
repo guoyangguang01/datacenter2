@@ -3,7 +3,6 @@ package com.sdncustom.server.service;
 import com.sdncustom.common.model.Channel;
 import com.sdncustom.common.model.MeasurementPoint;
 import com.sdncustom.common.model.PointValue;
-import com.sdncustom.common.model.enums.ChannelDirection;
 import com.sdncustom.common.model.enums.ChannelStatus;
 import com.sdncustom.common.model.enums.PointDataType;
 import com.sdncustom.common.model.enums.PointDirection;
@@ -77,7 +76,6 @@ class InputPointPropagatorTest {
         Channel ch = new Channel();
         ch.setChannelId(id);
         ch.setStatus(ChannelStatus.CONNECTED);
-        ch.setDirection(ChannelDirection.READ_WRITE);
         return ch;
     }
 
@@ -155,20 +153,6 @@ class InputPointPropagatorTest {
         assertEquals(1, result.size());
         assertEquals(7.0, result.get(0).getValue());
         assertEquals("ch_dst", result.get(0).getSourceChannelId());
-        verifyNoInteractions(protocolRegistry);
-    }
-
-    @Test
-    @DisplayName("只读通道：跳过写出但仍返回值")
-    void readOnlyChannelSkipped() {
-        when(pointRepository.findByReferencePointIdIn(List.of("out_1"))).thenReturn(List.of(inputPoint));
-        Channel ch = connectedChannel("ch_dst");
-        ch.setDirection(ChannelDirection.READ_ONLY);
-        when(channelService.findByIdOrNull("ch_dst")).thenReturn(ch);
-
-        List<PointValue> result = propagator.propagate(List.of(outputChange(7.0)));
-
-        assertEquals(1, result.size());
         verifyNoInteractions(protocolRegistry);
     }
 

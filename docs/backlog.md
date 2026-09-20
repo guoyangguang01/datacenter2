@@ -118,6 +118,17 @@ INPUT 测点的每条绑定做一次 `adapter.writePoint`（真实 socket 写）
 ## 三、工程债 / 测试缺口
 
 - **前端无测试框架**：`sdncustom-web/package.json` 无 `test` 脚本、无 vitest/jest。目前靠 `npm run build`（tsc）+ `npm run check:types`（后端 DTO/枚举漂移检查）+ 手工验证
+- ~~**协议 mock 测试：固定端口 + 客户端读无超时，一次被中断的运行会毒化之后所有运行**~~（2026-09-20 已修）
+  事故经过：`MockTcpServerTest` 固定用 `TEST_PORT=19001`（`MockModbusTcpServerTest` 同理，15020），且 `start()` 在
+  后台线程里 bind、失败只 `log.error`——端口被上一次中断运行遗留的进程占着时调用方毫不知情，客户端于是连到那个
+  僵尸服务器上，又没有 `setSoTimeout`，在 `readNBytes` 里**永久阻塞**（实测：一个 10:57 遗留的 JVM 让后续 3 次运行
+  全部挂死，且看起来像"代码改坏了"）。测试里还有 `if (lengthBytes.length < 4) return;` 这类静默跳过，会把
+  "服务器根本没响应"伪装成通过。
+  → 已修（`MockTcpServer` / `MockModbusTcpServer` / 两个测试）：① `start()` 改**同步 bind**，端口占用直接抛
+  `IllegalStateException` 并点名端口（有回归测试 `portConflictFailsLoudly` 钉住）；② 新增 `getPort()`，测试改用
+  **临时端口（`0`）**，从构造上不可能与任何遗留进程冲突；③ 客户端 `setSoTimeout(5s)` + 删掉全部静默跳过分支；
+  ④ 两个 mock server 的 accept/handler/定时线程改**守护线程**，调用方忘了 `stop()` 也不会把 JVM 拖住。
+  通用经验仍然成立：**测试挂死先 `jps -l` + `netstat -ano | grep <端口>` 看有没有僵尸 surefire JVM，别急着怀疑代码**
 - **控制器层 0 测试**：CRUD、`@Valid` 失败、异常映射都没覆盖
 - **MQTT / OPC-UA 适配器无单测**（Modbus 有 mock 集成测试覆盖读写与 0x10）
 - **无单测**：`HistoryService`、`PointBindingRegistry`、`SystemStatusService`、`JwtAuthFilter`、`WebSocketAuthInterceptor`
@@ -143,7 +154,8 @@ INPUT 测点的每条绑定做一次 `adapter.writePoint`（真实 socket 写）
 
 ## 五、本轮已处理（供追溯）
 
-- **数据与连接配置拆分**：`/api/data/export|import` 只承载业务与测点；通道配置独立走 `POST /api/channels/import`。顺带修掉「导出→再导入把脱敏占位符 `******` 写回库、毁掉凭据」
+- **数据与连接配置拆分**：`/api/data/export` 只产出 `{businesses, points}`；`/api/data/import` 接受可选的 `channels` 段（自动创建缺失通道，但**不含连接配置**——通道配置必须手工填）。顺带修掉「导出→再导入把脱敏占位符 `******` 写回库、毁掉凭据」
+  （注：这一条原写的是"通道配置独立走 `POST /api/channels/import`"，但该端点**从未存在过**——通道页也没有导入按钮，`mock/mock-channels.json` 因此成了无人消费的遗留文件）
 - **Modbus 32/64 位读写**：原先读也只读 1 个寄存器（32 位点读回垃圾值）。新增 `ModbusRegisters`（字序 `big`/`little`，通道 `connectionConfig.wordOrder`），写走功能码 0x10
 - **断线自动重连**（非 MQTT）：`ChannelReconnectScheduler` 退避 2s×2 封顶 60s；并修掉「假连接」——TCP/Modbus 读失败即关连接，`isConnected()` 才如实反映
 - **采集正确性**：超时不再消费未完成的 future；推送前复核来源通道仍连接
@@ -154,3 +166,8 @@ INPUT 测点的每条绑定做一次 `adapter.writePoint`（真实 socket 写）
 - **其它**：错误请求体 400、删除不存在测点 404、加索引、历史查询参数校验+偏移溢出保护、tdengine 库名白名单+引导超时、通道状态推送接通
   （注：原先列在这里的「`BindingMigration` 按具体绑定判重」「demo 播种开关」「写值返回逐通道结果」三项，对应代码已在「点方向」迭代中随迁移类 / `DemoDataInitializer` / 手动写值端点一起删除）
 - **前端**：统一错误提示（保留后端 message）、JWT 过期判定、切业务清空 store、WS 重连指数退避、删除二次确认、修监控页地址列恒空、`check:types` 漂移检查脚本
+- **通道读写开关移除**：删除 `ChannelDirection` 枚举与 `Channel.direction`（连同 DTO / 导入解析 / 前端下拉与列 / mock 数据 / 漂移检查条目）。
+  读写能力改为完全由测点方向隐含（OUTPUT=采集读、INPUT=写出）。**唯一的行为变化**：`InputPointPropagator`
+  不再跳过 `READ_ONLY` 通道，只要求通道存在且 `CONNECTED`——某设备若确实不能写，正确做法是不给它建
+  INPUT 测点，而不是把通道标成只读。顺带作废了 2026-09-20 TCP 心跳设计稿里「`WRITE_ONLY` 通道校验」与
+  「创建测点时校验通道方向」两条待办（字段已不存在）

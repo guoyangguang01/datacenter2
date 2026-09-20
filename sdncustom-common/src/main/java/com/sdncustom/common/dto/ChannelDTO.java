@@ -1,6 +1,5 @@
 package com.sdncustom.common.dto;
 
-import com.sdncustom.common.model.enums.ChannelDirection;
 import com.sdncustom.common.model.enums.ProtocolType;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -26,9 +25,6 @@ public class ChannelDTO {
 
     @NotNull(message = "protocolType 不能为空")
     private ProtocolType protocolType;
-
-    @NotNull(message = "direction 不能为空")
-    private ChannelDirection direction;
 
     private String connectionConfig;
 

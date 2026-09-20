@@ -95,7 +95,6 @@ public class DataTransferService {
             // 这里没有外部系统代码可用，用 channelId 兜底，避免建出 code 全空的通道
             chDto.setCode(channelId);
             chDto.setProtocolType(com.sdncustom.common.model.enums.ProtocolType.CUSTOM_TCP);
-            chDto.setDirection(com.sdncustom.common.model.enums.ChannelDirection.READ_WRITE);
             // ChannelDTO 的字段默认值是 true，必须显式关掉：这条通道没有 connectionConfig，
             // 自动连接只会在启动时拿空配置去连并失败。与 JSON 导入的默认值（false）保持一致。
             chDto.setAutoConnect(false);

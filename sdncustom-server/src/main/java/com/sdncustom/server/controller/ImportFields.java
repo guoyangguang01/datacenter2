@@ -3,7 +3,6 @@ package com.sdncustom.server.controller;
 import com.sdncustom.common.dto.ChannelDTO;
 import com.sdncustom.common.dto.MeasurementPointDTO;
 import com.sdncustom.common.exception.BusinessException;
-import com.sdncustom.common.model.enums.ChannelDirection;
 import com.sdncustom.common.model.enums.PointDataType;
 import com.sdncustom.common.model.enums.PointDirection;
 import com.sdncustom.common.model.enums.ProtocolType;
@@ -178,7 +177,6 @@ final class ImportFields {
             // 手工构造 DTO，字段必须逐个搬；漏掉即静默丢失
             dto.setCode(optionalString(ch, "code"));
             dto.setProtocolType(parseEnum(ProtocolType.class, ch.get("protocolType"), "protocolType"));
-            dto.setDirection(parseEnum(ChannelDirection.class, ch.get("direction"), "direction"));
             dto.setConnectionConfig(optionalString(ch, "connectionConfig"));
             dto.setAutoConnect(optionalBoolean(ch, "autoConnect", false));
             channels.add(dto);

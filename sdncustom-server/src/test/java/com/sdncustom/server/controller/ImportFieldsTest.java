@@ -183,8 +183,7 @@ class ImportFieldsTest {
                 "businessId", "biz",
                 "channelName", "通道1",
                 "code", "FZXT",
-                "protocolType", "CUSTOM_TCP",
-                "direction", "READ_WRITE");
+                "protocolType", "CUSTOM_TCP");
 
         List<ChannelDTO> channels = ImportFields.parseChannels(List.of(ch));
 
@@ -199,8 +198,7 @@ class ImportFieldsTest {
                 "channelId", "ch_1",
                 "businessId", "biz",
                 "channelName", "通道1",
-                "protocolType", "CUSTOM_TCP",
-                "direction", "READ_WRITE");
+                "protocolType", "CUSTOM_TCP");
 
         List<ChannelDTO> channels = ImportFields.parseChannels(List.of(ch));
 

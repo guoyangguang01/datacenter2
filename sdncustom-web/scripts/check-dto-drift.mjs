@@ -27,7 +27,6 @@ const INTERFACES = [
 
 const ENUMS = [
   { java: `${COMMON}/model/enums/ProtocolType.java`, ts: 'ProtocolType' },
-  { java: `${COMMON}/model/enums/ChannelDirection.java`, ts: 'ChannelDirection' },
   { java: `${COMMON}/model/enums/ChannelStatus.java`, ts: 'ChannelStatus' },
   { java: `${COMMON}/model/enums/PointDataType.java`, ts: 'PointDataType' },
   { java: `${COMMON}/model/enums/PointQuality.java`, ts: 'PointQuality' },
