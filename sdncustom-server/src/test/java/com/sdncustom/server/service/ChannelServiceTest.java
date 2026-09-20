@@ -164,6 +164,84 @@ class ChannelServiceTest {
     }
 
     @Test
+    @DisplayName("创建通道 - code 写入实体")
+    void createPersistsCode() {
+        testDto.setCode("FZXT");
+        when(channelRepository.findByBusinessIdAndCode("default", "FZXT")).thenReturn(List.of());
+        when(channelRepository.save(any(Channel.class))).thenReturn(testChannel);
+
+        channelService.create(testDto);
+
+        ArgumentCaptor<Channel> captor = ArgumentCaptor.forClass(Channel.class);
+        verify(channelRepository).save(captor.capture());
+        assertEquals("FZXT", captor.getValue().getCode());
+    }
+
+    @Test
+    @DisplayName("创建通道 - 同业务下 code 重复时拒绝")
+    void createWithDuplicateCodeRejected() {
+        testDto.setCode("FZXT");
+        Channel existing = new Channel();
+        existing.setChannelId("ch_002");
+        existing.setBusinessId("default");
+        existing.setCode("FZXT");
+        when(channelRepository.findByBusinessIdAndCode("default", "FZXT"))
+                .thenReturn(List.of(existing));
+
+        com.sdncustom.common.exception.BusinessException ex =
+                assertThrows(com.sdncustom.common.exception.BusinessException.class,
+                        () -> channelService.create(testDto));
+        assertEquals(400, ex.getCode());
+        assertTrue(ex.getMessage().contains("FZXT"));
+        verify(channelRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("创建通道 - code 为空时跳过唯一性校验（空值表示未编码）")
+    void createWithBlankCodeSkipsUniquenessCheck() {
+        testDto.setCode("   ");
+        when(channelRepository.save(any(Channel.class))).thenReturn(testChannel);
+
+        channelService.create(testDto);
+
+        verify(channelRepository, never()).findByBusinessIdAndCode(any(), any());
+        verify(channelRepository).save(any(Channel.class));
+    }
+
+    @Test
+    @DisplayName("更新通道 - code 与其他通道重复时拒绝")
+    void updateWithDuplicateCodeRejected() {
+        when(channelRepository.findById("ch_001")).thenReturn(Optional.of(testChannel));
+        Channel other = new Channel();
+        other.setChannelId("ch_002");
+        other.setBusinessId("default");
+        other.setCode("SWGZ");
+        when(channelRepository.findByBusinessIdAndCode("default", "SWGZ"))
+                .thenReturn(List.of(other));
+
+        testDto.setCode("SWGZ");
+
+        assertThrows(com.sdncustom.common.exception.BusinessException.class,
+                () -> channelService.update("ch_001", testDto));
+        verify(channelRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("更新通道 - code 与自身相同不算重复")
+    void updateWithOwnCodeAllowed() {
+        testChannel.setCode("FZXT");
+        when(channelRepository.findById("ch_001")).thenReturn(Optional.of(testChannel));
+        when(channelRepository.findByBusinessIdAndCode("default", "FZXT"))
+                .thenReturn(List.of(testChannel));
+        when(channelRepository.save(any(Channel.class))).thenReturn(testChannel);
+
+        testDto.setCode("FZXT");
+        channelService.update("ch_001", testDto);
+
+        verify(channelRepository).save(any(Channel.class));
+    }
+
+    @Test
     @DisplayName("更新通道 - businessId 不可变更（DTO 传不同值被忽略）")
     void updateDoesNotChangeBusinessId() {
         when(channelRepository.findById("ch_001")).thenReturn(Optional.of(testChannel));

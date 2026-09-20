@@ -21,6 +21,27 @@ function clearIfBusinessChanged(
   pointsBusinessId = businessId;
 }
 
+/**
+ * CSV 单元格（RFC 4180）：字段含逗号/引号/换行时用双引号包起来，字段内的 " 写成 ""。
+ * 与后端 ImportFields.splitCsvLine 的解析规则成对——导出的文件能原样再导入。
+ * null/undefined 输出空单元格（不是字面量 "null"），导入时映射回 null。
+ */
+function csvCell(value: string | number | null | undefined): string {
+  if (value === null || value === undefined) return '';
+  const s = String(value);
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/**
+ * 测点方向导出成中文「输入/输出」——与外部数据源总表一致，也与页面上「输入测点/输出测点」
+ * 的标签一致。导入器两种写法都认（见 ImportFields.parseDirection），所以回灌不受影响。
+ */
+function directionLabel(direction: PointDirection | undefined): string {
+  if (direction === 'INPUT') return '输入';
+  if (direction === 'OUTPUT') return '输出';
+  return direction ?? '';
+}
+
 interface PointStore {
   points: MeasurementPoint[];
   pointValues: Map<string, PointValue>;
@@ -36,6 +57,7 @@ interface PointStore {
   fetchAllValues: () => Promise<void>;
   updateValue: (value: PointValue) => void;
   exportData: () => Promise<void>;
+  exportCsv: () => void;
   importData: (data: DataExportPayload) => Promise<number>;
   importCsv: (file: File, businessId: string, channelId: string) => Promise<number>;
 }
@@ -202,6 +224,40 @@ export const usePointStore = create<PointStore>((set, get) => ({
     const a = document.createElement('a');
     a.href = url;
     a.download = `sdncustom_data_${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+
+  exportCsv: () => {
+    const { points } = get();
+    if (points.length === 0) return;
+
+    // 中文表头与测点管理页的列名一致；顺序同后端 ImportFields 的 CSV 契约。
+    // 导入器认得这些中文别名，所以导出的文件能直接再导入
+    const header = '测点ID,测点名称,地址,数据类型,单位,测点方向,引用测点ID,死区';
+    const rows = points.map((p) =>
+      [
+        p.pointId,
+        p.pointName,
+        p.address,
+        p.dataType,
+        p.unit,
+        directionLabel(p.direction),
+        p.referencePointId,
+        p.deadband,
+      ]
+        .map(csvCell)
+        .join(',')
+    );
+
+    // BOM 前置，否则 Excel 打开中文乱码（与 MonitorPage 导出日志同一约定）
+    const blob = new Blob(['\uFEFF' + [header, ...rows].join('\n')], {
+      type: 'text/csv;charset=utf-8;',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `points_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   },

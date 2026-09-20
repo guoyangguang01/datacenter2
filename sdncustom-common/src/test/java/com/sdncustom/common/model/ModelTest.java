@@ -66,6 +66,7 @@ class ModelTest {
         Channel channel = new Channel();
         channel.setChannelId("ch_001");
         channel.setChannelName("测试通道");
+        channel.setCode("FZXT");
         channel.setProtocolType(ProtocolType.CUSTOM_TCP);
         channel.setDirection(ChannelDirection.READ_WRITE);
         channel.setConnectionConfig("{\"host\":\"localhost\",\"port\":9001}");
@@ -74,6 +75,7 @@ class ModelTest {
 
         assertEquals("ch_001", channel.getChannelId());
         assertEquals("测试通道", channel.getChannelName());
+        assertEquals("FZXT", channel.getCode());
         assertEquals(ProtocolType.CUSTOM_TCP, channel.getProtocolType());
         assertEquals(ChannelDirection.READ_WRITE, channel.getDirection());
         assertEquals("{\"host\":\"localhost\",\"port\":9001}", channel.getConnectionConfig());

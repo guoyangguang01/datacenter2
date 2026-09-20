@@ -1,5 +1,6 @@
 package com.sdncustom.server.controller;
 
+import com.sdncustom.common.dto.ChannelDTO;
 import com.sdncustom.common.dto.MeasurementPointDTO;
 import com.sdncustom.common.exception.BusinessException;
 import com.sdncustom.common.model.enums.PointDataType;
@@ -174,6 +175,38 @@ class ImportFieldsTest {
         assertEquals("out_1", dto.getReferencePointId());
     }
 
+    @Test
+    @DisplayName("解析通道段：code 必须被搬运（手工构造 DTO，漏一行就静默丢失）")
+    void parseChannelsCarriesCode() {
+        Map<String, Object> ch = Map.of(
+                "channelId", "ch_1",
+                "businessId", "biz",
+                "channelName", "通道1",
+                "code", "FZXT",
+                "protocolType", "CUSTOM_TCP",
+                "direction", "READ_WRITE");
+
+        List<ChannelDTO> channels = ImportFields.parseChannels(List.of(ch));
+
+        assertEquals(1, channels.size());
+        assertEquals("FZXT", channels.get(0).getCode());
+    }
+
+    @Test
+    @DisplayName("解析通道段：未提供 code 时为 null（空值表示未编码）")
+    void parseChannelsCodeAbsentIsNull() {
+        Map<String, Object> ch = Map.of(
+                "channelId", "ch_1",
+                "businessId", "biz",
+                "channelName", "通道1",
+                "protocolType", "CUSTOM_TCP",
+                "direction", "READ_WRITE");
+
+        List<ChannelDTO> channels = ImportFields.parseChannels(List.of(ch));
+
+        assertNull(channels.get(0).getCode());
+    }
+
     // ===== CSV 解析测试 =====
 
     private static ByteArrayInputStream csv(String s) {
@@ -212,6 +245,102 @@ class ImportFieldsTest {
         assertTrue(result.problems().isEmpty(), result.problems().toString());
         assertEquals(1, result.points().size());
         assertEquals("p1", result.points().get(0).getPointId());
+    }
+
+    @Test
+    @DisplayName("CSV 引号字段：名字里的逗号不再把行截断")
+    void csvQuotedFieldWithComma() {
+        String content = "pointId,pointName,address,dataType,direction\n"
+                + "p1,\"温度,备用\",40001,INT16,OUTPUT\n";
+
+        ImportFields.ParseResult result = ImportFields.parseCsv(csv(content), "biz", "ch_1");
+
+        assertTrue(result.problems().isEmpty(), result.problems().toString());
+        assertEquals(1, result.points().size());
+        assertEquals("温度,备用", result.points().get(0).getPointName());
+        // 逗号被当成字段分隔符的话，后面的列会整体错位
+        assertEquals("40001", result.points().get(0).getAddress());
+        assertEquals(PointDirection.OUTPUT, result.points().get(0).getDirection());
+    }
+
+    @Test
+    @DisplayName("CSV 引号字段：\"\" 转义成一个双引号")
+    void csvQuotedFieldWithEscapedQuote() {
+        String content = "pointId,pointName,address,dataType,direction\n"
+                + "p1,\"阀\"\"A\"\"\",40001,INT16,OUTPUT\n";
+
+        ImportFields.ParseResult result = ImportFields.parseCsv(csv(content), "biz", "ch_1");
+
+        assertTrue(result.problems().isEmpty(), result.problems().toString());
+        assertEquals(1, result.points().size());
+        assertEquals("阀\"A\"", result.points().get(0).getPointName());
+        assertEquals("40001", result.points().get(0).getAddress());
+    }
+
+    @Test
+    @DisplayName("CSV 中文表头：与英文表头等价")
+    void csvChineseHeaderParsed() {
+        String content = "测点ID,测点名称,地址,数据类型,单位,测点方向,引用测点ID,死区\n"
+                + "out_1,温度,40001,INT16,°C,OUTPUT,,0.5\n"
+                + "in_1,温度镜像,40001,INT16,°C,INPUT,out_1,\n";
+
+        ImportFields.ParseResult result = ImportFields.parseCsv(csv(content), "biz", "ch_1");
+
+        assertTrue(result.problems().isEmpty(), result.problems().toString());
+        assertEquals(2, result.points().size());
+        assertEquals("out_1", result.points().get(0).getPointId());
+        assertEquals("温度", result.points().get(0).getPointName());
+        assertEquals("40001", result.points().get(0).getAddress());
+        assertEquals(PointDataType.INT16, result.points().get(0).getDataType());
+        assertEquals("°C", result.points().get(0).getUnit());
+        assertEquals(PointDirection.OUTPUT, result.points().get(0).getDirection());
+        assertEquals(0.5, result.points().get(0).getDeadband());
+        // 引用列同样要认：INPUT 靠它指向 OUTPUT
+        assertEquals(PointDirection.INPUT, result.points().get(1).getDirection());
+        assertEquals("out_1", result.points().get(1).getReferencePointId());
+    }
+
+    @Test
+    @DisplayName("CSV 中文表头：ID 大小写不敏感（手改文件常写成「测点id」）")
+    void csvChineseHeaderIdCaseInsensitive() {
+        String content = "测点id,测点名称,地址,数据类型,测点方向\n"
+                + "p1,温度,40001,INT16,OUTPUT\n";
+
+        ImportFields.ParseResult result = ImportFields.parseCsv(csv(content), "biz", "ch_1");
+
+        assertTrue(result.problems().isEmpty(), result.problems().toString());
+        assertEquals("p1", result.points().get(0).getPointId());
+    }
+
+    @Test
+    @DisplayName("CSV 测点方向：列名「测点方向」+ 中文值「输出/输入」")
+    void csvDirectionCanonicalNameAndChineseValues() {
+        String content = "测点ID,测点名称,地址,数据类型,测点方向\n"
+                + "out_1,温度,40001,INT16,输出\n"
+                + "in_1,温度镜像,40001,INT16,输入\n";
+
+        ImportFields.ParseResult result = ImportFields.parseCsv(csv(content), "biz", "ch_1");
+
+        assertTrue(result.problems().isEmpty(), result.problems().toString());
+        assertEquals(PointDirection.OUTPUT, result.points().get(0).getDirection());
+        assertEquals(PointDirection.INPUT, result.points().get(1).getDirection());
+    }
+
+    @Test
+    @DisplayName("JSON 测点：方向同样认中文值「输出/输入」")
+    void jsonDirectionChineseValue() {
+        Map<String, Object> pt = Map.of(
+                "pointId", "p1",
+                "businessId", "biz",
+                "pointName", "温度",
+                "channelId", "ch_1",
+                "address", "40001",
+                "dataType", "INT16",
+                "direction", "输出");
+
+        var dto = ImportFields.parsePoint(pt);
+
+        assertEquals(PointDirection.OUTPUT, dto.getDirection());
     }
 
     @Test

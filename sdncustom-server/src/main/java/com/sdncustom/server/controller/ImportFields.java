@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -30,6 +31,22 @@ final class ImportFields {
 
     private ImportFields() {
     }
+
+    /**
+     * 表头别名 → 规范字段名。导出写的是中文表头（与测点管理页的列名一致），
+     * 导入两种都认——这样导出的文件能原样回灌。
+     *
+     * <p>键一律小写，查表前把表头名也转小写，好让手改过的「测点id」同样命中。
+     */
+    private static final Map<String, String> CSV_HEADER_ALIASES = Map.ofEntries(
+            Map.entry("测点id", "pointId"),
+            Map.entry("测点名称", "pointName"),
+            Map.entry("地址", "address"),
+            Map.entry("数据类型", "dataType"),
+            Map.entry("单位", "unit"),
+            Map.entry("测点方向", "direction"),
+            Map.entry("引用测点id", "referencePointId"),
+            Map.entry("死区", "deadband"));
 
     static String requireString(Map<String, Object> map, String key) {
         Object value = map.get(key);
@@ -79,6 +96,22 @@ final class ImportFields {
         } catch (IllegalArgumentException e) {
             throw new BusinessException(400, "非法的 " + field + ": " + value);
         }
+    }
+
+    /**
+     * 测点方向：除枚举名（INPUT/OUTPUT）外，还认中文写法「输入/输出」——
+     * 导出写的就是中文，不认的话自己的文件回灌不了。
+     */
+    private static PointDirection parseDirection(Object value, String field) {
+        if (value == null) {
+            throw new BusinessException(400, "缺少必填字段: " + field);
+        }
+        String text = String.valueOf(value).trim();
+        return switch (text) {
+            case "输入" -> PointDirection.INPUT;
+            case "输出" -> PointDirection.OUTPUT;
+            default -> parseEnum(PointDirection.class, text, field);
+        };
     }
 
     /**
@@ -142,6 +175,8 @@ final class ImportFields {
             dto.setChannelId(requireString(ch, "channelId"));
             dto.setBusinessId(requireString(ch, "businessId"));
             dto.setChannelName(requireString(ch, "channelName"));
+            // 手工构造 DTO，字段必须逐个搬；漏掉即静默丢失
+            dto.setCode(optionalString(ch, "code"));
             dto.setProtocolType(parseEnum(ProtocolType.class, ch.get("protocolType"), "protocolType"));
             dto.setDirection(parseEnum(ChannelDirection.class, ch.get("direction"), "direction"));
             dto.setConnectionConfig(optionalString(ch, "connectionConfig"));
@@ -164,7 +199,7 @@ final class ImportFields {
         dto.setAddress(requireString(pt, "address"));
         dto.setDataType(parseEnum(PointDataType.class, pt.get("dataType"), "dataType"));
         dto.setUnit(optionalString(pt, "unit"));
-        dto.setDirection(parseEnum(PointDirection.class, pt.get("direction"), "direction"));
+        dto.setDirection(parseDirection(pt.get("direction"), "direction"));
         dto.setReferencePointId(optionalString(pt, "referencePointId"));
         dto.setDeadband(optionalDouble(pt, "deadband", null));
         return dto;
@@ -175,6 +210,8 @@ final class ImportFields {
      * businessId / channelId 由调用方传入（UI 选择），不在 CSV 中。
      *
      * <p>CSV 格式：首行为表头，逗号分隔，UTF-8 编码（兼容 BOM 头）。
+     * 字段可加双引号以容纳逗号（见 {@link #splitCsvLine}），因此导出文件里的
+     * 「名字带逗号」能原样回灌。
      * 必填列：pointId, pointName, address, dataType, direction
      * 可选列：unit, referencePointId, deadband
      */
@@ -216,15 +253,62 @@ final class ImportFields {
         return new ParseResult(List.copyOf(points), List.copyOf(problems));
     }
 
+    /**
+     * 按 RFC 4180 切分一行：字段可以用双引号包起来以容纳逗号，字段内的 {@code ""} 表示一个字面双引号。
+     * 没加引号的字段与原先的 {@code split(",", -1)} 行为一致（空字段保留，交给 {@link #csvGet} 统一 trim），
+     * 所以既有的、不带引号的 CSV 解析结果不变。
+     *
+     * <p>只处理行内引用：引号内跨行的换行不在支持范围内——本解析器按行读取，
+     * 而导出的字段值来自单行表单，正常不会有换行。
+     */
+    private static String[] splitCsvLine(String line) {
+        List<String> fields = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        boolean inQuotes = false;
+        // 本字段还没出现过非空白字符——此时遇到的引号才是「开启引用字段」，否则是字段内容的一部分
+        boolean atFieldStart = true;
+        for (int i = 0; i < line.length(); i++) {
+            char c = line.charAt(i);
+            if (inQuotes) {
+                if (c != '"') {
+                    current.append(c);
+                } else if (i + 1 < line.length() && line.charAt(i + 1) == '"') {
+                    current.append('"');
+                    i++;
+                } else {
+                    inQuotes = false;
+                    atFieldStart = false;
+                }
+            } else if (c == '"' && atFieldStart) {
+                // 丢掉引号前的空白，与不加引号时 csvGet 的 trim 行为对齐
+                current.setLength(0);
+                inQuotes = true;
+            } else if (c == ',') {
+                fields.add(current.toString());
+                current.setLength(0);
+                atFieldStart = true;
+            } else {
+                current.append(c);
+                if (!Character.isWhitespace(c)) {
+                    atFieldStart = false;
+                }
+            }
+        }
+        fields.add(current.toString());
+        return fields.toArray(new String[0]);
+    }
+
     /** 解析表头行：列名 → 索引 */
     private static Map<String, Integer> parseCsvHeader(String line) {
         Map<String, Integer> map = new HashMap<>();
-        String[] cols = line.split(",", -1);
+        String[] cols = splitCsvLine(line);
         for (int i = 0; i < cols.length; i++) {
             String name = cols[i].trim();
-            if (!name.isEmpty()) {
-                map.put(name, i);
+            if (name.isEmpty()) {
+                continue;
             }
+            // 中文表头映射回规范字段名；英文列名（及不认识的列）原样通过
+            map.put(CSV_HEADER_ALIASES.getOrDefault(name.toLowerCase(Locale.ROOT), name), i);
         }
         return map;
     }
@@ -232,7 +316,7 @@ final class ImportFields {
     /** 解析一行 CSV 数据为 MeasurementPointDTO */
     private static MeasurementPointDTO parseCsvLine(String line, Map<String, Integer> header,
                                                      String businessId, String channelId, int lineNo) {
-        String[] cols = line.split(",", -1);
+        String[] cols = splitCsvLine(line);
         MeasurementPointDTO dto = new MeasurementPointDTO();
         dto.setBusinessId(businessId);
         dto.setChannelId(channelId);
@@ -241,7 +325,7 @@ final class ImportFields {
         dto.setPointName(csvRequire(cols, header, "pointName", lineNo));
         dto.setAddress(csvRequire(cols, header, "address", lineNo));
         dto.setDataType(parseEnum(PointDataType.class, csvGet(cols, header, "dataType"), "dataType（第" + lineNo + "行）"));
-        dto.setDirection(parseEnum(PointDirection.class, csvGet(cols, header, "direction"), "direction（第" + lineNo + "行）"));
+        dto.setDirection(parseDirection(csvGet(cols, header, "direction"), "direction（第" + lineNo + "行）"));
         dto.setUnit(csvOptional(cols, header, "unit"));
         dto.setReferencePointId(csvOptional(cols, header, "referencePointId"));
         String deadbandStr = csvOptional(cols, header, "deadband");

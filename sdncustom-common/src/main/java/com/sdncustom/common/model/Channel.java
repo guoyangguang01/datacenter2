@@ -17,7 +17,9 @@ import java.time.LocalDateTime;
 @Table(name = "channel", indexes = {
         // status 每 200ms 被采集引擎查一次；business_id 用于按业务过滤
         @Index(name = "idx_channel_status", columnList = "status"),
-        @Index(name = "idx_channel_business", columnList = "business_id")
+        @Index(name = "idx_channel_business", columnList = "business_id"),
+        // code 供外部数据源总表按代码定位通道
+        @Index(name = "idx_channel_code", columnList = "code")
 })
 public class Channel {
 
@@ -31,6 +33,14 @@ public class Channel {
 
     @Column(name = "channel_name", length = 128, nullable = false)
     private String channelName;
+
+    /**
+     * 外部系统代码（如 FZXT / SWGZ），外部数据源总表用它指向本通道。
+     * 可空（表示未编码）；非空时要求业务内不重复，唯一性由服务层校验
+     * （ChannelService），DB 层不加唯一约束。
+     */
+    @Column(name = "code", length = 64)
+    private String code;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "protocol_type", length = 32, nullable = false)

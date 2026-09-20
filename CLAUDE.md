@@ -34,7 +34,7 @@ SDNCustom/
 ## 核心概念
 
 - **测点 (MeasurementPoint)**：数据的最小单元，平台的一等公民。每个测点直接关联一个通道（`channelId` + `address`，一对一）。分方向：`OUTPUT` 输出测点（关联通道用于**采集读取**，数据从外部流入平台）；`INPUT` 输入测点（`referencePointId` 引用一个**同业务、同 dataType** 的 OUTPUT 测点，其关联通道用于**写出**——输出测点经 ChangeGate 的有效变化由 `InputPointPropagator` 事件驱动写到输入测点的关联通道）。一个 INPUT 只引用一个 OUTPUT，多个 INPUT 可引用同一 OUTPUT。方向与引用创建后不可变更（update 静默忽略 DTO 中的 direction/referencePointId），删除被引用的 OUTPUT 返回 400
-- **管道 (Channel)**：与外部设备/系统的连接通道，负责数据采集和写入
+- **管道 (Channel)**：与外部设备/系统的连接通道，负责数据采集和写入。可选字段 `code` 承载**外部系统代码**（如 `FZXT` 仿真系统、`SWGZ` 三维感知），供外部数据源总表按代码定位通道；`code` 可空（空值表示未编码），非空时要求**同一业务内不重复**——唯一性由 `ChannelService.requireCodeAvailable` 在服务层校验（DB 层不加约束），空值直接跳过校验，故现有调用方不传该字段不受影响
 - **业务系统 (BusinessSystem)**：多业务隔离的逻辑维度；通道与测点归属到某个业务，列表查询/创建校验按业务过滤。测点不跨业务共享（关联通道必须同业务，引用也只能引用本业务测点）；归属创建后不可变更（update 静默忽略 DTO 中的 businessId）；删除业务前要求名下无通道、无测点。删除通道时级联删除其关联的测点。隔离是数据组织维度——单管理员、采集/推送/缓存/历史不感知业务
 - **数据中枢**：平台是测点数据的唯一权威源，所有客户端通过平台读写数据
 
@@ -62,7 +62,22 @@ mvn test -Dtest=ChannelServiceTest              # 运行单个测试类
 mvn test -Dtest=ChannelServiceTest#testMethod   # 运行单个测试方法
 ```
 
-测试只在 Java 模块里（`sdncustom-common` / `sdncustom-protocol` / `sdncustom-server`，27 个测试类、162 个 `@Test`，集中在 service/controller/security/config/monitor/repository）。`sdncustom-web` **没有测试框架**——`package.json` 无 `test` 脚本、无 vitest/jest，前端改动只能靠 `npm run build`（含 `tsc` 类型检查）、`npm run check:types`（比对后端 DTO/枚举与手写类型是否漂移）与手工验证。
+> **症状：`Unresolved compilation problem`（编译成功、运行期才炸）**
+>
+> 报错形如 `java.lang.Error: Unresolved compilation problem: The method copyOf(List<T>) is undefined`
+> ——`List.copyOf` / `InputStream.readNBytes` 都是 Java 9+ API。本机默认 `java` 是 **JDK 8**
+> （只有 `scripts/*.bat` 才把 `JAVA_HOME` 指到 JDK 23），编辑器若用默认 JDK 8 后台编译（ECJ），
+> 会把**编译错误桩**写进 `target/classes`，覆盖掉 Maven 刚编译出的正确 class；测试 JVM 懒加载到
+> 那些桩就抛这个错。**这不是代码问题**，也很容易被误判成"自己改坏了"。
+>
+> **处理办法就是原地重新编译**：`mvn clean test`。实测：**停止编辑后原地重跑即全绿**
+> （255 个测试）。触发条件是"边改文件边跑测试"——每次保存都会让编辑器重启后台编译，与 Maven
+> 争抢 `target/classes`。所以偶发失败时**等编辑器编译停下再重跑**，不要为此换目录构建，
+> 那只会掩盖问题。想根治就让编辑器也用 JDK 23（本机 `.vscode/` 尚未配置）。
+>
+> 另外仍建议核对基线：`git stash` 后跑同一个测试类，能复现即与本次改动无关。
+
+测试只在 Java 模块里（`sdncustom-common` / `sdncustom-protocol` / `sdncustom-server`，27 个测试类、255 个 `@Test`——common 26 / protocol 46 / server 183，集中在 service/controller/security/config/monitor/repository）。`sdncustom-web` **没有测试框架**——`package.json` 无 `test` 脚本、无 vitest/jest，前端改动只能靠 `npm run build`（含 `tsc` 类型检查）、`npm run check:types`（比对后端 DTO/枚举与手写类型是否漂移）与手工验证。
 
 ### 前端 (Vite)
 
@@ -255,7 +270,7 @@ GET    /api/points/{id}/history        # 查询历史
 
 > **JSON 导入**（`POST /api/data/import`）：payload 可含可选的 `channels` 段——缺失的通道自动创建，已存在的跳过。测点的 `channelId` 必须指向已存在或本次 payload 中提供的通道，否则整体失败并点名缺失通道。导入的每个测点**必须自带 `businessId`**（不再回退默认业务），且必须带 `channelId` 和 `address`。
 >
-> **CSV 导入**（`POST /api/data/import-csv`）：前端先选择业务和通道，再上传 CSV 文件。CSV 只含测点属性列（pointId, pointName, address, dataType, unit, direction, referencePointId, deadband），businessId 和 channelId 从 UI 选择继承。UTF-8 编码（兼容 BOM 头）。业务/通道不存在时自动创建。
+> **CSV 导入**（`POST /api/data/import-csv`）：前端先选择业务和通道，再上传 CSV 文件。CSV 只含测点属性列（pointId, pointName, address, dataType, unit, direction, referencePointId, deadband），businessId 和 channelId 从 UI 选择继承。UTF-8 编码（兼容 BOM 头）。业务/通道不存在时自动创建——自动建的通道是 `CUSTOM_TCP`/`READ_WRITE`、`code` 取 channelId、且 **`autoConnect=false`**（它没有 `connectionConfig`，自动连接只会在启动时拿空配置去连并失败；`ChannelDTO` 的字段默认值是 `true`，所以必须显式关掉）。
 
 ```
 GET    /api/data/export                # 导出 {businesses, points}；裸 payload（无 ApiResponse 信封），文件可直接回灌

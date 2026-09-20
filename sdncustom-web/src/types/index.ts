@@ -22,6 +22,8 @@ export interface Channel {
   channelId: string;
   businessId: string;
   channelName: string;
+  /** 外部系统代码（如 FZXT / SWGZ）；空值表示未编码，非空时业务内唯一 */
+  code?: string;
   protocolType: ProtocolType;
   direction: ChannelDirection;
   connectionConfig: string;

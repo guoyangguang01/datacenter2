@@ -99,6 +99,38 @@ class DataTransferServiceTest {
     }
 
     @Test
+    @DisplayName("CSV 导入：自动创建的通道不自动连接（无配置可连），且 code 有兜底值")
+    void importCsvPointsAutoCreatedChannelIsNotAutoConnect() {
+        when(channelRepository.findById("ch_csv")).thenReturn(Optional.empty());
+
+        DataTransferService.ImportResult result = dataTransferService.importCsvPoints(
+                "biz", "ch_csv", List.of(point("p1", "biz", "ch_csv")), List.of());
+
+        ArgumentCaptor<ChannelDTO> captor = ArgumentCaptor.forClass(ChannelDTO.class);
+        verify(channelService).create(captor.capture());
+        ChannelDTO created = captor.getValue();
+        assertFalse(created.isAutoConnect(),
+                "自动创建的通道没有 connectionConfig，不应在启动时被 autoConnectAll 拿去连接");
+        assertEquals("ch_csv", created.getCode());
+        assertEquals(1, result.channelCount());
+        verify(businessSystemService).ensureExistsForImport("biz");
+        verify(pointService).importPoints(anyList());
+    }
+
+    @Test
+    @DisplayName("CSV 导入：通道已存在时不重复创建")
+    void importCsvPointsSkipsExistingChannel() {
+        when(channelRepository.findById("ch_csv")).thenReturn(Optional.of(new Channel()));
+
+        DataTransferService.ImportResult result = dataTransferService.importCsvPoints(
+                "biz", "ch_csv", List.of(point("p1", "biz", "ch_csv")), List.of());
+
+        verify(channelService, never()).create(any(ChannelDTO.class));
+        assertEquals(0, result.channelCount());
+        verify(pointService).importPoints(anyList());
+    }
+
+    @Test
     @DisplayName("已存在的业务走 update 而非 create")
     void updatesExistingBusiness() {
         when(channelRepository.findById("ch_1")).thenReturn(Optional.of(new Channel()));

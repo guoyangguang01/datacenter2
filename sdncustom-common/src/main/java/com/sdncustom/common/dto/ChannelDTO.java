@@ -18,6 +18,12 @@ public class ChannelDTO {
     @NotBlank(message = "channelName 不能为空")
     private String channelName;
 
+    /**
+     * 外部系统代码（如 FZXT / SWGZ）。可空——空值表示「未编码」，且非空时
+     * 业务内不可重复，两者都由 ChannelService 校验，故此处不加校验注解。
+     */
+    private String code;
+
     @NotNull(message = "protocolType 不能为空")
     private ProtocolType protocolType;
 

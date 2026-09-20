@@ -17,7 +17,7 @@ const dataTypeOptions = [
 ];
 
 export default function PointPage() {
-  const { points, loading, error, clearError, fetchPoints, createPoint, updatePoint, deletePoint, exportData, importData, importCsv } = usePointStore();
+  const { points, loading, error, clearError, fetchPoints, createPoint, updatePoint, deletePoint, exportData, exportCsv, importData, importCsv } = usePointStore();
   const { channels, fetchChannels } = useChannelStore();
   const currentBusinessId = useBusinessStore((s) => s.currentBusinessId);
   const businessesLoaded = useBusinessStore((s) => s.businesses.length > 0);
@@ -104,6 +104,13 @@ export default function PointPage() {
     }
   };
 
+  // 导出当前筛选后的测点：store.points 已经是「当前业务 + 通道 + 方向」的结果，
+  // 与「导入 CSV 必须先选通道」对称——这样导出的文件能直接再导入回该通道
+  const handleExportCsv = () => {
+    exportCsv();
+    message.success(`已导出 ${points.length} 个测点`);
+  };
+
   const handleImportJson = async (file: File) => {
     try {
       const text = await file.text();
@@ -188,6 +195,17 @@ export default function PointPage() {
       value: p.pointId,
     }));
 
+  // 列表里「引用测点」列显示的名称：优先取被引用测点的名称，
+  // 查不到（不在当前业务全量列表里）就回退显示 ID
+  const referenceName = (pointId: string) =>
+    allPoints.find((p) => p.pointId === pointId)?.pointName ?? pointId;
+
+  // 编辑输入测点时展示其引用。被引用的测点若不在 allPoints 里，补一条回退项，否则下拉框显示空白
+  const referenceOptionsFor = (referencePointId: string | undefined) =>
+    referencePointId && !referenceOptions.some((o) => o.value === referencePointId)
+      ? [...referenceOptions, { label: referencePointId, value: referencePointId }]
+      : referenceOptions;
+
   const columns = [
     { title: 'ID', dataIndex: 'pointId', key: 'pointId' },
     { title: '名称', dataIndex: 'pointName', key: 'pointName' },
@@ -200,18 +218,14 @@ export default function PointPage() {
       title: '方向',
       dataIndex: 'direction',
       key: 'direction',
-      render: (v: PointDirection | null | undefined, r: MeasurementPoint) => {
-        if (!v) return '-';
-        if (v === 'OUTPUT') return <Tag color="green">输出</Tag>;
-        const refName = allPoints.find((p) => p.pointId === r.referencePointId)?.pointName
-          ?? r.referencePointId;
-        return (
-          <Space size={4}>
-            <Tag color="blue">输入</Tag>
-            <span style={{ fontSize: 11, color: '#8c8c8c' }}>← {refName ?? '-'}</span>
-          </Space>
-        );
-      },
+      render: (v: PointDirection | null | undefined) =>
+        !v ? '-' : <Tag color={v === 'OUTPUT' ? 'green' : 'blue'}>{v === 'OUTPUT' ? '输出' : '输入'}</Tag>,
+    },
+    {
+      title: '引用测点',
+      dataIndex: 'referencePointId',
+      key: 'referencePointId',
+      render: (v: string | undefined) => (v ? referenceName(v) : '-'),
     },
     {
       title: '操作',
@@ -259,6 +273,9 @@ export default function PointPage() {
         <Space>
           <Button icon={<DownloadOutlined />} onClick={handleExport}>
             导出数据
+          </Button>
+          <Button icon={<DownloadOutlined />} onClick={handleExportCsv} disabled={points.length === 0}>
+            导出 CSV
           </Button>
           <Button icon={<UploadOutlined />} onClick={() => fileInputRef.current?.click()}>
             导入 JSON
@@ -324,9 +341,9 @@ export default function PointPage() {
             </Form.Item>
           )}
           {editing && editing.direction === 'INPUT' && (
-            <div style={{ marginBottom: 16, color: '#8c8c8c' }}>
-              输入测点，引用自 <b>{allPoints.find((p) => p.pointId === editing.referencePointId)?.pointName ?? editing.referencePointId}</b>（创建后不可变更）
-            </div>
+            <Form.Item label="引用的输出测点" tooltip="方向与引用创建后不可变更">
+              <Select value={editing.referencePointId} disabled options={referenceOptionsFor(editing.referencePointId)} />
+            </Form.Item>
           )}
           <Form.Item name="channelId" label="所属通道" rules={[{ required: true }]}>
             <Select options={channels.map((c) => ({ label: c.channelName, value: c.channelId }))} />

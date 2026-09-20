@@ -68,6 +68,7 @@ export default function ChannelPage() {
     form.setFieldsValue({
       channelId: record.channelId,
       channelName: record.channelName,
+      code: record.code,
       protocolType: record.protocolType,
       direction: record.direction,
       autoConnect: record.autoConnect,
@@ -153,6 +154,7 @@ export default function ChannelPage() {
     const submitData = {
       channelId: values.channelId,
       channelName: values.channelName,
+      code: values.code,
       protocolType: values.protocolType,
       direction: values.direction,
       autoConnect: values.autoConnect || false,
@@ -177,6 +179,7 @@ export default function ChannelPage() {
   const columns = [
     { title: 'ID', dataIndex: 'channelId', key: 'channelId' },
     { title: '名称', dataIndex: 'channelName', key: 'channelName' },
+    { title: '编码', dataIndex: 'code', key: 'code' },
     { title: '协议', dataIndex: 'protocolType', key: 'protocolType' },
     { title: '方向', dataIndex: 'direction', key: 'direction' },
     {
@@ -258,6 +261,13 @@ export default function ChannelPage() {
           </Form.Item>
           <Form.Item name="channelName" label="名称" rules={[{ required: true }]}>
             <Input />
+          </Form.Item>
+          <Form.Item
+            name="code"
+            label="编码"
+            extra="外部数据源总表用代码定位本通道（如 FZXT / SWGZ）；留空表示未编码，非空时同一业务下不可重复"
+          >
+            <Input allowClear />
           </Form.Item>
           <Form.Item name="protocolType" label="协议" rules={[{ required: true }]}>
             <Select

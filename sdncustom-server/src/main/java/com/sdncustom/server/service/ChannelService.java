@@ -1,6 +1,7 @@
 package com.sdncustom.server.service;
 
 import com.sdncustom.common.dto.ChannelDTO;
+import com.sdncustom.common.exception.BusinessException;
 import com.sdncustom.common.exception.ResourceNotFoundException;
 import com.sdncustom.common.model.Channel;
 import com.sdncustom.common.model.MeasurementPoint;
@@ -93,10 +94,12 @@ public class ChannelService {
     @Transactional
     public Channel create(ChannelDTO dto) {
         businessSystemService.requireExists(dto.getBusinessId());
+        requireCodeAvailable(dto.getBusinessId(), dto.getCode(), null);
         Channel channel = new Channel();
         channel.setChannelId(dto.getChannelId());
         channel.setBusinessId(dto.getBusinessId());
         channel.setChannelName(dto.getChannelName());
+        channel.setCode(dto.getCode());
         channel.setProtocolType(dto.getProtocolType());
         channel.setDirection(dto.getDirection());
         channel.setConnectionConfig(dto.getConnectionConfig());
@@ -113,6 +116,9 @@ public class ChannelService {
     @Transactional
     public Channel update(String channelId, ChannelDTO dto) {
         Channel channel = findById(channelId);
+        // 先校验再改实体：归属不可变更，唯一性按库中现值校验并排除自身
+        requireCodeAvailable(channel.getBusinessId(), dto.getCode(), channelId);
+
         boolean connectionChanged = channel.getProtocolType() != dto.getProtocolType()
                 || !Objects.equals(channel.getConnectionConfig(), dto.getConnectionConfig());
         boolean wasConnected = channel.getStatus() == ChannelStatus.CONNECTED;
@@ -123,6 +129,7 @@ public class ChannelService {
         }
 
         channel.setChannelName(dto.getChannelName());
+        channel.setCode(dto.getCode());
         channel.setProtocolType(dto.getProtocolType());
         channel.setDirection(dto.getDirection());
         channel.setConnectionConfig(dto.getConnectionConfig());
@@ -145,6 +152,22 @@ public class ChannelService {
             });
         }
         return saved;
+    }
+
+    /**
+     * 外部系统代码在业务内唯一。
+     * 空值表示「未编码」，合法且直接放行（现有调用方都不传 code）；
+     * 非空时同一业务下不允许重复，update 时用 selfChannelId 排除自身。
+     */
+    private void requireCodeAvailable(String businessId, String code, String selfChannelId) {
+        if (code == null || code.isBlank()) {
+            return;
+        }
+        boolean taken = channelRepository.findByBusinessIdAndCode(businessId, code).stream()
+                .anyMatch(existing -> !existing.getChannelId().equals(selfChannelId));
+        if (taken) {
+            throw new BusinessException(400, "该业务下通道编码已存在: " + code);
+        }
     }
 
     /**
