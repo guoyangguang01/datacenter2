@@ -24,7 +24,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.*;
 
@@ -161,7 +160,8 @@ class AcquisitionEngineTest {
         List<PointValue> read = List.of(value("p1", 25.0));
         when(adapter.readPoints(anyList())).thenReturn(read);
         when(changeGate.filter(read, java.util.Map.of("p1", point))).thenReturn(read);
-        PointValue alive = value("p1", 25.0);
+        // 存活值刻意与 read 里的值不同：若实现提交的是未过滤的 changedValues，这个断言必须失败
+        PointValue alive = value("p1", 99.0);
         when(liveSourceChecker.onlyLive(read)).thenReturn(List.of(alive));
 
         engine.acquire();

@@ -28,6 +28,7 @@
 **目标**
 
 - 采集调度线程不再执行任何设备写出；`acquire()` 的耗时只由"读取 + 过滤 + 入队"构成
+  （**残留**：同时挂两种方向的通道，其读仍可能与传播线程的写争适配器锁而超时——见 §11.5）
 - 落库与推送的**顺序语义不变**：INPUT 传播值仍与其来源 OUTPUT 值同批，且不晚于下一轮 OUTPUT 值落库
 - 传播失败、慢通道、队列积压都可观测
 
@@ -133,7 +134,7 @@ propagation 线程:  ① propagate（设备写出）→ ② persistenceService.s
 
 | 指标 | 变化 |
 |---|---|
-| `sdncustom.acquisition.cycle` | **语义变化**：不再包含设备写出。历史 P99 不可直接比较，"写入耗时"另见下一行 |
+| `sdncustom.acquisition.cycle` | **语义变化**：不再包含设备写出**自身**的耗时（采集线程不写）。历史 P99 不可直接比较，"写入耗时"另见下一行。**残留**：同通道读写争锁仍会把该通道的读顶出 5s 窗口，故 P99 并非"纯读取"——见 §11.5 |
 | `sdncustom.propagation.batch.seconds` | 新增 Timer：每批"写出 + 提交"的耗时，量化设备写出占比 |
 | `sdncustom.propagation.queue.depth` | 新增 Gauge：传播队列积压批次数 |
 | `sdncustom.propagation.batch.errors` | 新增 Counter：批次级兜底异常数（**非 0 说明有批次被整批放弃**，需查日志）。**接替**原 `AcquisitionEngine.propagateSafely` 计数的 `sdncustom.propagation.errors`——后者随搬移消失，排障时不要按旧名字找 |
@@ -178,8 +179,17 @@ propagation 线程:  ① propagate（设备写出）→ ② persistenceService.s
 4. **写出与 disconnect 的竞态**：`disconnect()` 不持锁、会 shutdown socket 打断写出，
    写会抛异常并被记进 `propagation.failures`。语义可接受（本来就是"未送达"），
    但**排障时会看到一批正常发生的失败计数**，需要知道它不一定是故障。
-5. **同通道读写争用依然存在**：本轮不碰。异步化只把它的代价从"拖长采集周期"降为"延迟该通道的落库/推送"，
-   真正消除见 §12。
+5. **同通道读写争用依然存在，而且仍能拖长采集周期**：本轮不碰。读与写在同一条通道上共用适配器的那把锁，
+   且锁覆盖**整个往返**（`CustomTcpAdapter.java:37/123/151`、`ModbusTcpClient.java:29/221`）——
+   搬到传播线程之前，传播在调度线程上跑且发生在 `allOf` 返回**之后**，同通道的读与写原本不会重叠；
+   搬走之后传播线程在写出时，8 线程池正在读同一个适配器，**一次卡住的写（最长 `READ_TIMEOUT` 5s）
+   可以把该通道的读顶出 `acquire()` 的 5s 窗口**。不丢数据（该通道这一轮的 future 被直接丢弃、
+   `ChangeGate` 基线未推进，下一轮读到同一个值仍算变化、照常发出），但 `acquisition.cycle` 里
+   **仍含有设备写出的分量**——只对"同时挂 OUTPUT 与 INPUT"的通道成立（这是合法配置：
+   自引用禁令只挡"引用成环"，不挡"一个通道两种方向"）。
+   - **没有 INPUT 测点的通道是完全解耦的**：传播线程根本不碰它们的适配器，读不会与写争锁。
+   - 采集调度线程**自身**仍不执行任何设备 I/O；上面这条残留是"读在等同通道的写"，不是"采集线程在写"。
+   - 真正消除见 §12。
 6. `acquisition.cycle` 的历史数据不可比（§8），告警阈值若依赖它需同步调整。
 
 ## 12. 与后续两项工作的关系

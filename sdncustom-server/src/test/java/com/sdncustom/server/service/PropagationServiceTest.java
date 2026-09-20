@@ -144,6 +144,26 @@ class PropagationServiceTest {
     }
 
     @Test
+    @DisplayName("跨批次顺序：INPUT(N) 不晚于 OUTPUT(N+1) 提交（唯一生产者 + 单线程 FIFO）")
+    void inputValuesNeverLagBehindTheNextOutputBatch() {
+        PointValue out1 = value("out_1", "ch_1");
+        PointValue in1 = value("in_1", "ch_2");
+        PointValue out2 = value("out_2", "ch_1");
+        when(inputPointPropagator.propagate(List.of(out1))).thenReturn(List.of(in1));
+        when(inputPointPropagator.propagate(List.of(out2))).thenReturn(List.of());
+
+        service.submitBatch(List.of(out1));
+        service.submitBatch(List.of(out2));
+
+        ArgumentCaptor<List<PointValue>> captor = ArgumentCaptor.forClass(List.class);
+        verify(persistenceService, timeout(2000).times(2)).submitBatch(captor.capture());
+        List<PointValue> submitted = captor.getAllValues().stream().flatMap(List::stream).toList();
+        // 服务是单线程 FIFO，这个顺序是确定的（不依赖时序）
+        assertEquals(List.of("out_1", "in_1", "out_2"), ids(submitted),
+                "第一批的 INPUT 值必须排在第二批的 OUTPUT 值之前，实际 " + ids(submitted));
+    }
+
+    @Test
     @DisplayName("传播抛异常：本批 OUTPUT 值照常落库，后续批次继续处理")
     void propagationFailureDoesNotLoseOutputValues() {
         when(inputPointPropagator.propagate(anyList())).thenThrow(new RuntimeException("boom"));

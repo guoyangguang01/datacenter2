@@ -185,6 +185,18 @@ ChannelService → PushValueIngest → ValueCommitService → InputPointPropagat
 
 把 `AcquisitionEngine.java:111-139` 的四步搬进新的 `ValueCommitService`，采集与推送共同调用：
 
+> **2026-09-20 注记（传播异步化落地之后）**：本节引用的行号与符号已过期，**设计本身不变**，
+> 只更正指向——落 `ValueCommitService` 时按下面这套新坐标改写：
+> - 那四步现在住在 **`PropagationService.process`**（该服务的后台线程上），不在
+>   `AcquisitionEngine.java:111-139` 里了；`acquire()` 现在只做「过滤 + 存活复核 +
+>   `propagationService.submitBatch`」三步入队
+> - 本文档里的调用入口 `commit(changedValues)` 的等价物是 **`PropagationService.submitBatch`**
+>   （快照入队、立即返回；真正的实现体是同一个类里的 `process`）
+> - `onlyLiveSources` 现在叫 **`LiveSourceChecker#onlyLive`**（`LiveSourceChecker.java`），
+>   语义与两处调用点的时序均未变
+>
+> 下面的伪码保留原文不动，读时按上面这套名字对照。
+
 ```
 commit(changedValues):
     publishable = onlyLiveSources(changedValues)

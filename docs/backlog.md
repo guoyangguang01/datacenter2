@@ -106,7 +106,13 @@ INPUT 测点的每条绑定做一次 `adapter.writePoint`（真实 socket 写）
 **→ 已搬到 `PropagationService`**（单线程 FIFO，`[OUTPUT + INPUT]` 合并成同一批提交；采集线程只
 `propagationService.submitBatch(publishable)`）。顺序保证换了实现：从"两者在采集线程上同批"换成
 "`PersistenceService` 的唯一生产者就是那个单线程的 `PropagationService`"。
-`acquisition.cycle` 的构成随之变成"读取 + 过滤 + 入队"，**不再包含设备写出**（历史 P99 不可直接比较）。
+`acquisition.cycle` 的构成随之变成"读取 + 过滤 + 入队"，**采集线程自身不再执行设备写出**
+（历史 P99 不可直接比较）。**但"不再包含设备写出"说过头了**：同一条通道的读与写共用适配器的那把锁
+（锁覆盖整个往返），所以**同时挂 OUTPUT 与 INPUT 的通道**上，传播线程的写出仍可能把该通道的读顶出
+`allOf` 的 5s 窗口——`acquisition.cycle` 里因此仍含有设备写出的分量，只是从"整轮所有通道共用"缩到
+"该通道自己"；**挂在无 INPUT 通道上的读才是完全解耦的**（传播线程不碰那些适配器）。
+不丢数据（被丢弃的 future 不推进 ChangeGate 基线，下一轮重新判为变化照常发出），根治见传播异步化
+spec §12 的两项工作。
 队列选的是**无界**而不是上面设想的"有界缓冲"——写命令的丢弃语义太重，见「工程债 / 测试缺口」一节。
 上面这段历史读数原样保留：它记录的是当时（落库已异步、传播仍在采集线程上）的真实构成。
 

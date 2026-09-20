@@ -16,7 +16,9 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 实时推送分发。采集调度线程仅提交任务到专用单线程队列，绝不因慢客户端阻塞采集周期；
+ * 实时推送分发。**生产者只提交任务到专用单线程队列、绝不等待推送完成**——采集调度线程因此不被慢客户端阻塞。
+ * 生产者有两条：正常数据来自 {@link PropagationService}（设备写出之后，含 INPUT 传播值），
+ * 通道掉线时的 COMM_LOST 批次来自 {@code ChannelService}——采集线程自己已不再直接提交。
  * 队列满时丢弃最旧批次（监控场景保最新数据）。会话级超时/缓冲背压由 handler 的
  * ConcurrentWebSocketSessionDecorator 承担，慢客户端会被自动断开。
  */

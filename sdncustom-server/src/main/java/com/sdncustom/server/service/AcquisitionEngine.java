@@ -61,7 +61,11 @@ public class AcquisitionEngine {
     }
 
     /**
-     * 定时采集任务：各通道并行读取，经变更门过滤后仅对有效变化做批量落库与推送
+     * 定时采集任务：各通道并行读取，经变更门过滤 + 存活复核后，**仅把有效变化提交给
+     * {@link PropagationService}**（只入队、立即返回）。
+     *
+     * <p>落库、推送与设备写出都不在这里发生——它们全在传播阶段的后台线程上完成，见
+     * {@code PropagationService.process}。
      */
     @Scheduled(fixedDelayString = "${sdncustom.acquisition.interval-ms:200}")
     public void acquire() {
