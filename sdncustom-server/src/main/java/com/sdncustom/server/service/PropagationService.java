@@ -80,8 +80,10 @@ public class PropagationService {
         propagationExecutor.shutdown();
         try {
             if (!propagationExecutor.awaitTermination(drainTimeoutSeconds, TimeUnit.SECONDS)) {
-                log.warn("Propagation queue not drained in {}s, dropping {} batch(es) — 这些写命令不会送达设备",
-                        drainTimeoutSeconds, propagationExecutor.getQueue().size());
+                // 丢的不止队列里的：shutdownNow() 的中断会连带放弃正在写出的那一批
+                int queued = propagationExecutor.getQueue().size();
+                log.warn("Propagation queue not drained in {}s, dropping {} batch(es) ({} queued plus the in-flight one) — 这些写命令不会送达设备",
+                        drainTimeoutSeconds, queued + 1, queued);
                 propagationExecutor.shutdownNow();
             }
         } catch (InterruptedException e) {
@@ -114,11 +116,6 @@ public class PropagationService {
         }
     }
 
-    /** 供测试断言"积压告警已触发" */
-    boolean backlogWarningActive() {
-        return backlogWarned;
-    }
-
     private void process(List<PointValue> outputChanges) {
         Timer.Sample sample = Timer.start(meterRegistry);
         try {
@@ -138,10 +135,13 @@ public class PropagationService {
                 distributionService.pushBatch(pushable);
             }
         } catch (Exception e) {
-            // 异常逃出后台线程会让后续批次再也不被处理（静默停写）
+            // 兜底：本批整批放弃——OUTPUT 与 INPUT 值都不落库、不推送。changeGate 已经推进过变更基线，
+            // 这些值不会再有第二次机会，留下的痕迹只有这条日志与 batchErrors 指标。
+            // 只 catch Exception 是刻意的（不要放宽到 Throwable）：Error（如 OOM）继续上抛，
+            // 线程池会补一个 worker 接着处理后续批次，所以不会"静默停写"；代价是那一批连日志与指标都没有。
             batchErrors.increment();
-            log.error("Propagation batch failed, {} output value(s) dropped from this batch",
-                    outputChanges.size(), e);
+            log.error("Propagation batch failed; {} output value(s) plus any propagated input values "
+                    + "were not persisted or pushed", outputChanges.size(), e);
         } finally {
             sample.stop(meterRegistry.timer("sdncustom.propagation.batch.seconds"));
         }
