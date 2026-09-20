@@ -30,6 +30,7 @@ export default function PointPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
   const watchedDirection = Form.useWatch('direction', form);
+  const watchedChannelId = Form.useWatch('channelId', form);
 
   useEffect(() => {
     fetchChannels();
@@ -187,13 +188,29 @@ export default function PointPage() {
     }
   };
 
-  // 输入测点引用的输出测点候选：列出所有 OUTPUT 测点
+  // 输入测点引用的输出测点候选：所有 OUTPUT 测点，但排除与所选通道相同的
+  // （同通道引用是自引用，后端 PointDirectionValidator 会返回 400）
   const referenceOptions = allPoints
-    .filter((p) => p.direction === 'OUTPUT')
+    .filter((p) => p.direction === 'OUTPUT' && p.channelId !== watchedChannelId)
     .map((p) => ({
       label: `${p.pointName} (${p.pointId}) · ${p.dataType} · ${p.channelId}`,
       value: p.pointId,
     }));
+
+  // 编辑时不可选的通道：选了就是一条自引用，后端必定拒绝，不如先禁掉
+  //  - 编辑 INPUT：不能挪到它引用的那个 OUTPUT 所在通道
+  //  - 编辑 OUTPUT：不能挪到引用它的 INPUT 所在通道
+  const blockedChannelIds = new Set<string>();
+  if (editing) {
+    if (editing.direction === 'INPUT') {
+      const ref = allPoints.find((p) => p.pointId === editing.referencePointId);
+      if (ref?.channelId) blockedChannelIds.add(ref.channelId);
+    } else {
+      allPoints
+        .filter((p) => p.referencePointId === editing.pointId)
+        .forEach((p) => p.channelId && blockedChannelIds.add(p.channelId));
+    }
+  }
 
   // 列表里「引用测点」列显示的名称：优先取被引用测点的名称，
   // 查不到（不在当前业务全量列表里）就回退显示 ID
@@ -346,7 +363,21 @@ export default function PointPage() {
             </Form.Item>
           )}
           <Form.Item name="channelId" label="所属通道" rules={[{ required: true }]}>
-            <Select options={channels.map((c) => ({ label: c.channelName, value: c.channelId }))} />
+            <Select
+              options={channels.map((c) => ({
+                label: c.channelName,
+                value: c.channelId,
+                disabled: blockedChannelIds.has(c.channelId),
+              }))}
+              onChange={(value: string) => {
+                // 换了通道后原先选中的输出测点可能变成"同通道引用"，清掉让用户重选
+                const selected = form.getFieldValue('referencePointId');
+                if (selected) {
+                  const ref = allPoints.find((p) => p.pointId === selected);
+                  if (ref && ref.channelId === value) form.setFieldValue('referencePointId', undefined);
+                }
+              }}
+            />
           </Form.Item>
           <Form.Item name="address" label="地址" rules={[{ required: true }]}>
             <Input placeholder="例如 40001 或 sensors/temp01" />

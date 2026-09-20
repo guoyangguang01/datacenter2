@@ -38,7 +38,7 @@ SDNCustom/
 
 - **测点 (MeasurementPoint)**：数据的最小单元，平台的一等公民。每个测点直接关联一个通道（`channelId` + `address`，一对一）。分方向：`OUTPUT` 输出测点（关联通道用于**采集读取**，数据从外部流入平台）；`INPUT` 输入测点（`referencePointId` 引用一个**同业务、同 dataType** 的 OUTPUT 测点，其关联通道用于**写出**——输出测点经 ChangeGate 的有效变化由 `InputPointPropagator` 事件驱动写到输入测点的关联通道）。一个 INPUT 只引用一个 OUTPUT，多个 INPUT 可引用同一 OUTPUT。方向与引用创建后不可变更（update 静默忽略 DTO 中的 direction/referencePointId），删除被引用的 OUTPUT 返回 400
 - **管道 (Channel)**：与外部设备/系统的连接通道，负责数据采集和写入。**通道本身没有读写开关**——能力由挂在它上面的测点方向决定（挂 OUTPUT 点即被采集读取，挂 INPUT 点即被写出，两者可兼有），且唯一的行为依据就是测点自身的方向。可选字段 `code` 承载**外部系统代码**（如 `FZXT` 仿真系统、`SWGZ` 三维感知），供外部数据源总表按代码定位通道；`code` 可空（空值表示未编码），非空时要求**同一业务内不重复**——唯一性由 `ChannelService.requireCodeAvailable` 在服务层校验（DB 层不加约束），空值直接跳过校验，故现有调用方不传该字段不受影响
-- **业务系统 (BusinessSystem)**：多业务隔离的逻辑维度；通道与测点归属到某个业务，列表查询/创建校验按业务过滤。测点不跨业务共享（关联通道必须同业务，引用也只能引用本业务测点）；归属创建后不可变更（update 静默忽略 DTO 中的 businessId）；删除业务前要求名下无通道、无测点。删除通道时级联删除其关联的测点。隔离是数据组织维度——单管理员、采集/推送/缓存/历史不感知业务
+- **业务系统 (BusinessSystem)**：多业务隔离的逻辑维度；通道与测点归属到某个业务，列表查询/创建校验按业务过滤。测点不跨业务共享（引用只能引用本业务测点，这条由 PointDirectionValidator 校验；**关联通道的"同业务"后端不校验**，只有前端按当前业务过滤可选项，见 backlog）；归属创建后不可变更（update 静默忽略 DTO 中的 businessId）；删除业务前要求名下无通道、无测点。删除通道时级联删除其关联的测点。隔离是数据组织维度——单管理员、采集/推送/缓存/历史不感知业务
 - **数据中枢**：平台是测点数据的唯一权威源，所有客户端通过平台读写数据
 
 ## 环境要求
@@ -86,7 +86,7 @@ mvn test -Dtest=ChannelServiceTest#testMethod   # 运行单个测试方法
 >
 > 另外仍建议核对基线：`git stash` 后跑同一个测试类，能复现即与本次改动无关。
 
-测试只在 Java 模块里（`sdncustom-common` / `sdncustom-protocol` / `sdncustom-server`，27 个测试类、262 个 `@Test`——common 25 / protocol 47 / server 190，集中在 service/controller/security/config/monitor/repository）。`sdncustom-web` **没有测试框架**——`package.json` 无 `test` 脚本、无 vitest/jest，前端改动只能靠 `npm run build`（含 `tsc` 类型检查）、`npm run check:types`（比对后端 DTO/枚举与手写类型是否漂移）与手工验证。
+测试只在 Java 模块里（`sdncustom-common` / `sdncustom-protocol` / `sdncustom-server`，27 个测试类、271 个 `@Test`——common 25 / protocol 47 / server 199，集中在 service/controller/security/config/monitor/repository）。`sdncustom-web` **没有测试框架**——`package.json` 无 `test` 脚本、无 vitest/jest，前端改动只能靠 `npm run build`（含 `tsc` 类型检查）、`npm run check:types`（比对后端 DTO/枚举与手写类型是否漂移）与手工验证。
 
 ### 前端 (Vite)
 
@@ -116,6 +116,17 @@ scripts/start-frontend.bat           # 单独启动前端
 scripts/build.sh / start.sh / stop.sh / restart.sh   # Linux/Mac 等价脚本
 ```
 
+> **症状：改了 common/protocol 的源码，server 模块却像没改（2026-09-20 实测踩到）**
+>
+> `mvn test -pl sdncustom-server` **不带 `-am`** 时不会重建依赖模块，server 是拿 `~/.m2` 里
+> **上次 install 的旧 `sdncustom-common` / `sdncustom-protocol` jar** 编译的。于是源码里的改动
+> 在运行时"复活"：实测刚从一个 DTO 删掉的字段，接口仍按旧规则报"必填校验失败"，
+> 查了半天代码也没问题——因为跑的根本不是这份代码。
+>
+> 只跑某模块时用 **`-am`**（`mvn test -pl sdncustom-server -am`）；要按类过滤再加
+> `-Dtest=X -Dsurefire.failIfNoSpecifiedTests=false`（否则依赖模块会因"没有匹配的测试"而失败）。
+> 拿不准就 `mvn clean test` 全反应堆跑。
+>
 > 注意：`scripts/start.bat` 依赖已构建的 jar，首次运行请先执行 `scripts/build.bat`。
 
 ## 协议适配器
@@ -154,7 +165,7 @@ INT32/FLOAT32 占 **2 个连续寄存器**、FLOAT64 占 **4 个**，起始地�
 - **ChannelReconnectScheduler**：断线自动重连。`ChannelService` 维护"期望连接"集合（`connect` 加入、`disconnect` 移除、掉线不移除），调度器按 `sdncustom.channel.reconnect.*` 退避重试（默认 2s 起、×2、封顶 60s，每 5s 扫一遍）。**只管非 MQTT**——Paho 自带重连，再叠一层会重建适配器实例。指标 `sdncustom.channel.reconnects` / `reconnect.failures`
 - **ChangeGate**：变更检测门。每个测点只有一个来源通道（一对一关联），直接按 pointId 记录权威值；数值型按 |新−旧| > 测点死区(deadband) 判断有效变化，非数值按 equals 判断。门的状态用 `removePoints`（删点/断连时清该点状态）维护
 - **ChannelService**：Channel 生命周期唯一入口（CRUD + connect/disconnect/syncDisconnected，按通道加锁 `ReentrantLock` 串行化；DB status 是适配器运行时状态的投影）。`update()` 检测到协议/connectionConfig 变化时会先销毁旧适配器、必要时以新配置重连（修复"改配置仍沿用旧连接"）。`delete()` 级联删除该通道关联的所有测点
-- **PointDirectionValidator**：测点方向校验——INPUT 必须引用一个存在、同业务、同 dataType 的 OUTPUT 测点；OUTPUT 不得带引用。引用严格单向（INPUT→OUTPUT），不可能成环
+- **PointDirectionValidator**：测点方向校验——INPUT 必须引用一个存在、同业务、同 dataType 的 OUTPUT 测点；OUTPUT 不得带引用。引用严格单向（INPUT→OUTPUT），不可能成环。**另禁自引用**：INPUT 不得引用与它**同通道**的 OUTPUT（创建走 `validate`，改通道走 `validateChannelChange`——`update` 不调 `validate`，因为方向/引用以库中现值为准）。注意这条只禁"引用成环"，**不禁一个通道同时挂两种方向的测点**（那仍然允许，读写争用由适配器的锁处理）
 - **PointService**：测点 CRUD（创建/更新时校验方向与引用、删除被引用的 OUTPUT 报 400）、缓存批量更新
 - **HistoryService**：TDengine 历史存储（超级表初始化 + 批量写入）
 - **DistributionService**：WebSocket 实时数据推送（按通道合帧；采集线程仅向专用单线程队列提交任务，绝不因推送阻塞）
@@ -270,8 +281,11 @@ POST   /api/channels/{id}/disconnect  # 断开
 GET    /api/points                     # 查询所有 (可选 ?channelId=xxx / ?businessId=xxx / ?direction=INPUT|OUTPUT，可叠加；
                                        # 传 ?size= 才分页返回 {items,total,page,size})
 POST   /api/points                     # 创建（body 必填 businessId、direction、channelId、address；
-                                       # channelId 通道必须与测点同业务；INPUT 必填 referencePointId）
-PUT    /api/points/{id}                # 更新（direction/referencePointId 与 businessId 一样被静默忽略）
+                                       # INPUT 必填 referencePointId，且该 OUTPUT 必须在另一个通道上——
+                                       # 同通道引用返回 400。**注意 channelId 本身不校验**：后端既不查
+                                       # 通道是否存在、也不查同业务，只有前端按当前业务过滤可选项，见 backlog）
+PUT    /api/points/{id}                # 更新（direction/referencePointId 与 businessId 一样被静默忽略；
+                                       # 但 channelId 可改，改通道时校验自引用，两个方向都查）
 DELETE /api/points/{id}                # 删除（被 INPUT 引用时返回 400，并点名引用者）
 GET    /api/points/{id}/value          # 获取当前值
 GET    /api/points/{id}/history        # 查询历史

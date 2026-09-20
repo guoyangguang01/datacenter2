@@ -26,6 +26,16 @@
 URL 会进代理/网关/浏览器历史与访问日志。
 → REST 端只认 `Authorization` 头；WS 握手改用子协议头或握手后首帧认证。
 
+### 测点的 `channelId` 完全没有校验（create 与 update 都不查）
+`PointService.create/update` 直接 `setChannelId(dto.getChannelId())`，**不查通道是否存在、也不查是否同业务**
+（`PointDirectionValidator` 只校验被**引用测点**的业务，`PointService` 里根本没有 `ChannelRepository`）。
+后果：接口可创建出挂在不存在通道上的孤儿测点（采集永远读不到、写出永远跳过），也能把测点挪到别的业务的通道上，
+破坏"测点不跨业务共享"这条写在 CLAUDE.md 里的不变量。前端因为只列出当前业务的通道，所以日常操作碰不到——
+**这是纯后端缺口，且 CLAUDE.md 此前把它写成了已落实的规则（2026-09-20 已改成据实描述）**。
+→ 修法：`create`/`update` 加同一条校验（通道存在 + `channel.businessId == dto.businessId`），
+在 `PointDirectionValidator` 里加（它已有 repository，便于复用与单测）。**注意这是行为变更**：
+可能拒掉现存数据里的越界测点，需先确认存量。
+
 ### B12 缺少必填查询参数报 500（应为 400）
 `GET /api/points/{id}/history` 的 `startTime`/`endTime` 是必填查询参数，缺任一个时 Spring 抛
 `MissingServletRequestParameterException`；`GlobalExceptionHandler` 没有对应 handler，直接落到兜底的
@@ -166,6 +176,12 @@ INPUT 测点的每条绑定做一次 `adapter.writePoint`（真实 socket 写）
 - **其它**：错误请求体 400、删除不存在测点 404、加索引、历史查询参数校验+偏移溢出保护、tdengine 库名白名单+引导超时、通道状态推送接通
   （注：原先列在这里的「`BindingMigration` 按具体绑定判重」「demo 播种开关」「写值返回逐通道结果」三项，对应代码已在「点方向」迭代中随迁移类 / `DemoDataInitializer` / 手动写值端点一起删除）
 - **前端**：统一错误提示（保留后端 message）、JWT 过期判定、切业务清空 store、WS 重连指数退避、删除二次确认、修监控页地址列恒空、`check:types` 漂移检查脚本
+- **禁止输入测点引用同通道的输出测点**：新增自引用禁令（`PointDirectionValidator.validate` 创建路径 +
+  新增 `validateChannelChange` 走更新路径——`update` 原本**完全不调校验器**，channelId 可改，所以改 INPUT 的通道、
+  改 OUTPUT 的通道两个方向都要查；导入侧在 `DataTransferService.validateReferencesExist` 同样加了一条）。
+  顺带修正了两个把"同通道引用"当作合法用法的既有测试 fixture（`resolvesReferenceWithinSamePayload`、
+  `ordersOutputsBeforeInputs`），并让前端引用候选排除同通道的输出测点。
+  **只禁自环，不禁"一个通道同时挂两种方向的测点"**——后者仍然允许，同通道读写争用由适配器的同一把锁串行化
 - **通道读写开关移除**：删除 `ChannelDirection` 枚举与 `Channel.direction`（连同 DTO / 导入解析 / 前端下拉与列 / mock 数据 / 漂移检查条目）。
   读写能力改为完全由测点方向隐含（OUTPUT=采集读、INPUT=写出）。**唯一的行为变化**：`InputPointPropagator`
   不再跳过 `READ_ONLY` 通道，只要求通道存在且 `CONNECTED`——某设备若确实不能写，正确做法是不给它建

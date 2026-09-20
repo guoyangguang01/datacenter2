@@ -192,10 +192,12 @@ class DataTransferServiceTest {
     @DisplayName("导入 INPUT 引用本次导入内的 OUTPUT：解析成功")
     void resolvesReferenceWithinSamePayload() {
         when(channelRepository.findById("ch_1")).thenReturn(Optional.of(new Channel()));
+        when(channelRepository.findById("ch_2")).thenReturn(Optional.of(new Channel()));
         when(businessSystemService.exists("biz")).thenReturn(false);
 
+        // INPUT 必须在**另一个**通道上：同通道引用是自引用，已被禁（见下一条用例）
         MeasurementPointDTO output = point("out_1", "biz", "ch_1");
-        MeasurementPointDTO input = point("in_1", "biz", "ch_1");
+        MeasurementPointDTO input = point("in_1", "biz", "ch_2");
         input.setDirection(PointDirection.INPUT);
         input.setReferencePointId("out_1");
 
@@ -204,6 +206,24 @@ class DataTransferServiceTest {
 
         assertEquals(2, result.pointCount());
         verify(pointService).importPoints(anyList());
+    }
+
+    @Test
+    @DisplayName("导入 INPUT 引用本通道的 OUTPUT：整批失败并点名测点")
+    void failsOnSameChannelReference() {
+        when(channelRepository.findById("ch_1")).thenReturn(Optional.of(new Channel()));
+
+        MeasurementPointDTO output = point("out_1", "biz", "ch_1");
+        MeasurementPointDTO input = point("in_1", "biz", "ch_1"); // 与 out_1 同通道
+        input.setDirection(PointDirection.INPUT);
+        input.setReferencePointId("out_1");
+
+        BusinessException ex = assertThrows(BusinessException.class, () ->
+                importData(List.of(business("biz")), List.of(output, input)));
+
+        assertTrue(ex.getMessage().contains("in_1"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("本通道"), ex.getMessage());
+        verifyNoInteractions(pointService);
     }
 
     @Test
@@ -304,9 +324,11 @@ class DataTransferServiceTest {
     @DisplayName("INPUT 排在它引用的 OUTPUT 之前：排序后输出点先落库，顺序依赖被解开")
     void ordersOutputsBeforeInputs() {
         when(channelRepository.findById("ch_1")).thenReturn(Optional.of(new Channel()));
+        when(channelRepository.findById("ch_2")).thenReturn(Optional.of(new Channel()));
         when(businessSystemService.exists("biz")).thenReturn(false);
 
-        MeasurementPointDTO input = point("in_1", "biz", "ch_1");
+        // 输入测点在另一个通道上：同通道引用是自引用（已禁），本用例要验的是排序而不是引用规则
+        MeasurementPointDTO input = point("in_1", "biz", "ch_2");
         input.setDirection(PointDirection.INPUT);
         input.setReferencePointId("out_1");
         MeasurementPointDTO output = point("out_1", "biz", "ch_1");

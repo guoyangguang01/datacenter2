@@ -167,6 +167,8 @@ public class DataTransferService {
                     problems.add(who + " 引用的 " + refId + " 不是输出测点");
                 } else if (inPayloadTarget.getDataType() != dto.getDataType()) {
                     problems.add(who + " 与 " + refId + " 数据类型不一致");
+                } else if (sameChannel(dto, inPayloadTarget.getChannelId())) {
+                    problems.add(who + " 引用了本通道的输出测点: " + refId);
                 }
                 continue;
             }
@@ -177,11 +179,22 @@ public class DataTransferService {
                 problems.add(who + " 引用的 " + refId + " 不是输出测点");
             } else if (target.getDataType() != dto.getDataType()) {
                 problems.add(who + " 与 " + refId + " 数据类型不一致");
+            } else if (sameChannel(dto, target.getChannelId())) {
+                problems.add(who + " 引用了本通道的输出测点: " + refId);
             }
         }
         if (!problems.isEmpty()) {
             throw new BusinessException(400, "导入失败：以下测点不合格 - " + String.join("；", problems));
         }
+    }
+
+    /**
+     * 自引用禁令的导入侧实现：INPUT 不得引用与它同通道的 OUTPUT。
+     * 与 {@code PointDirectionValidator} 同规则（导入走裸 Map 解析，不经 DTO 校验器，只能在这里查）。
+     */
+    private boolean sameChannel(MeasurementPointDTO inputDto, String outputChannelId) {
+        return inputDto.getChannelId() != null && outputChannelId != null
+                && outputChannelId.equals(inputDto.getChannelId());
     }
 
     private String describe(MeasurementPointDTO dto) {

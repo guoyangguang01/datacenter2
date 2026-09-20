@@ -252,6 +252,31 @@ class PointServiceTest {
     }
 
     @Test
+    @DisplayName("更新测点 - 通道变更必须走自引用校验（update 此前完全不校验 channelId）")
+    void updateValidatesChannelChange() {
+        when(pointRepository.findById("test_point_001")).thenReturn(Optional.of(testPoint));
+        when(pointRepository.save(any(MeasurementPoint.class))).thenReturn(testPoint);
+
+        testDto.setChannelId("ch_002");
+        pointService.update("test_point_001", testDto);
+
+        verify(pointDirectionValidator).validateChannelChange(testPoint, "ch_002");
+    }
+
+    @Test
+    @DisplayName("更新测点 - 自引用校验不通过时不落库")
+    void updateAbortsWhenChannelChangeRejected() {
+        when(pointRepository.findById("test_point_001")).thenReturn(Optional.of(testPoint));
+        doThrow(new BusinessException(400, "不能把输入测点挪到它引用的输出测点所在通道"))
+                .when(pointDirectionValidator).validateChannelChange(any(), anyString());
+
+        testDto.setChannelId("ch_002");
+        assertThrows(BusinessException.class, () -> pointService.update("test_point_001", testDto));
+
+        verify(pointRepository, never()).save(any(MeasurementPoint.class));
+    }
+
+    @Test
     @DisplayName("更新测点")
     void update() {
         when(pointRepository.findById("test_point_001")).thenReturn(Optional.of(testPoint));

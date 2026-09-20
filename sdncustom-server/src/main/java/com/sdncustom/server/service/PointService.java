@@ -95,6 +95,8 @@ public class PointService {
         MeasurementPoint point = findById(pointId);
         // 归属不可变更：DTO 中的 businessId 被忽略
         String oldChannelId = point.getChannelId();
+        // channelId 可改，而自引用只可能在改通道时事后产生——方向与引用以库中现值为准
+        pointDirectionValidator.validateChannelChange(point, dto.getChannelId());
 
         point.setPointName(dto.getPointName());
         point.setChannelId(dto.getChannelId());
