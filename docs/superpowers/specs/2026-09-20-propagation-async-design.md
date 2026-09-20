@@ -80,8 +80,13 @@ public void submitBatch(List<PointValue> outputChanges)
 
 工作线程必须把**每批**包在 `try { ... } catch (Exception e)` 里：`log.error` + 计
 `sdncustom.propagation.batch.errors`，然后继续处理下一批。异常逃出后台线程会让**后续批次再也不被处理**
-（静默停写），与 `PersistenceService.store` 同理。子步骤各自的异常已经有人吞（`InputPointPropagator`
-记 `propagation.failures` 并返回兜底值；落库/推送各自 swallow 并计数），这道是兜底，不替代它们。
+（静默停写），与 `PersistenceService.store` 同理。
+
+**传播调用本身还要再包一层**（等价于今天 `AcquisitionEngine.propagateSafely` 的职责，`:184-192`）：
+`propagate` 抛异常时返回空列表、只损失 INPUT 值，**OUTPUT 值必须照常落库**——`changeGate.filter`
+已经推进过变更基线，丢了就永久丢（Redis/历史/推送三处都不会再见到）。**不要把 `propagate` 与
+`persistenceService.submitBatch` 放在同一个 try 里**，否则传播一失败就把 OUTPUT 值一起丢了。
+`propagate` 失败计的是 `batch.errors`（原 `propagation.errors` 由它接替）。
 
 ## 5. 数据流与顺序保证
 
@@ -131,7 +136,7 @@ propagation 线程:  ① propagate（设备写出）→ ② persistenceService.s
 | `sdncustom.acquisition.cycle` | **语义变化**：不再包含设备写出。历史 P99 不可直接比较，"写入耗时"另见下一行 |
 | `sdncustom.propagation.batch.seconds` | 新增 Timer：每批"写出 + 提交"的耗时，量化设备写出占比 |
 | `sdncustom.propagation.queue.depth` | 新增 Gauge：传播队列积压批次数 |
-| `sdncustom.propagation.batch.errors` | 新增 Counter：批次级兜底异常数（**非 0 说明有批次被整批放弃**，需查日志） |
+| `sdncustom.propagation.batch.errors` | 新增 Counter：批次级兜底异常数（**非 0 说明有批次被整批放弃**，需查日志）。**接替**原 `AcquisitionEngine.propagateSafely` 计数的 `sdncustom.propagation.errors`——后者随搬移消失，排障时不要按旧名字找 |
 | `sdncustom.propagation.writes` / `.failures` | 不变，但由 propagation 线程而非采集线程计数（tag=channel 不变） |
 | `sdncustom.acquisition.changed.values` | 不变（仍在采集线程计数） |
 
