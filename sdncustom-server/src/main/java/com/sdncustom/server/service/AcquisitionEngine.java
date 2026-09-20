@@ -116,7 +116,10 @@ public class AcquisitionEngine {
                             .increment(publishable.size());
 
                     // 传播（设备写出）与落库/推送都在传播阶段的后台线程上完成：
-                    // 采集线程只提交快照、绝不等设备写出，acquire() 的耗时不再受慢设备影响。
+                    // 采集线程自身不执行任何设备 I/O，也不等落库/推送。
+                    // 一处残留：通道同时挂两种方向时，读写共用适配器的那把锁（锁覆盖整个往返），
+                    // 在飞的写仍可能把该通道的读顶出上面 5s 的等待窗口——所以要写成
+                    // "采集线程不做写出"，而不是"采集周期不再受慢设备影响"。
                     // 顺序保证：进 PersistenceService 的生产者只有 PropagationService 一个，
                     // 且 INPUT 值与其来源 OUTPUT 值在该阶段被合并成同一批。
                     propagationService.submitBatch(publishable);

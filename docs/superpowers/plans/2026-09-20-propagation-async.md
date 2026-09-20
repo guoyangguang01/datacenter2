@@ -2,7 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 把 InputPointPropagator 的设备写出从采集调度线程搬到独立的单线程阶段，使 `acquire()` 的耗时只由"读取 + 过滤 + 入队"构成，同时保持落库/推送的批次顺序语义完全不变。
+**Goal:** 把 InputPointPropagator 的设备写出从采集调度线程搬到独立的单线程阶段，使采集调度线程**自身不再执行任何设备写出**（"读取 + 过滤 + 入队"），同时保持落库/推送的批次顺序语义完全不变。
+（**残留**：通道同时挂两种方向时，读写共用适配器那把覆盖整个往返的锁，在飞的写仍可能把该通道的读顶出 5s 窗口——即采集周期里仍可能含写出分量，见 spec §11.5 与 CLAUDE.md 的 `acquisition.cycle` 条目。）
+
+> **各 Task 段落的代码/文字是"当时下的指令"的原样记录**，不追改。其中两处措辞在最终评审后被修正为限定版，
+> 落地代码与文档以修正版为准：Task 3 代码片段里的行内注释"`acquire()` 的耗时不再受慢设备影响"
+> （实际代码已改为"采集线程自身不做写出 + 残留说明"），以及 Task 4 条目里的"`acquisition.cycle` 不再包含设备写出"
+> （实际文档已加"**不是纯读取**，同通道写仍可能顶出读窗口"的限定）。
 
 **Architecture:** 新增 `PropagationService`（单线程 + 无界 FIFO），采集线程只 `submitBatch(快照)` 立即返回；该线程完成设备写出后，把 `[OUTPUT + INPUT]` 合并成**一批**提交 `PersistenceService` 与 `DistributionService`。采集线程**不再直接提交**落库/推送——这样进 `PersistenceService` 的生产者唯一，批次间保序与今天等价。
 
@@ -846,7 +852,7 @@ git commit -m "refactor(server): 采集周期只提交传播阶段，不再同�
         Redis MSET(实时) + TDengine 多表INSERT(历史)                        WebSocket 按通道合帧 ──→ 前端
 ```
 
-2. **`AcquisitionEngine` 条目**：把"并调用 `InputPointPropagator` 把有效变化写到 INPUT 测点——传播值与输出测点值**并入同一批次**；该批次**异步移交** `PersistenceService` 队列落库、交给 `DistributionService` 队列推送"改为"把有效变化**提交给 `PropagationService`**（只提交快照、立即返回）；设备写出、INPUT 值合并、落库与推送都在该阶段的后台线程上完成——`acquire()` 的耗时只由读取 + 过滤 + 入队构成"。
+2. **`AcquisitionEngine` 条目**：把"并调用 `InputPointPropagator` 把有效变化写到 INPUT 测点——传播值与输出测点值**并入同一批次**；该批次**异步移交** `PersistenceService` 队列落库、交给 `DistributionService` 队列推送"改为"把有效变化**提交给 `PropagationService`**（只提交快照、立即返回）；设备写出、INPUT 值合并、落库与推送都在该阶段的后台线程上完成——**采集线程自身不做写出**（措辞用这一句，**不要**写成"`acquire()` 的耗时只由读取 + 过滤 + 入队构成"：同通道读写争用适配器锁的残留仍然存在，见 spec §11.5）"。
    同一条里还有一处**方法改名**要跟着改：推送前那道复核现在写的是 `onlyLiveSources`（Task 1 已把它抽成 `LiveSourceChecker.onlyLive`，该复核在 Task 2/3 后改由传播阶段在设备写出之后执行）——统一改成 `LiveSourceChecker.onlyLive`，并写明它现在的执行位置。
 
 3. **新增 `PropagationService` 条目**（放在 `PersistenceService` 之前）：
