@@ -29,7 +29,8 @@
 
 **Files:**
 - Create: `sdncustom-server/src/main/java/com/sdncustom/server/service/LiveSourceChecker.java`
-- Modify: `sdncustom-server/src/main/java/com/sdncustom/server/service/AcquisitionEngine.java`（删私有方法 `onlyLiveSources`，改为委托；新增字段）
+- Modify: `sdncustom-server/src/main/java/com/sdncustom/server/service/AcquisitionEngine.java`（删私有方法 `onlyLiveSources`，改为委托；**新增**字段）
+- Modify: `sdncustom-server/src/test/java/com/sdncustom/server/service/AcquisitionEngineTest.java`（加 `LiveSourceChecker` 的 mock 与放行桩）
 - Test: `sdncustom-server/src/test/java/com/sdncustom/server/service/LiveSourceCheckerTest.java`
 
 **Interfaces:**
@@ -166,7 +167,8 @@ public class LiveSourceChecker {
 
 在 `AcquisitionEngine.java` 中：
 
-1. 字段区（`:37-50` 一带）把 `private final ChannelRepository channelRepository;` 替换为：
+1. 字段区（`:37-50` 一带）**新增**一行，**不要删 `channelRepository`**——`acquire()` 开头仍用它
+   `findByStatus(ChannelStatus.CONNECTED)` 取通道列表，删了就编译不过：
 
 ```java
     private final LiveSourceChecker liveSourceChecker;
@@ -184,6 +186,19 @@ public class LiveSourceChecker {
 
 > 此时 `acquire()` 的其余部分（含 `propagateSafely` 与两次直接提交）**保持原样**，因为 `AcquisitionEngineTest` 里依赖它们的用例要到 Task 3 才迁移。
 
+5. 同步 `AcquisitionEngineTest`：`@InjectMocks` 会因新字段而注入 null，不补 mock 会在 `acquire()` 里 NPE。在字段区新增
+
+```java
+    @Mock
+    private LiveSourceChecker liveSourceChecker;
+```
+
+（`@Mock ChannelRepository channelRepository` **保留**——`acquire()` 开头仍调它）并在 `setUp()` 末尾加一行放行桩（过滤逻辑本身由 `LiveSourceCheckerTest` 覆盖）：
+
+```java
+        lenient().when(liveSourceChecker.onlyLive(anyList())).thenAnswer(inv -> inv.getArgument(0));
+```
+
 - [ ] **Step 5: 运行相关测试确认全绿**
 
 Run: `mvn test -pl sdncustom-server -am -Dtest='LiveSourceCheckerTest,AcquisitionEngineTest' -Dsurefire.failIfNoSpecifiedTests=false`
@@ -194,7 +209,8 @@ Expected: 两个类全绿（`AcquisitionEngineTest` 原有 8 个用例不因本�
 ```bash
 git add sdncustom-server/src/main/java/com/sdncustom/server/service/LiveSourceChecker.java \
         sdncustom-server/src/main/java/com/sdncustom/server/service/AcquisitionEngine.java \
-        sdncustom-server/src/test/java/com/sdncustom/server/service/LiveSourceCheckerTest.java
+        sdncustom-server/src/test/java/com/sdncustom/server/service/LiveSourceCheckerTest.java \
+        sdncustom-server/src/test/java/com/sdncustom/server/service/AcquisitionEngineTest.java
 git commit -m "refactor(server): 抽存活来源过滤为 LiveSourceChecker（传播阶段也要用）"
 ```
 
@@ -673,20 +689,11 @@ git commit -m "feat(server): 新增 PropagationService，设备写出移出采�
     private InputPointPropagator inputPointPropagator;
 ```
 
-新增
+新增（`@Mock LiveSourceChecker liveSourceChecker` 与它的放行桩在 Task 1 已加，**不要重复添加**）：
 
 ```java
     @Mock
     private PropagationService propagationService;
-
-    @Mock
-    private LiveSourceChecker liveSourceChecker;
-```
-
-并在 `setUp()` 里加一行（让存活过滤原样放行，过滤逻辑本身由 `LiveSourceCheckerTest` 覆盖）：
-
-```java
-        lenient().when(liveSourceChecker.onlyLive(anyList())).thenAnswer(inv -> inv.getArgument(0));
 ```
 
 2. 删除这三个用例（它们的职责已迁到 `PropagationServiceTest`：`propagationValuesJoinTheSameBatch` → `mergesInputValuesIntoTheSameBatch`；`propagationFailureDoesNotLoseTheCycle` → `propagationFailureDoesNotLoseOutputValues`；`inputValuesBypassLivenessFilter` → `inputValuesBypassLivenessFilter`），以及 `noChangesMeansNoPropagation`（与 `noChangesMeansNoWrites` 合并后语义重复）：
