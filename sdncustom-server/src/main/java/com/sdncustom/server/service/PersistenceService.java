@@ -17,11 +17,13 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 落库（Redis 实时缓存 + TDengine 历史）后台队列。采集调度线程只提交快照，绝不等一次
+ * 落库（Redis 实时缓存 + TDengine 历史）后台队列。生产者只有 {@link PropagationService} 一个
+ * （采集线程不再直接提交），它提交快照后立即返回，绝不等一次
  * Redis 往返（{@code spring.data.redis.timeout: 3000}）或一次 TDengine 写入；
  * {@code acquire()} 是 {@code @Scheduled(fixedDelay)}，写在它里面的耗时会 1:1 吃掉采集频率。
  *
- * <p><b>线程数必须恒为 1</b>：单线程 + FIFO 队列是批次间保序的唯一手段，保证 INPUT
+ * <p><b>线程数必须恒为 1</b>：生产者只有一个，且 INPUT 传播值与其来源 OUTPUT 值在那里被合并成
+ * 同一批，所以单线程 + FIFO 队列仍是批次间保序的唯一手段，保证 INPUT
  * 传播值不会晚于下一轮 OUTPUT 值落库（backlog A9 记录的顺序隐患）。为吞吐调大 corePoolSize
  * 会破坏这一点。
  *
@@ -93,7 +95,7 @@ public class PersistenceService {
     }
 
     /**
-     * 批量提交待落库的值（异步返回，绝不阻塞采集线程；快照隔离调用方后续可能的列表变更）
+     * 批量提交待落库的值（异步返回，绝不阻塞调用线程；快照隔离调用方后续可能的列表变更）
      */
     public void submitBatch(List<PointValue> pointValues) {
         if (pointValues.isEmpty()) {

@@ -16,7 +16,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
@@ -46,16 +45,10 @@ class AcquisitionEngineTest {
     private MeasurementPointRepository pointRepository;
 
     @Mock
-    private PersistenceService persistenceService;
-
-    @Mock
-    private DistributionService distributionService;
-
-    @Mock
     private ChangeGate changeGate;
 
     @Mock
-    private InputPointPropagator inputPointPropagator;
+    private PropagationService propagationService;
 
     @Mock
     private ProtocolRegistry protocolRegistry;
@@ -103,11 +96,11 @@ class AcquisitionEngineTest {
 
         engine.acquire();
 
-        verifyNoInteractions(persistenceService, distributionService);
+        verifyNoInteractions(propagationService);
     }
 
     @Test
-    @DisplayName("通过变更检测的值被批量写入三处下游")
+    @DisplayName("通过变更检测的值被批量提交给传播阶段")
     void changedValuesFlushedInBatch() {
         when(channelRepository.findByStatus(ChannelStatus.CONNECTED)).thenReturn(List.of(channel));
         when(pointRepository.findByChannelIdAndDirection("ch_001", PointDirection.OUTPUT)).thenReturn(List.of(point));
@@ -120,8 +113,7 @@ class AcquisitionEngineTest {
 
         engine.acquire();
 
-        verify(persistenceService).submitBatch(read);
-        verify(distributionService).pushBatch(read);
+        verify(propagationService).submitBatch(read);
         assertEquals(1.0, meterRegistry.get("sdncustom.acquisition.cycle").timer().count());
         assertEquals(1.0, meterRegistry.get("sdncustom.acquisition.changed.values").counter().count());
     }
@@ -140,8 +132,7 @@ class AcquisitionEngineTest {
 
         engine.acquire();
 
-        verifyNoInteractions(distributionService);
-        verify(persistenceService, never()).submitBatch(anyList());
+        verifyNoInteractions(propagationService);
     }
 
     @Test
@@ -156,12 +147,12 @@ class AcquisitionEngineTest {
         engine.acquire();
 
         verify(channelService).syncDisconnected("ch_001");
-        verifyNoInteractions(persistenceService, distributionService);
+        verifyNoInteractions(propagationService);
     }
 
     @Test
-    @DisplayName("输出测点变化触发传播，输入测点值并入同一批次")
-    void propagationValuesJoinTheSameBatch() {
+    @DisplayName("存活过滤仍在采集线程执行：提交给传播阶段的是过滤后的值")
+    void livenessFilterRunsBeforeSubmit() {
         when(channelRepository.findByStatus(ChannelStatus.CONNECTED)).thenReturn(List.of(channel));
         when(pointRepository.findByChannelIdAndDirection("ch_001", PointDirection.OUTPUT)).thenReturn(List.of(point));
         ProtocolAdapter adapter = mock(ProtocolAdapter.class);
@@ -170,86 +161,11 @@ class AcquisitionEngineTest {
         List<PointValue> read = List.of(value("p1", 25.0));
         when(adapter.readPoints(anyList())).thenReturn(read);
         when(changeGate.filter(read, java.util.Map.of("p1", point))).thenReturn(read);
-
-        PointValue inputValue = new PointValue();
-        inputValue.setPointId("in_1");
-        inputValue.setValue(25.0);
-        inputValue.setQuality(PointQuality.GOOD);
-        inputValue.setSourceChannelId("ch_002");
-        inputValue.setTimestamp(System.currentTimeMillis());
-        when(inputPointPropagator.propagate(read)).thenReturn(List.of(inputValue));
+        PointValue alive = value("p1", 25.0);
+        when(liveSourceChecker.onlyLive(read)).thenReturn(List.of(alive));
 
         engine.acquire();
 
-        List<PointValue> expected = List.of(read.get(0), inputValue);
-        verify(persistenceService).submitBatch(expected);
-        verify(distributionService).pushBatch(expected);
-    }
-
-    @Test
-    @DisplayName("无有效变化时不触发传播")
-    void noChangesMeansNoPropagation() {
-        when(channelRepository.findByStatus(ChannelStatus.CONNECTED)).thenReturn(List.of(channel));
-        when(pointRepository.findByChannelIdAndDirection("ch_001", PointDirection.OUTPUT)).thenReturn(List.of(point));
-        ProtocolAdapter adapter = mock(ProtocolAdapter.class);
-        when(protocolRegistry.getOrCreate(channel)).thenReturn(adapter);
-        when(adapter.isConnected()).thenReturn(true);
-        List<PointValue> read = List.of(value("p1", 25.0));
-        when(adapter.readPoints(anyList())).thenReturn(read);
-        when(changeGate.filter(read, java.util.Map.of("p1", point))).thenReturn(List.of());
-
-        engine.acquire();
-
-        verifyNoInteractions(inputPointPropagator);
-    }
-
-    @Test
-    @DisplayName("传播抛异常：不逃出采集周期，本轮 OUTPUT 值照常落库/推送")
-    void propagationFailureDoesNotLoseTheCycle() {
-        when(channelRepository.findByStatus(ChannelStatus.CONNECTED)).thenReturn(List.of(channel));
-        when(pointRepository.findByChannelIdAndDirection("ch_001", PointDirection.OUTPUT)).thenReturn(List.of(point));
-        ProtocolAdapter adapter = mock(ProtocolAdapter.class);
-        when(protocolRegistry.getOrCreate(channel)).thenReturn(adapter);
-        when(adapter.isConnected()).thenReturn(true);
-        List<PointValue> read = List.of(value("p1", 25.0));
-        when(adapter.readPoints(anyList())).thenReturn(read);
-        when(changeGate.filter(read, java.util.Map.of("p1", point))).thenReturn(read);
-        when(inputPointPropagator.propagate(read)).thenThrow(new RuntimeException("propagation exploded"));
-
-        // changeGate 已经推进过基线：异常若逃出 acquire()，这一轮的变化值就永久丢了
-        engine.acquire();
-
-        verify(persistenceService).submitBatch(read);
-        verify(distributionService).pushBatch(read);
-        assertEquals(1.0, meterRegistry.get("sdncustom.propagation.errors").counter().count());
-    }
-
-    @Test
-    @DisplayName("输入测点的来源通道掉线不影响传播值推送")
-    void inputValuesBypassLivenessFilter() {
-        when(channelRepository.findByStatus(ChannelStatus.CONNECTED)).thenReturn(List.of(channel));
-        when(pointRepository.findByChannelIdAndDirection("ch_001", PointDirection.OUTPUT)).thenReturn(List.of(point));
-        ProtocolAdapter adapter = mock(ProtocolAdapter.class);
-        when(protocolRegistry.getOrCreate(channel)).thenReturn(adapter);
-        when(adapter.isConnected()).thenReturn(true);
-        List<PointValue> read = List.of(value("p1", 25.0));
-        when(adapter.readPoints(anyList())).thenReturn(read);
-        when(changeGate.filter(read, java.util.Map.of("p1", point))).thenReturn(read);
-
-        // 输入测点写出目标通道 ch_dead 不在 CONNECTED 集合里
-        PointValue inputValue = new PointValue();
-        inputValue.setPointId("in_1");
-        inputValue.setValue(25.0);
-        inputValue.setQuality(PointQuality.GOOD);
-        inputValue.setSourceChannelId("ch_dead");
-        inputValue.setTimestamp(System.currentTimeMillis());
-        when(inputPointPropagator.propagate(read)).thenReturn(List.of(inputValue));
-
-        engine.acquire();
-
-        ArgumentCaptor<List<PointValue>> captor = ArgumentCaptor.forClass(List.class);
-        verify(distributionService).pushBatch(captor.capture());
-        assertTrue(captor.getValue().stream().anyMatch(pv -> pv.getPointId().equals("in_1")),
-                "输入测点值不应被来源存活过滤丢掉");
+        verify(propagationService).submitBatch(List.of(alive));
     }
 }

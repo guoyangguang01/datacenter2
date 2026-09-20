@@ -19,7 +19,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,10 +37,8 @@ public class AcquisitionEngine {
     private final LiveSourceChecker liveSourceChecker;
     private final MeasurementPointRepository pointRepository;
     private final ChannelService channelService;
-    private final PersistenceService persistenceService;
-    private final DistributionService distributionService;
     private final ChangeGate changeGate;
-    private final InputPointPropagator inputPointPropagator;
+    private final PropagationService propagationService;
     private final ProtocolRegistry protocolRegistry;
     private final MeterRegistry meterRegistry;
 
@@ -106,35 +103,19 @@ public class AcquisitionEngine {
                     .flatMap(f -> f.join().stream())
                     .toList();
 
-            // 本轮无有效变化则零写入，避免重复数据打爆存储与推送通道
+            // 本轮无有效变化则零提交，避免重复数据打爆存储与推送通道
             if (!changedValues.isEmpty()) {
-                // 读取期间用户可能已断开通道：断开来源的迟到值不写缓存/历史
+                // 读取期间用户可能已断开通道：断开来源的迟到值不写缓存/历史、也不下发到设备
                 List<PointValue> publishable = liveSourceChecker.onlyLive(changedValues);
                 if (!publishable.isEmpty()) {
                     meterRegistry.counter("sdncustom.acquisition.changed.values")
                             .increment(publishable.size());
 
-                    // 输入测点传播：同步写出到各自绑定通道，值并入本轮批次
-                    List<PointValue> inputValues = propagateSafely(publishable);
-
-                    List<PointValue> allValues = new ArrayList<>(publishable);
-                    allValues.addAll(inputValues);
-
-                    // 落库（Redis 实时缓存 + TDengine 历史）移交后台单线程队列：
-                    // 采集周期不再等一次 Redis 往返（超时 3s）或一次 TDengine 写入。
-                    // 单线程 FIFO 保证批次间保序，INPUT 传播值不会晚于下一轮 OUTPUT 值落库。
-                    persistenceService.submitBatch(allValues);
-
-                    // 推送前再复核一次：到这一步本轮唯一剩下的同步 I/O 是传播的设备写出
-                    // （backlog A9，仍在采集线程上跑），期间用户若断开，迟到的 GOOD 会在
-                    // COMM_LOST 之后把前端刷回正常。过滤放在推送前一刻，窗口就只剩一次查询的距离。
-                    // 输入测点值不过这道滤网：它们的来源通道是**写出目标**，
-                    // 目标掉线只代表没送达，不代表这个值本身失效（决策 A）。
-                    List<PointValue> pushable = new ArrayList<>(liveSourceChecker.onlyLive(publishable));
-                    pushable.addAll(inputValues);
-                    if (!pushable.isEmpty()) {
-                        distributionService.pushBatch(pushable);
-                    }
+                    // 传播（设备写出）与落库/推送都在传播阶段的后台线程上完成：
+                    // 采集线程只提交快照、绝不等设备写出，acquire() 的耗时不再受慢设备影响。
+                    // 顺序保证：进 PersistenceService 的生产者只有 PropagationService 一个，
+                    // 且 INPUT 值与其来源 OUTPUT 值在该阶段被合并成同一批。
+                    propagationService.submitBatch(publishable);
                 }
             }
         } finally {
@@ -173,21 +154,6 @@ public class AcquisitionEngine {
             pointsById.put(point.getPointId(), point);
         }
         return changeGate.filter(values, pointsById);
-    }
-
-    /**
-     * 传播必须就地失败：{@code changeGate.filter} 已经推进了本轮的变更基线，异常若从这里逃出去，
-     * 这一轮（含所有通道）的变化值就永久丢了——Redis、历史、推送三处都不会再见到它们。
-     * 传播只影响 INPUT 测点，不该连累 OUTPUT 值的落库，所以吞掉异常、记指标、按"没有输入测点"继续。
-     */
-    private List<PointValue> propagateSafely(List<PointValue> publishable) {
-        try {
-            return inputPointPropagator.propagate(publishable);
-        } catch (Exception e) {
-            meterRegistry.counter("sdncustom.propagation.errors").increment();
-            log.error("Input point propagation failed; committing output values only", e);
-            return List.of();
-        }
     }
 
     @PreDestroy
