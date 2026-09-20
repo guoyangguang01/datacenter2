@@ -839,6 +839,7 @@ git commit -m "refactor(server): 采集周期只提交传播阶段，不再同�
 ```
 
 2. **`AcquisitionEngine` 条目**：把"并调用 `InputPointPropagator` 把有效变化写到 INPUT 测点——传播值与输出测点值**并入同一批次**；该批次**异步移交** `PersistenceService` 队列落库、交给 `DistributionService` 队列推送"改为"把有效变化**提交给 `PropagationService`**（只提交快照、立即返回）；设备写出、INPUT 值合并、落库与推送都在该阶段的后台线程上完成——`acquire()` 的耗时只由读取 + 过滤 + 入队构成"。
+   同一条里还有一处**方法改名**要跟着改：推送前那道复核现在写的是 `onlyLiveSources`（Task 1 已把它抽成 `LiveSourceChecker.onlyLive`，该复核在 Task 2/3 后改由传播阶段在设备写出之后执行）——统一改成 `LiveSourceChecker.onlyLive`，并写明它现在的执行位置。
 
 3. **新增 `PropagationService` 条目**（放在 `PersistenceService` 之前）：
 
@@ -866,6 +867,7 @@ git commit -m "refactor(server): 采集周期只提交传播阶段，不再同�
 1. §阶段 2 的标题与首句：`## 阶段 2：传播（**同步跑在采集线程上**）` → `## 阶段 2：传播（**在 PropagationService 的后台线程上**）`，并把"同步跑在采集线程上"的措辞与 backlog A9 的引用一并更新。
 2. 阶段 2 里的行号引用（`InputPointPropagator.java:41` / `writeToChannel:79` / `adapter.writePoint:98` / `toInputValue:115`）在 `InputPointPropagator` **未被本次改动**的前提下仍然有效——**逐个核对**后再改（该文件本次一行未动，所以只需核对不必改）；真正要改的是"谁调用它"的上下文。
 3. 在阶段 2 末尾补一句：调用方是 `PropagationService.process`（线程 `propagation`），采集线程只 `submitBatch`。
+4. `docs/tcp-pipeline.md:58` 这一步里写的 `onlyLiveSources` 改为 `LiveSourceChecker.onlyLive`（Task 1 抽出的新单元），并顺带修正该行引用的行号（`acquire():111-139` 在 Task 3 后已变）。
 
 - [ ] **Step 3: 更新 `docs/backlog.md`**
 
