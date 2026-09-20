@@ -94,7 +94,7 @@ URL 会进代理/网关/浏览器历史与访问日志。
 → 是否引入 Flyway/Liquibase（并恢复可升级性）是工程决策；在那之前，任何"就地升级已有部署"的需求
 都等于要求先做数据迁移。
 
-### A9 传播在采集线程上做无界设备 I/O
+### ~~A9 传播在采集线程上做无界设备 I/O~~（2026-09-20 已处理，见下）
 `AcquisitionEngine.acquire` 在**采集调度线程**上同步调用 `InputPointPropagator.propagate`，后者对每个
 INPUT 测点的每条绑定做一次 `adapter.writePoint`（真实 socket 写）。5s 的 `allOf` 限时只覆盖**读取阶段**
 （每通道一个 future），传播不在其中——一台写超时的设备会把整轮采集拖长，而这是所有通道共用的周期。
@@ -102,6 +102,13 @@ INPUT 测点的每条绑定做一次 `adapter.writePoint`（真实 socket 写）
 但触发条件（"若实测有影响"）**从未被测量过**：本轮没有任何延迟/吞吐基线。
 → 先量再改：给 `acquire()` 的传播段单独计时（Timer 或日志），有数据再决定是否搬走。
 搬走会引入异步顺序问题（INPUT 的值可能晚于下一轮 OUTPUT 的值落库）。
+
+**→ 已搬到 `PropagationService`**（单线程 FIFO，`[OUTPUT + INPUT]` 合并成同一批提交；采集线程只
+`propagationService.submitBatch(publishable)`）。顺序保证换了实现：从"两者在采集线程上同批"换成
+"`PersistenceService` 的唯一生产者就是那个单线程的 `PropagationService`"。
+`acquisition.cycle` 的构成随之变成"读取 + 过滤 + 入队"，**不再包含设备写出**（历史 P99 不可直接比较）。
+队列选的是**无界**而不是上面设想的"有界缓冲"——写命令的丢弃语义太重，见「工程债 / 测试缺口」一节。
+上面这段历史读数原样保留：它记录的是当时（落库已异步、传播仍在采集线程上）的真实构成。
 
 > 2026-09-16 更新（落库异步化之后）：这句话里的两条前提都变了，重新读数。
 > - **顺序问题已有现成解法**：`PersistenceService` 证明了"单线程 + FIFO 队列"就能保住批次间顺序
@@ -142,6 +149,12 @@ INPUT 测点的每条绑定做一次 `adapter.writePoint`（真实 socket 写）
 - **控制器层 0 测试**：CRUD、`@Valid` 失败、异常映射都没覆盖
 - **MQTT / OPC-UA 适配器无单测**（Modbus 有 mock 集成测试覆盖读写与 0x10）
 - **无单测**：`HistoryService`、`PointBindingRegistry`、`SystemStatusService`、`JwtAuthFilter`、`WebSocketAuthInterceptor`
+- **`PropagationService` 的队列无界（有意为之）**：决策是"写命令不丢"——在写出路径上丢最旧批次语义太重
+  （那是"设备没收到"而不是"数据不可见"）。失败模式因此是**内存耗尽（OOM）而不是丢数据**；安全阀是
+  `propagation.queue.depth` 指标 + 深度超 `sdncustom.propagation.queue-warn-depth`（默认 100）的一次性 WARN，
+  停机另有 `sdncustom.propagation.drain-timeout-seconds`（默认 5s）排空窗口——**超时强杀是唯一会丢写命令的路径**
+  （日志会点名批次数，含正在写出的那一批）。若将来现场出现"设备长期慢写"，需要回到"有界队列 + 合并"的方案，
+  并重新定丢弃语义
 - **B9 前端未接分页**：`GET /api/points`、`GET /api/channels` 支持可选 `page`/`size`（传 `size` 才返回 `{items,total,page,size}`，否则仍是全量数组）。这个「响应形态随参数变」的取舍是为了不动前端；要真正服务端分页得把 4 个表格改掉，**需要在浏览器里验证**
 - **前端类型仍手抄后端 DTO**：有漂移检查兜底，但没有代码生成
 - **`GET /api/channels` 的 `connectionConfig`**：见 A3
