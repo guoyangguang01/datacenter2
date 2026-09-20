@@ -63,6 +63,13 @@ sdncustom:
     # 待落库批次队列容量，满则丢最旧批次（接受该批次的历史永久缺失）
     queue-capacity: 200
 
+  # 传播（设备写出）后台阶段
+  propagation:
+    # 队列无界（写命令不丢）；深度超过此值打一次 WARN，让无界增长的 OOM 风险在发生之前可见
+    queue-warn-depth: 100
+    # 停机排空窗口（秒）；超时则强杀并丢弃剩余批次——这是唯一会丢写命令的路径
+    drain-timeout-seconds: ${SDNCUSTOM_PROPAGATION_DRAIN_S:5}
+
   # 断线自动重连（只管非 MQTT；MQTT 由 Paho 自带重连）
   channel:
     reconnect:
