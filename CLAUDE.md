@@ -86,7 +86,21 @@ mvn test -Dtest=ChannelServiceTest#testMethod   # 运行单个测试方法
 >
 > 另外仍建议核对基线：`git stash` 后跑同一个测试类，能复现即与本次改动无关。
 
-测试只在 Java 模块里（`sdncustom-common` / `sdncustom-protocol` / `sdncustom-server`，29 个测试类、280 个 `@Test`——common 25 / protocol 47 / server 208，集中在 service/controller/security/config/monitor/repository；server 侧本轮新增的 `PropagationServiceTest` 有 10 条，含修复轮补的积压告警重置用例与跨批次顺序用例）。`sdncustom-web` **没有测试框架**——`package.json` 无 `test` 脚本、无 vitest/jest，前端改动只能靠 `npm run build`（含 `tsc` 类型检查）、`npm run check:types`（比对后端 DTO/枚举与手写类型是否漂移）与手工验证。
+测试在 Java 模块（`sdncustom-common` / `sdncustom-protocol` / `sdncustom-server`，46 个测试类、449 个 `@Test`——common 37 / protocol 120 / server 292，集中在 service/controller/security/config/monitor/repository；2026-09-29 三轮补测新增 17 个类 169 条）与前端 vitest（42 例）。补测类与关键约定：
+
+- `ModbusTcpAdapterTest`：对接 MockModbusTcpServer 的真实 TCP 集成；**只用 40036+ 的保持寄存器与 10 号之后的线圈**——mock-data.json 里 ch_modbus_mock 的地址（≤40035、线圈 1-7）每 3s 随机波动，碰到就是偶发失败
+- `MqttAdapterTest`：`mockConstruction` 拦截 Paho `MqttClient`，本机**不需要 broker**（连接失败用例走真实客户端连拒绝端口）
+- `OpcUaAdapterTest`：对接进程内 MockOpcUaServer。**不能用 mockConstruction**——`OpcUaClient.create()` 里就有同步 GetEndpoints discovery，网络不可达时在构造前就抛；MockOpcUaServer.start() 吞异常，@BeforeAll 要用 TCP 探针确认监听；数值节点每 2s 被模拟器波动覆盖，写读回环用有限重试消化竞态
+- `HistoryServiceTest` / `PointValueCacheRepositoryTest`：字段映射与 Redis 故障降级（吞异常不打断落库）
+- `DataTransferApiIntegrationTest` / `ChannelApiIntegrationTest` / `BusinessSystemApiIntegrationTest` / `PointApiContractTest`：真实 HTTP 契约（裸导出信封、导入分支校验、@Valid、全量/分页双形态、查询三分支、history 参数校验）。**共享 H2 上下文的 fixture 必须只播种一次**（静态 seeded 标志），重复创建业务会撞 400
+- `ChannelReconnectSchedulerTest`：退避窗口断言**直接反射读 nextAttemptAt/failures，不靠 sleep**；窗口类用例把 initial-delay 调到 60s 防机器卡顿误判
+- `WebSocketAuthInterceptorTest` / 扩充后的 `GlobalExceptionHandlerTest`：握手闸门与各异常分支的信封契约
+
+覆盖率看 JaCoCo：`mvn clean org.jacoco:jacoco-maven-plugin:0.8.12:prepare-agent test org.jacoco:jacoco-maven-plugin:0.8.12:report`（2026-09-29 全项目指令 **80%** / 分支 **68%**；零覆盖仅剩 `Channel` 的 `@PrePersist` 回调、`ProtocolAdapter` 接口与依赖 broker 的开发工具 `MockMqttClient`）。
+
+> **JaCoCo 只统计手写代码**：Lombok 生成的 getter/setter/构造器带 `lombok.Generated` 注解，会被 JaCoCo 的 `AnnotationGeneratedFilter` 整体排除——纯 Lombok 类（如 `LoginRequest`）不会出现在 CSV 里，实体类只统计 `@PrePersist` 等手写方法（这就是 `Channel` 显示 0/13 的原因，不是没测到）。测 Lombok 存取器的用例（如 `ChannelTest`）不提升覆盖率数字，保留作行为文档即可。**别再为此重查一轮**（此坑实测花了大量时间）。
+
+`sdncustom-web` 有 **vitest**（`npm test` = `vitest run`，jsdom 环境；stores/services/utils 42 例——seq 竞态守卫、切业务清空、CSV 导出转义、JWT 过期判定；**无组件测试**，vitest 3 + jsdom 是为兼容项目 vite 5，别升 vitest 5）。前端改动另有 `npm run build`（含 `tsc`，测试文件也参与类型检查）与 `npm run check:types`（比对后端 DTO/枚举与手写类型是否漂移）兜底。
 
 ### 前端 (Vite)
 
