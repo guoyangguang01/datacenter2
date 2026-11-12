@@ -72,19 +72,26 @@ public static class ClientConfigurationValidator
                 errors.Add("测点 ID、名称和地址不能为空。");
             }
 
-            if (point.Direction == PointDirection.Input && string.IsNullOrWhiteSpace(point.SourceOutputPointId))
+            if (point.Direction == PointDirection.Output && string.IsNullOrWhiteSpace(point.SourceInputPointId))
             {
-                errors.Add($"输入测点 {point.PointId} 必须引用 OUTPUT 测点。");
+                errors.Add($"输出测点 {point.PointId} 必须引用 INPUT 测点。");
                 continue;
             }
 
-            if (point.Direction != PointDirection.Input ||
-                string.IsNullOrWhiteSpace(point.SourceOutputPointId))
+            if (point.Direction == PointDirection.Input &&
+                !string.IsNullOrWhiteSpace(point.SourceInputPointId))
+            {
+                errors.Add($"输入测点 {point.PointId} 是数据来源，不能设置源测点引用。");
+                continue;
+            }
+
+            if (point.Direction != PointDirection.Output ||
+                string.IsNullOrWhiteSpace(point.SourceInputPointId))
             {
                 continue;
             }
 
-            var source = point.SourceOutputPointId.Trim();
+            var source = point.SourceInputPointId.Trim();
             var separator = source.IndexOf(':');
             var sourceClient = separator > 0 ? source[..separator] : configuration.ClientCode;
             if (separator > 0)
@@ -99,19 +106,19 @@ public static class ClientConfigurationValidator
 
             if (!pointsById.TryGetValue(source, out var sourcePoint))
             {
-                errors.Add($"输入测点 {point.PointId} 引用的 OUTPUT 测点不存在：{source}");
+                errors.Add($"输出测点 {point.PointId} 引用的 INPUT 测点不存在：{source}");
                 continue;
             }
 
-            if (sourcePoint.Direction != PointDirection.Output)
+            if (sourcePoint.Direction != PointDirection.Input)
             {
-                errors.Add($"输入测点 {point.PointId} 必须引用 OUTPUT 测点，不能引用 {sourcePoint.Direction}。");
+                errors.Add($"输出测点 {point.PointId} 必须引用 INPUT 测点，不能引用 {sourcePoint.Direction}。");
             }
 
             if (sourcePoint.DataType != point.DataType)
             {
                 errors.Add(
-                    $"输入测点 {point.PointId} 与源 OUTPUT 测点 {source} 的数据类型必须一致。");
+                    $"输出测点 {point.PointId} 与源 INPUT 测点 {source} 的数据类型必须一致。");
             }
         }
 

@@ -35,8 +35,8 @@ public sealed class ContractMapperTests
             Address = "ns=2;s=Temperature",
             DataType = PointDataType.Float64,
             Unit = "C",
-            Direction = PointDirection.Input,
-            SourceOutputPointId = "A:OUT",
+            Direction = PointDirection.Output,
+            SourceInputPointId = "A:IN",
             Deadband = 0.2,
             Group = "Fuel"
         };

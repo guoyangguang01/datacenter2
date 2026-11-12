@@ -8,8 +8,11 @@ public enum ClientProtocol
 
 public enum PointDirection
 {
-    Output,
-    Input
+    // 数据从第三方进入软件侧，作为分发来源。
+    Input,
+
+    // 软件侧向一个或多个集成方发送数据。
+    Output
 }
 
 public enum PointDataType

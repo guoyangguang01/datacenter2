@@ -112,10 +112,10 @@
         <Grid RowDefinitions="48,*">
           <Border Classes="tableHeader" Padding="12,0">
             <DockPanel>
-              <TextBlock Text="用户实时数据" Classes="h2" />
+              <TextBlock Text="输入参数数据" Classes="h2" />
               <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
                 <TextBlock Text="接收" />
-                <TextBlock Text="{Binding OutputPointCount, StringFormat='{}{0} 个'}"
+                <TextBlock Text="{Binding InputPointCount, StringFormat='{}{0} 个'}"
                            Foreground="{DynamicResource BrandPrimaryBrush}" FontWeight="Bold" />
               </StackPanel>
             </DockPanel>
@@ -130,7 +130,7 @@
               <TextBlock Grid.Column="4" Text="质量" Margin="8,9" />
               <TextBlock Grid.Column="5" Text="更新时间" Margin="8,9" />
             </Grid>
-            <ListBox Grid.Row="1" ItemsSource="{Binding OutputPoints}" BorderThickness="0">
+            <ListBox Grid.Row="1" ItemsSource="{Binding InputPoints}" BorderThickness="0">
               <ListBox.ItemTemplate>
                 <DataTemplate x:DataType="vm:ClientPointRow">
                   <Grid ColumnDefinitions="1.3*,2.2*,1.1*,0.8*,1*,1.3*" Margin="0,7">
@@ -152,10 +152,10 @@
         <Grid RowDefinitions="48,*">
           <Border Classes="tableHeader" Padding="12,0">
             <DockPanel>
-              <TextBlock Text="中心源实时数据" Classes="h2" />
+              <TextBlock Text="输出分发数据" Classes="h2" />
               <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
                 <TextBlock Text="接收" />
-                <TextBlock Text="{Binding InputPointCount, StringFormat='{}{0} 个'}"
+                <TextBlock Text="{Binding OutputPointCount, StringFormat='{}{0} 个'}"
                            Foreground="{DynamicResource BrandPrimaryBrush}" FontWeight="Bold" />
               </StackPanel>
             </DockPanel>
@@ -170,7 +170,7 @@
               <TextBlock Grid.Column="4" Text="质量" Margin="8,9" />
               <TextBlock Grid.Column="5" Text="更新时间" Margin="8,9" />
             </Grid>
-            <ListBox Grid.Row="1" ItemsSource="{Binding InputPoints}" BorderThickness="0">
+            <ListBox Grid.Row="1" ItemsSource="{Binding OutputPoints}" BorderThickness="0">
               <ListBox.ItemTemplate>
                 <DataTemplate x:DataType="vm:ClientPointRow">
                   <Grid ColumnDefinitions="1.3*,2.2*,1.1*,0.8*,1*,1.3*" Margin="0,7">

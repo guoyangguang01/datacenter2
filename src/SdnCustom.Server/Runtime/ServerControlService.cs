@@ -97,14 +97,14 @@ public sealed class ServerControlService : IServerControlService
             .Where(candidate => candidate.ClientCode != clientCode)
             .SelectMany(candidate => candidate.Points
                 .Where(point =>
-                    point.Direction == SharedPointDirection.Input &&
-                    point.SourceOutputPointId?.StartsWith($"{clientCode}:", StringComparison.Ordinal) == true)
+                    point.Direction == SharedPointDirection.Output &&
+                    point.SourceInputPointId?.StartsWith($"{clientCode}:", StringComparison.Ordinal) == true)
                 .Select(point => $"{candidate.ClientCode}:{point.PointId}"))
             .ToArray();
         if (crossClientReferences.Length > 0)
         {
             throw new InvalidOperationException(
-                $"客户端 {clientCode} 仍被其他 INPUT 测点引用：" +
+                $"客户端 {clientCode} 仍被其他 OUTPUT 测点引用：" +
                 string.Join("、", crossClientReferences.Take(5)));
         }
 
@@ -206,9 +206,9 @@ public sealed class ServerControlService : IServerControlService
                      ?? throw new KeyNotFoundException($"客户端未登记：{clientCode}");
         var point = client.Points.FirstOrDefault(candidate => candidate.PointId == pointId)
                     ?? throw new KeyNotFoundException($"测点未登记：{pointId}");
-        if (point.Direction != SharedPointDirection.Input)
+        if (point.Direction != SharedPointDirection.Output)
         {
-            throw new InvalidOperationException($"测点 {pointId} 不是 INPUT 测点。");
+            throw new InvalidOperationException($"测点 {pointId} 不是 OUTPUT 测点。");
         }
 
         await _telemetry.SendManualWriteAsync(clientCode, point, value, cancellationToken).ConfigureAwait(false);
@@ -237,12 +237,12 @@ public sealed class ServerControlService : IServerControlService
 
         foreach (var (targetClientCode, catalog) in catalogs)
         {
-            foreach (var input in catalog.Where(point => point.Direction == SharedPointDirection.Input))
+            foreach (var output in catalog.Where(point => point.Direction == SharedPointDirection.Output))
             {
-                var source = input.SourceOutputPointId;
+                var source = output.SourceInputPointId;
                 if (string.IsNullOrWhiteSpace(source))
                 {
-                    throw new InvalidOperationException($"INPUT 测点 {input.PointId} 缺少源 OUTPUT。");
+                    throw new InvalidOperationException($"OUTPUT 测点 {output.PointId} 缺少源 INPUT。");
                 }
 
                 source = source.Trim();
@@ -253,13 +253,13 @@ public sealed class ServerControlService : IServerControlService
                     string.IsNullOrWhiteSpace(sourcePointId))
                 {
                     throw new InvalidOperationException(
-                        $"INPUT 测点 {targetClientCode}:{input.PointId} 的源 OUTPUT 引用格式无效：{source}");
+                        $"OUTPUT 测点 {targetClientCode}:{output.PointId} 的源 INPUT 引用格式无效：{source}");
                 }
 
                 if (!catalogs.TryGetValue(sourceClientCode, out var sourceCatalog))
                 {
                     throw new InvalidOperationException(
-                        $"INPUT 测点 {targetClientCode}:{input.PointId} 引用的客户端不存在：{sourceClientCode}");
+                        $"OUTPUT 测点 {targetClientCode}:{output.PointId} 引用的客户端不存在：{sourceClientCode}");
                 }
 
                 var sourcePoint = sourceCatalog.FirstOrDefault(point =>
@@ -267,21 +267,21 @@ public sealed class ServerControlService : IServerControlService
                 if (sourcePoint is null)
                 {
                     throw new InvalidOperationException(
-                        $"INPUT 测点 {targetClientCode}:{input.PointId} 引用的 OUTPUT 不存在：" +
+                        $"OUTPUT 测点 {targetClientCode}:{output.PointId} 引用的 INPUT 不存在：" +
                         $"{sourceClientCode}:{sourcePointId}");
                 }
 
-                if (sourcePoint.Direction != SharedPointDirection.Output)
+                if (sourcePoint.Direction != SharedPointDirection.Input)
                 {
                     throw new InvalidOperationException(
-                        $"INPUT 测点 {targetClientCode}:{input.PointId} 必须引用 OUTPUT，" +
+                        $"OUTPUT 测点 {targetClientCode}:{output.PointId} 必须引用 INPUT，" +
                         $"{sourceClientCode}:{sourcePointId} 当前为 {sourcePoint.Direction}。");
                 }
 
-                if (sourcePoint.DataType != input.DataType)
+                if (sourcePoint.DataType != output.DataType)
                 {
                     throw new InvalidOperationException(
-                        $"INPUT 测点 {targetClientCode}:{input.PointId} 与源 OUTPUT " +
+                        $"OUTPUT 测点 {targetClientCode}:{output.PointId} 与源 INPUT " +
                         $"{sourceClientCode}:{sourcePointId} 的数据类型不一致。");
                 }
             }
@@ -290,9 +290,9 @@ public sealed class ServerControlService : IServerControlService
 
     private static SharedPointDefinition NormalizePoint(SharedPointDefinition point)
     {
-        var source = string.IsNullOrWhiteSpace(point.SourceOutputPointId)
+        var source = string.IsNullOrWhiteSpace(point.SourceInputPointId)
             ? null
-            : point.SourceOutputPointId.Trim();
+            : point.SourceInputPointId.Trim();
         if (source?.IndexOf(':') > 0)
         {
             var separator = source.IndexOf(':');
@@ -307,7 +307,7 @@ public sealed class ServerControlService : IServerControlService
             DataType = point.DataType,
             Unit = point.Unit?.Trim() ?? string.Empty,
             Direction = point.Direction,
-            SourceOutputPointId = source,
+            SourceInputPointId = source,
             Deadband = Math.Max(0, point.Deadband),
             Group = string.IsNullOrWhiteSpace(point.Group) ? "默认" : point.Group.Trim()
         };

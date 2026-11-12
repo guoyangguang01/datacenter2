@@ -135,7 +135,7 @@ namespace SdnCustom.Server.Persistence.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("SourceOutputPointId")
+                    b.Property<string>("SourceInputPointId")
                         .IsRequired()
                         .HasColumnType("TEXT");
 

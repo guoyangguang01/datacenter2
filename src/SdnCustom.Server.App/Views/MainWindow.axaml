@@ -155,7 +155,7 @@
             <Border Classes="panel" Margin="0,0,4,0">
               <Grid RowDefinitions="34,30,*">
                 <Border Classes="tableHeader" Padding="12,0">
-                  <TextBlock Text="用户输出数据" FontWeight="SemiBold" />
+                  <TextBlock Text="软件输入数据" FontWeight="SemiBold" />
                 </Border>
                 <Grid Grid.Row="1" ColumnDefinitions="1.5*,2*,0.8*,0.8*,1.2*,0.9*"
                       Background="{DynamicResource SurfaceMutedBrush}">
@@ -166,7 +166,7 @@
                   <TextBlock Grid.Column="4" Text="最新值" Margin="7,6" />
                   <TextBlock Grid.Column="5" Text="质量" Margin="7,6" />
                 </Grid>
-                <ListBox Grid.Row="2" ItemsSource="{Binding OutputPoints}" Background="Transparent" BorderThickness="0">
+                <ListBox Grid.Row="2" ItemsSource="{Binding InputPoints}" Background="Transparent" BorderThickness="0">
                   <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="vm:PointRowViewModel">
                       <Grid ColumnDefinitions="1.5*,2*,0.8*,0.8*,1.2*,0.9*" Margin="3,7">
@@ -185,7 +185,7 @@
             <Border Grid.Column="1" Classes="panel" Margin="4,0,0,0">
               <Grid RowDefinitions="34,30,*">
                 <Border Classes="tableHeader" Padding="12,0">
-                  <TextBlock Text="用户输入数据" FontWeight="SemiBold" />
+                  <TextBlock Text="输出分发数据" FontWeight="SemiBold" />
                 </Border>
                 <Grid Grid.Row="1" ColumnDefinitions="1.5*,2*,0.8*,0.8*,1.2*,0.9*"
                       Background="{DynamicResource SurfaceMutedBrush}">
@@ -196,7 +196,7 @@
                   <TextBlock Grid.Column="4" Text="最新值" Margin="7,6" />
                   <TextBlock Grid.Column="5" Text="质量" Margin="7,6" />
                 </Grid>
-                <ListBox Grid.Row="2" ItemsSource="{Binding InputPoints}" Background="Transparent" BorderThickness="0">
+                <ListBox Grid.Row="2" ItemsSource="{Binding OutputPoints}" Background="Transparent" BorderThickness="0">
                   <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="vm:PointRowViewModel">
                       <Grid ColumnDefinitions="1.5*,2*,0.8*,0.8*,1.2*,0.9*" Margin="3,7">
@@ -236,8 +236,8 @@
                                IsEnabled="{Binding IsSimulationConfigurationEnabled}" />
               </StackPanel>
               <StackPanel>
-                <TextBlock Text="当前测点" FontSize="12" />
-                <ComboBox ItemsSource="{Binding InputPoints}" SelectedItem="{Binding SelectedPoint}" Width="170"
+                <TextBlock Text="当前输出测点" FontSize="12" />
+                <ComboBox ItemsSource="{Binding OutputPoints}" SelectedItem="{Binding SelectedPoint}" Width="170"
                           IsEnabled="{Binding IsSimulationConfigurationEnabled}" />
               </StackPanel>
               <StackPanel>
@@ -262,7 +262,7 @@
                 <TextBlock Grid.Column="4" Text="最新值" Margin="7,7" />
                 <TextBlock Grid.Column="5" Text="更新时间" Margin="7,7" />
               </Grid>
-              <ListBox Grid.Row="1" ItemsSource="{Binding InputPoints}" SelectedItem="{Binding SelectedPoint}" BorderThickness="0">
+              <ListBox Grid.Row="1" ItemsSource="{Binding OutputPoints}" SelectedItem="{Binding SelectedPoint}" BorderThickness="0">
                 <ListBox.ItemTemplate>
                   <DataTemplate x:DataType="vm:PointRowViewModel">
                     <Grid ColumnDefinitions="1.4*,2*,0.8*,0.8*,1.2*,1.1*" Margin="4,8">

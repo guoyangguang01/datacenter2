@@ -73,8 +73,8 @@ public sealed class AcquisitionLoop : IAcquisitionLoop
         Func<IReadOnlyList<PointSample>, CancellationToken, Task> onChanged,
         CancellationToken cancellationToken)
     {
-        var outputPoints = points
-            .Where(point => point.Direction == PointDirection.Output)
+        var inputPoints = points
+            .Where(point => point.Direction == PointDirection.Input)
             .ToArray();
         using var timer = new PeriodicTimer(_interval);
 
@@ -82,13 +82,13 @@ public sealed class AcquisitionLoop : IAcquisitionLoop
         {
             do
             {
-                if (outputPoints.Length == 0)
+                if (inputPoints.Length == 0)
                 {
                     continue;
                 }
 
-                var samples = await _device.ReadAsync(clientCode, outputPoints, cancellationToken).ConfigureAwait(false);
-                var changed = _changeGate.Filter(clientCode, outputPoints, samples);
+                var samples = await _device.ReadAsync(clientCode, inputPoints, cancellationToken).ConfigureAwait(false);
+                var changed = _changeGate.Filter(clientCode, inputPoints, samples);
                 if (changed.Count > 0)
                 {
                     await onChanged(changed, cancellationToken).ConfigureAwait(false);

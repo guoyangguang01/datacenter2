@@ -529,15 +529,29 @@ public sealed class AgentSupervisor : IAsyncDisposable
         {
             var point = _configuration?.Points.FirstOrDefault(candidate => candidate.PointId == command.PointId)
                         ?? throw new InvalidOperationException($"未找到测点 {command.PointId}。");
-            if (point.Direction != Shared.Model.PointDirection.Input)
+            if (point.Direction != PointDirection.Output)
             {
-                throw new InvalidOperationException($"测点 {command.PointId} 不是 INPUT 测点。");
+                throw new InvalidOperationException($"测点 {command.PointId} 不是 OUTPUT 测点。");
             }
 
             var device = _device ?? throw new InvalidOperationException("设备尚未连接。");
             var value = ContractMapper.FromContractValue(command.Value, point.DataType);
             await device.WriteAsync(_configuration!.ClientCode, point, value, cancellationToken).ConfigureAwait(false);
             result.Success = true;
+            var written = new SharedPointSample(
+                _configuration.ClientCode,
+                point.PointId,
+                new SharedPointValue(
+                    value,
+                    PointQuality.Good,
+                    command.TimestampUnixNs == 0 ? UnixTime.NowNanoseconds() : command.TimestampUnixNs),
+                string.IsNullOrWhiteSpace(command.SourceClientCode) ? null : command.SourceClientCode,
+                string.IsNullOrWhiteSpace(command.SourcePointId) ? null : command.SourcePointId);
+            _latestValues[point.PointId] = written;
+            RuntimeEvent?.Invoke(this, new ClientRuntimeEvent(
+                ClientConnectionState.Connected,
+                "输出数据已写出。",
+                [written]));
         }
         catch (Exception exception)
         {
@@ -632,7 +646,7 @@ public sealed class AgentSupervisor : IAsyncDisposable
         var text = string.Join(
             "|",
             points.OrderBy(point => point.PointId, StringComparer.Ordinal)
-                .Select(point => $"{point.PointId}:{point.Address}:{point.DataType}:{point.Direction}:{point.SourceOutputPointId}"));
+                .Select(point => $"{point.PointId}:{point.Address}:{point.DataType}:{point.Direction}:{point.SourceInputPointId}"));
         return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text)));
     }
 

@@ -112,13 +112,18 @@ Linux/macOS 对应脚本为 `start-server.sh`、`start-headless.sh` 和 `start-c
 
 ## 通讯与数据语义
 
-- 客户端读取 OUTPUT 点，200ms 为一个采集周期，并通过死区过滤有效变化。
-- 服务端把 OUTPUT 点变化路由到引用它的 INPUT 点，并下发写入命令。
-- INPUT 必须引用存在且同数据类型的 OUTPUT；悬空引用、INPUT 引用 INPUT 会在保存点表时被拒绝。
+- 方向以燃气总表为准：INPUT 表示第三方程序向软件侧发送数据；OUTPUT 表示软件侧向一个或多个集成方发送数据。
+- 客户端读取 INPUT 点，200ms 为一个采集周期，并通过死区过滤有效变化。
+- 服务端把一个 INPUT 点的变化路由到所有引用它的 OUTPUT 点，并逐一向下游集成方下发。
+- OUTPUT 必须引用存在且同数据类型的 INPUT；悬空引用、OUTPUT 引用 OUTPUT 会在保存点表时被拒绝。
+- 点表 CSV 的 `direction` 只接受 `输入` / `输出`，OUTPUT 行通过 `sourceInputPointId` 指定来源 INPUT。
 - 客户端会回传设备通讯状态；管理界面显示实际通讯状态，而不是仅显示期望运行状态。
-- 服务端同时记录 OUTPUT 和 INPUT 的意图值、质量和源时间戳。
+- 服务端同时记录 INPUT 源值和 OUTPUT 意图值、质量和源时间戳。
 - 客户端代码是唯一身份依据，不使用用户名、密码或客户端证书。该模型只适合可信内网。
 - 服务端默认启用 TLS，并在首次启动时生成 `data/certs/server.pfx` 与 `server.cer`。
+
+> 当前方向语义不兼容旧版本。升级时必须同时更新服务端与客户端，并重新生成点表和
+> `client.json`；服务端旧 SQLite 数据库需删除后重建。
 
 ## 自定义 TCP
 

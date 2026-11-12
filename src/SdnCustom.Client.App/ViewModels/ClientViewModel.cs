@@ -372,13 +372,13 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
                 value is null
                     ? "--"
                     : UnixTime.FromNanoseconds(value.TimestampUnixNanoseconds).ToLocalTime().ToString("HH:mm:ss.fff"));
-            if (point.Direction == PointDirection.Output)
+            if (point.Direction == PointDirection.Input)
             {
-                OutputPoints.Add(row);
+                InputPoints.Add(row);
             }
             else
             {
-                InputPoints.Add(row);
+                OutputPoints.Add(row);
             }
         }
         OutputPointCount = OutputPoints.Count;

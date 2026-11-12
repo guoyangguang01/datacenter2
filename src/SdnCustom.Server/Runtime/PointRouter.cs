@@ -10,7 +10,7 @@ public interface IPointRouter
     void RegisterClient(string clientCode, IReadOnlyList<PointDefinition> points);
     void RemoveClient(string clientCode);
     IReadOnlyList<PointDefinition> GetClientPoints(string clientCode);
-    IReadOnlyList<RouteTarget> ResolveInputTargets(PointSample output);
+    IReadOnlyList<RouteTarget> ResolveOutputTargets(PointSample input);
 }
 
 public sealed class PointRouter : IPointRouter
@@ -26,17 +26,17 @@ public sealed class PointRouter : IPointRouter
     public IReadOnlyList<PointDefinition> GetClientPoints(string clientCode) =>
         _catalogs.TryGetValue(clientCode, out var points) ? points : [];
 
-    public IReadOnlyList<RouteTarget> ResolveInputTargets(PointSample output)
+    public IReadOnlyList<RouteTarget> ResolveOutputTargets(PointSample input)
     {
         var result = new List<RouteTarget>();
         foreach (var (targetClientCode, points) in _catalogs)
         {
             foreach (var point in points.Where(point =>
-                         point.Direction == PointDirection.Input &&
-                         !string.IsNullOrWhiteSpace(point.SourceOutputPointId)))
+                         point.Direction == PointDirection.Output &&
+                         !string.IsNullOrWhiteSpace(point.SourceInputPointId)))
             {
-                var sourceKey = ResolveSourceKey(targetClientCode, point.SourceOutputPointId!);
-                if (sourceKey == PointKey.Create(output.ClientCode, output.PointId))
+                var sourceKey = ResolveSourceKey(targetClientCode, point.SourceInputPointId!);
+                if (sourceKey == PointKey.Create(input.ClientCode, input.PointId))
                 {
                     result.Add(new RouteTarget(targetClientCode, point));
                 }

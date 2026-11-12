@@ -73,7 +73,7 @@ public sealed partial class ClientManagementWindow : Window
         {
             var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
             {
-                Title = outputOnly ? "导出所有输出测点" : "导出数据源总表",
+                Title = outputOnly ? "导出所有输出测点" : "导出点表",
                 SuggestedFileName = suggestedName,
                 FileTypeChoices = [new FilePickerFileType("CSV") { Patterns = ["*.csv"] }]
             });
@@ -102,7 +102,7 @@ public sealed partial class ClientManagementWindow : Window
         {
             var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
             {
-                Title = "导入数据源总表",
+                Title = "导入点表",
                 AllowMultiple = false,
                 FileTypeFilter = [new FilePickerFileType("CSV") { Patterns = ["*.csv"] }]
             });

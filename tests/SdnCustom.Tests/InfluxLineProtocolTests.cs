@@ -7,7 +7,7 @@ namespace SdnCustom.Tests;
 public sealed class InfluxLineProtocolTests
 {
     [Fact]
-    public void WritesOutputDoubleWithEscapedTags()
+    public void WritesInputDoubleWithEscapedTags()
     {
         var line = InfluxLineProtocol.From(new PointSample(
             "CLIENT A",
@@ -15,13 +15,13 @@ public sealed class InfluxLineProtocolTests
             new PointValue(21.5, PointQuality.Good, 1_700_000_000_000_000_000L)));
 
         Assert.Equal(
-            "point_value,client_code=CLIENT\\ A,point_id=TEMP\\,1,direction=OUTPUT " +
+            "point_value,client_code=CLIENT\\ A,point_id=TEMP\\,1,direction=INPUT " +
             "value_double=21.5,quality=\"GOOD\" 1700000000000000000",
             line);
     }
 
     [Fact]
-    public void WritesInputStringsAndSourceDirection()
+    public void WritesOutputStringsAndSourceDirection()
     {
         var line = InfluxLineProtocol.From(new PointSample(
             "B",
@@ -30,7 +30,7 @@ public sealed class InfluxLineProtocolTests
             "A",
             "OUT"));
 
-        Assert.Contains("direction=INPUT", line);
+        Assert.Contains("direction=OUTPUT", line);
         Assert.Contains("value_string=\"RUN \\\"A\\\"\"", line);
         Assert.Contains("quality=\"UNCERTAIN\" 42", line);
     }

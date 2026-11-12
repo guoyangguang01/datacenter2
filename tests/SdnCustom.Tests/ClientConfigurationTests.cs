@@ -49,7 +49,7 @@ public sealed class ClientConfigurationTests
     }
 
     [Fact]
-    public void RejectsInputPointWithoutReference()
+    public void RejectsOutputPointWithoutSource()
     {
         var configuration = new ClientConfiguration
         {
@@ -58,21 +58,21 @@ public sealed class ClientConfigurationTests
             [
                 new PointDefinition
                 {
-                    PointId = "IN",
-                    PointName = "Input",
+                    PointId = "OUT",
+                    PointName = "Output",
                     Address = "A",
-                    Direction = PointDirection.Input
+                    Direction = PointDirection.Output
                 }
             ]
         };
 
         var errors = ClientConfigurationValidator.Validate(configuration);
 
-        Assert.Contains(errors, error => error.Contains("必须引用 OUTPUT", StringComparison.Ordinal));
+        Assert.Contains(errors, error => error.Contains("必须引用 INPUT", StringComparison.Ordinal));
     }
 
     [Fact]
-    public void RejectsLocalInputReferenceThatDoesNotPointToOutput()
+    public void RejectsLocalOutputReferenceThatDoesNotPointToInput()
     {
         var configuration = new ClientConfiguration
         {
@@ -81,26 +81,26 @@ public sealed class ClientConfigurationTests
             [
                 new PointDefinition
                 {
-                    PointId = "IN-1",
-                    PointName = "First input",
+                    PointId = "OUT-1",
+                    PointName = "First output",
                     Address = "A",
-                    Direction = PointDirection.Input,
-                    SourceOutputPointId = "IN-2"
+                    Direction = PointDirection.Output,
+                    SourceInputPointId = "OUT-2"
                 },
                 new PointDefinition
                 {
-                    PointId = "IN-2",
-                    PointName = "Second input",
+                    PointId = "OUT-2",
+                    PointName = "Second output",
                     Address = "B",
-                    Direction = PointDirection.Input,
-                    SourceOutputPointId = "OUT"
+                    Direction = PointDirection.Output,
+                    SourceInputPointId = "IN"
                 },
                 new PointDefinition
                 {
-                    PointId = "OUT",
-                    PointName = "Output",
+                    PointId = "IN",
+                    PointName = "Input",
                     Address = "C",
-                    Direction = PointDirection.Output
+                    Direction = PointDirection.Input
                 }
             ]
         };
@@ -109,12 +109,12 @@ public sealed class ClientConfigurationTests
 
         Assert.Contains(
             errors,
-            error => error.Contains("IN-1", StringComparison.Ordinal) &&
+            error => error.Contains("OUT-1", StringComparison.Ordinal) &&
                      error.Contains("不能引用", StringComparison.Ordinal));
     }
 
     [Fact]
-    public void RejectsMissingLocalOutputReference()
+    public void RejectsMissingLocalInputReference()
     {
         var configuration = new ClientConfiguration
         {
@@ -123,11 +123,11 @@ public sealed class ClientConfigurationTests
             [
                 new PointDefinition
                 {
-                    PointId = "IN",
-                    PointName = "Input",
+                    PointId = "OUT",
+                    PointName = "Output",
                     Address = "A",
-                    Direction = PointDirection.Input,
-                    SourceOutputPointId = "MISSING"
+                    Direction = PointDirection.Output,
+                    SourceInputPointId = "MISSING"
                 }
             ]
         };

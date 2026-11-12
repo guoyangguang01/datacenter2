@@ -33,14 +33,14 @@ public static class ContractMapper
     };
 
     public static ContractPointDirection ToContract(SharedPointDirection direction) =>
-        direction == SharedPointDirection.Input
-            ? ContractPointDirection.Input
-            : ContractPointDirection.Output;
+        direction == SharedPointDirection.Output
+            ? ContractPointDirection.Output
+            : ContractPointDirection.Input;
 
     public static SharedPointDirection FromContract(ContractPointDirection direction) =>
-        direction == ContractPointDirection.Input
-            ? SharedPointDirection.Input
-            : SharedPointDirection.Output;
+        direction == ContractPointDirection.Output
+            ? SharedPointDirection.Output
+            : SharedPointDirection.Input;
 
     public static ContractPointDataType ToContract(SharedPointDataType dataType) => dataType switch
     {
@@ -106,7 +106,7 @@ public static class ContractMapper
         DataType = ToContract(point.DataType),
         Unit = point.Unit,
         Direction = ToContract(point.Direction),
-        SourceOutputPointId = point.SourceOutputPointId ?? string.Empty,
+        SourceInputPointId = point.SourceInputPointId ?? string.Empty,
         Deadband = point.Deadband,
         Group = point.Group
     };
@@ -119,7 +119,7 @@ public static class ContractMapper
         DataType = FromContract(point.DataType),
         Unit = point.Unit,
         Direction = FromContract(point.Direction),
-        SourceOutputPointId = string.IsNullOrWhiteSpace(point.SourceOutputPointId) ? null : point.SourceOutputPointId,
+        SourceInputPointId = string.IsNullOrWhiteSpace(point.SourceInputPointId) ? null : point.SourceInputPointId,
         Deadband = point.Deadband,
         Group = point.Group
     };

@@ -83,7 +83,7 @@ public sealed class PersistenceTests
             Assert.IsType<double>(reloadedValue);
             Assert.Equal(15.25, reloadedValue);
 
-            await latest.MarkOutputsCommLostAsync("CLIENT-1", stored.Points);
+            await latest.MarkInputsCommLostAsync("CLIENT-1", stored.Points);
             var current = latest.GetClient("CLIENT-1");
             Assert.Contains(current, value => value.PointId == "P1");
             var p2 = Assert.Single(current, value => value.PointId == "P2");

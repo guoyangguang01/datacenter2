@@ -16,8 +16,8 @@ enum DeviceProtocol {
 
 enum PointDirection {
   POINT_DIRECTION_UNSPECIFIED = 0;
-  OUTPUT = 1;
-  INPUT = 2;
+  INPUT = 1;
+  OUTPUT = 2;
 }
 
 enum PointDataType {
@@ -93,7 +93,7 @@ message PointDefinition {
   PointDataType data_type = 4;
   string unit = 5;
   PointDirection direction = 6;
-  string source_output_point_id = 7;
+  string source_input_point_id = 7;
   double deadband = 8;
   string group = 9;
 }

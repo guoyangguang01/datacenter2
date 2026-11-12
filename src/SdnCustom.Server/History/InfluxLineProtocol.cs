@@ -7,7 +7,7 @@ public static class InfluxLineProtocol
 {
     public static string From(PointSample sample)
     {
-        var direction = string.IsNullOrWhiteSpace(sample.SourcePointId) ? "OUTPUT" : "INPUT";
+        var direction = string.IsNullOrWhiteSpace(sample.SourcePointId) ? "INPUT" : "OUTPUT";
         var tags =
             $"point_value,client_code={EscapeTag(sample.ClientCode)},point_id={EscapeTag(sample.PointId)},direction={direction}";
         var fields = sample.Value.Value switch

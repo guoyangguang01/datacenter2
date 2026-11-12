@@ -210,10 +210,15 @@ public sealed class ClientSystemStore(IDbContextFactory<ServerDbContext> context
         {
             throw new InvalidOperationException("测点 ID、名称和地址不能为空。");
         }
-        if (points.Any(point => point.Direction == PointDirection.Input &&
-                                string.IsNullOrWhiteSpace(point.SourceOutputPointId)))
+        if (points.Any(point => point.Direction == PointDirection.Output &&
+                                string.IsNullOrWhiteSpace(point.SourceInputPointId)))
         {
-            throw new InvalidOperationException("INPUT 测点必须引用一个 OUTPUT 测点。");
+            throw new InvalidOperationException("OUTPUT 测点必须引用一个 INPUT 测点。");
+        }
+        if (points.Any(point => point.Direction == PointDirection.Input &&
+                                !string.IsNullOrWhiteSpace(point.SourceInputPointId)))
+        {
+            throw new InvalidOperationException("INPUT 测点是数据来源，不能设置 SourceInputPointId。");
         }
 
         var incomingIds = points.Select(point => point.PointId).ToHashSet(StringComparer.Ordinal);
@@ -273,10 +278,10 @@ public sealed class ClientSystemStore(IDbContextFactory<ServerDbContext> context
                 Unit = point.Unit,
                 Direction = Enum.TryParse<PointDirection>(point.Direction, true, out var direction)
                     ? direction
-                    : PointDirection.Output,
-                SourceOutputPointId = string.IsNullOrWhiteSpace(point.SourceOutputPointId)
+                    : PointDirection.Input,
+                SourceInputPointId = string.IsNullOrWhiteSpace(point.SourceInputPointId)
                     ? null
-                    : point.SourceOutputPointId,
+                    : point.SourceInputPointId,
                 Deadband = point.Deadband,
                 Group = point.Group
             }).ToArray());
@@ -296,7 +301,7 @@ public sealed class ClientSystemStore(IDbContextFactory<ServerDbContext> context
         DataType = point.DataType.ToString(),
         Unit = point.Unit,
         Direction = point.Direction.ToString(),
-        SourceOutputPointId = point.SourceOutputPointId ?? string.Empty,
+        SourceInputPointId = point.SourceInputPointId ?? string.Empty,
         Deadband = point.Deadband,
         Group = point.Group
     };
@@ -308,7 +313,7 @@ public sealed class ClientSystemStore(IDbContextFactory<ServerDbContext> context
         entity.DataType = point.DataType.ToString();
         entity.Unit = point.Unit;
         entity.Direction = point.Direction.ToString();
-        entity.SourceOutputPointId = point.SourceOutputPointId ?? string.Empty;
+        entity.SourceInputPointId = point.SourceInputPointId ?? string.Empty;
         entity.Deadband = point.Deadband;
         entity.Group = point.Group;
     }
@@ -319,7 +324,7 @@ public sealed class ClientSystemStore(IDbContextFactory<ServerDbContext> context
             "|",
             points.OrderBy(point => point.PointId, StringComparer.Ordinal)
                 .Select(point =>
-                    $"{point.PointId}:{point.PointName}:{point.Address}:{point.DataType}:{point.Direction}:{point.SourceOutputPointId}:{point.Deadband}"));
+                    $"{point.PointId}:{point.PointName}:{point.Address}:{point.DataType}:{point.Direction}:{point.SourceInputPointId}:{point.Deadband}"));
         return Convert.ToHexString(
             System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(value)));
     }

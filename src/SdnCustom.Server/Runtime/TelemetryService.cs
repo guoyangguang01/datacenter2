@@ -69,13 +69,13 @@ public sealed class TelemetryService : ITelemetryService
             await _history.EnqueueAsync(values, cancellationToken).ConfigureAwait(false);
         }
 
-        foreach (var output in values)
+        foreach (var input in values)
         {
-            var targets = _router.ResolveInputTargets(output);
+            var targets = _router.ResolveOutputTargets(input);
             foreach (var target in targets)
             {
                 var commandId = Guid.NewGuid().ToString("N");
-                _pendingWrites[commandId] = new PendingWrite(target.ClientCode, target.Point, output);
+                _pendingWrites[commandId] = new PendingWrite(target.ClientCode, target.Point, input);
                 var command = new ServerMessage
                 {
                     Sequence = (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
@@ -84,10 +84,10 @@ public sealed class TelemetryService : ITelemetryService
                     {
                         CommandId = commandId,
                         PointId = target.Point.PointId,
-                        Value = ContractMapper.ToContractValue(output.Value.Value),
-                        TimestampUnixNs = output.Value.TimestampUnixNanoseconds,
-                        SourceClientCode = output.ClientCode,
-                        SourcePointId = output.PointId
+                        Value = ContractMapper.ToContractValue(input.Value.Value),
+                        TimestampUnixNs = input.Value.TimestampUnixNanoseconds,
+                        SourceClientCode = input.ClientCode,
+                        SourcePointId = input.PointId
                     }
                 };
                 var sent = await _agents.SendAsync(target.ClientCode, command, cancellationToken).ConfigureAwait(false);
@@ -97,7 +97,7 @@ public sealed class TelemetryService : ITelemetryService
                     _logs.Add(
                         "WARN",
                         "传播",
-                        $"目标客户端 {target.ClientCode} 离线，{output.GlobalKey} -> {target.Point.PointId} 未写出。");
+                        $"目标客户端 {target.ClientCode} 离线，{input.GlobalKey} -> {target.Point.PointId} 未写出。");
                 }
             }
         }
@@ -218,7 +218,7 @@ public sealed class TelemetryService : ITelemetryService
                 new IOException($"客户端 {clientCode} 已离线，写入结果不可用。"));
         }
 
-        await _latestValues.MarkOutputsCommLostAsync(clientCode, points, cancellationToken).ConfigureAwait(false);
+        await _latestValues.MarkInputsCommLostAsync(clientCode, points, cancellationToken).ConfigureAwait(false);
         _router.RemoveClient(clientCode);
         _logs.Add("WARN", "连接", $"客户端离线：{clientCode}");
     }

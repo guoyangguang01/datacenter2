@@ -59,7 +59,7 @@ namespace SdnCustom.Server.Persistence.Migrations
                     DataType = table.Column<string>(type: "TEXT", nullable: false),
                     Unit = table.Column<string>(type: "TEXT", nullable: false),
                     Direction = table.Column<string>(type: "TEXT", nullable: false),
-                    SourceOutputPointId = table.Column<string>(type: "TEXT", nullable: false),
+                    SourceInputPointId = table.Column<string>(type: "TEXT", nullable: false),
                     Deadband = table.Column<double>(type: "REAL", nullable: false),
                     Group = table.Column<string>(type: "TEXT", nullable: false)
                 },

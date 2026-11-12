@@ -76,7 +76,7 @@
               </StackPanel>
               <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Foreground="#6A7786"
                          TextWrapping="Wrap"
-                         Text="系统按该周期读取 OUTPUT 测点，并仅上报经过死区过滤后的有效变化；服务端下行写入则按命令即时处理。" />
+                         Text="系统按该周期读取 INPUT 测点，并仅上报经过死区过滤后的有效变化；服务端面向 OUTPUT 测点的下行写入按命令即时处理。" />
             </Grid>
           </StackPanel>
         </Border>

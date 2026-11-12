@@ -25,7 +25,7 @@ public sealed class PointCatalogEntity
     public string DataType { get; set; } = string.Empty;
     public string Unit { get; set; } = string.Empty;
     public string Direction { get; set; } = string.Empty;
-    public string SourceOutputPointId { get; set; } = string.Empty;
+    public string SourceInputPointId { get; set; } = string.Empty;
     public double Deadband { get; set; }
     public string Group { get; set; } = string.Empty;
     public ClientSystemEntity? ClientSystem { get; set; }

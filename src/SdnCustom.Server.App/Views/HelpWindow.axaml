@@ -15,7 +15,7 @@
       <StackPanel Spacing="12">
         <TextBlock Text="首次配置" Classes="h2" />
         <TextBlock TextWrapping="Wrap"
-                   Text="1. 在“用户管理”中创建客户端，代码必须与客户端进程填写的一致。&#10;2. 在点表编辑区新增或导入测点，INPUT 测点必须引用 OUTPUT 测点。&#10;3. 保存点表后，在线客户端会自动收到配置。" />
+                   Text="1. 在“用户管理”中创建客户端，代码必须与客户端进程填写的一致。&#10;2. 在点表编辑区新增或导入测点；OUTPUT 表示软件向集成方发送数据，必须引用作为数据来源的 INPUT 测点。&#10;3. 保存点表后，在线客户端会自动收到配置。" />
 
         <TextBlock Text="通讯控制" Classes="h2" />
         <TextBlock TextWrapping="Wrap"
@@ -23,7 +23,7 @@
 
         <TextBlock Text="数据模拟" Classes="h2" />
         <TextBlock TextWrapping="Wrap"
-                   Text="“数据模拟”只列出 INPUT 测点。填写目标值并设置周期后启动，服务端会按周期向在线客户端发送写入命令；再次点击可停止。" />
+                   Text="“数据模拟”只列出 OUTPUT 测点。填写目标值并设置周期后启动，服务端会按周期向在线客户端发送写入命令；再次点击可停止。" />
 
         <TextBlock Text="历史数据" Classes="h2" />
         <TextBlock TextWrapping="Wrap"

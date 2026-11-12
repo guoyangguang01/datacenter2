@@ -183,32 +183,32 @@ public sealed class EndToEndSingleClientTests
                         new PointDefinition
                         {
                             PointId = "TEMP",
-                            PointName = "Output",
+                            PointName = "Input",
                             Address = "40001",
                             DataType = PointDataType.Float64,
-                            Direction = PointDirection.Output
+                            Direction = PointDirection.Input
                         },
                         new PointDefinition
                         {
                             PointId = "IN-1",
-                            PointName = "First input",
+                            PointName = "First output",
                             Address = "40002",
                             DataType = PointDataType.Float64,
-                            Direction = PointDirection.Input,
-                            SourceOutputPointId = "IN-2"
+                            Direction = PointDirection.Output,
+                            SourceInputPointId = "IN-2"
                         },
                         new PointDefinition
                         {
                             PointId = "IN-2",
-                            PointName = "Second input",
+                            PointName = "Second output",
                             Address = "40003",
                             DataType = PointDataType.Float64,
-                            Direction = PointDirection.Input,
-                            SourceOutputPointId = "TEMP"
+                            Direction = PointDirection.Output,
+                            SourceInputPointId = "TEMP"
                         }
                     ],
                     timeout.Token));
-            Assert.Contains("必须引用 OUTPUT", invalidReference.Message);
+            Assert.Contains("必须引用 INPUT", invalidReference.Message);
             await admin.SaveClientPointsAsync(
                 "E2E-CLIENT",
                 [
@@ -218,16 +218,16 @@ public sealed class EndToEndSingleClientTests
                         PointName = " Temperature ",
                         Address = " 40001 ",
                         DataType = PointDataType.Float64,
-                        Direction = PointDirection.Output
+                        Direction = PointDirection.Input
                     },
                     new PointDefinition
                     {
                         PointId = " IN ",
-                        PointName = " Input ",
+                        PointName = " Output ",
                         Address = " 40002 ",
                         DataType = PointDataType.Float64,
-                        Direction = PointDirection.Input,
-                        SourceOutputPointId = " E2E-CLIENT: TEMP "
+                        Direction = PointDirection.Output,
+                        SourceInputPointId = " E2E-CLIENT: TEMP "
                     }
                 ],
                 timeout.Token);
@@ -236,12 +236,12 @@ public sealed class EndToEndSingleClientTests
                 async () =>
                 {
                     normalized = await store.LoadAsync(timeout.Token);
-                    return normalized.Points.Any(point => point.Direction == PointDirection.Input);
+                    return normalized.Points.Any(point => point.Direction == PointDirection.Output);
                 },
                 timeout.Token);
-            var normalizedInput = normalized!.Points.Single(point => point.Direction == PointDirection.Input);
-            Assert.Equal("IN", normalizedInput.PointId);
-            Assert.Equal("E2E-CLIENT:TEMP", normalizedInput.SourceOutputPointId);
+            var normalizedOutput = normalized!.Points.Single(point => point.Direction == PointDirection.Output);
+            Assert.Equal("IN", normalizedOutput.PointId);
+            Assert.Equal("E2E-CLIENT:TEMP", normalizedOutput.SourceInputPointId);
 
             await admin.StartClientAsync("E2E-CLIENT", timeout.Token);
             await WaitUntilAsync(

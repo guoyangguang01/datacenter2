@@ -251,7 +251,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
             DesiredRunning: true,
             CommunicationState: ClientConnectionState.Connected
         } &&
-        SelectedPoint is { Direction: PointDirection.Input } &&
+        SelectedPoint is { Direction: PointDirection.Output } &&
         !string.IsNullOrWhiteSpace(WriteValue);
 
     [RelayCommand(CanExecute = nameof(CanToggleSimulation))]
@@ -286,7 +286,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
              DesiredRunning: true,
              CommunicationState: ClientConnectionState.Connected
          } &&
-         SelectedPoint is { Direction: PointDirection.Input } &&
+         SelectedPoint is { Direction: PointDirection.Output } &&
          !string.IsNullOrWhiteSpace(WriteValue));
 
     [RelayCommand(CanExecute = nameof(CanQueryHistory))]
@@ -507,13 +507,13 @@ public sealed partial class MainWindowViewModel : ObservableObject
                 value?.Quality,
                 value is null ? null : UnixTime.FromNanoseconds(value.TimestampUnixNanoseconds));
             Points.Add(row);
-            if (point.Direction == PointDirection.Output)
+            if (point.Direction == PointDirection.Input)
             {
-                OutputPoints.Add(row);
+                InputPoints.Add(row);
             }
             else
             {
-                InputPoints.Add(row);
+                OutputPoints.Add(row);
             }
         }
     }

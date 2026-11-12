@@ -30,11 +30,10 @@ public sealed partial class ClientManagementViewModel : ObservableObject
     public IReadOnlyList<PointFilterOption> PointFilters { get; } =
     [
         new("全部", null),
-        new("输出测点", PointDirection.Output),
-        new("输入测点", PointDirection.Input)
+        new("输入测点", PointDirection.Input),
+        new("输出测点", PointDirection.Output)
     ];
     public IReadOnlyList<PointDataType> DataTypeOptions { get; } = Enum.GetValues<PointDataType>();
-    public IReadOnlyList<PointDirection> DirectionOptions { get; } = Enum.GetValues<PointDirection>();
     public string ClientCountText => $"{Clients.Count} 个客户端";
     public bool HasNoClients => Clients.Count == 0;
     public string SelectedClientStateText
@@ -162,7 +161,7 @@ public sealed partial class ClientManagementViewModel : ObservableObject
             PointName = pointId,
             Address = "0",
             DataType = PointDataType.Float64,
-            Direction = PointDirection.Output,
+            Direction = PointDirection.Input,
             Unit = "/",
             Group = "默认"
         };
@@ -301,7 +300,7 @@ public sealed partial class ClientManagementViewModel : ObservableObject
             new UTF8Encoding(encoderShouldEmitUTF8Identifier: true),
             leaveOpen: true);
         await writer.WriteLineAsync(
-            "pointId,pointName,dataType,unit,direction,address,referencePointId,deadband,group");
+            "pointId,pointName,dataType,unit,direction,address,sourceInputPointId,deadband,group");
         foreach (var point in Points.Where(point => !outputOnly || point.Direction == PointDirection.Output))
         {
             await writer.WriteLineAsync(string.Join(
@@ -310,14 +309,14 @@ public sealed partial class ClientManagementViewModel : ObservableObject
                 Escape(point.PointName),
                 point.DataType,
                 Escape(point.Unit),
-                point.Direction,
+                DirectionToCsv(point.Direction),
                 Escape(point.Address),
-                Escape(point.SourceOutputPointId),
+                Escape(point.SourceInputPointId),
                 point.Deadband.ToString(CultureInfo.InvariantCulture),
                 Escape(point.Group)));
         }
         await writer.FlushAsync(cancellationToken);
-        StatusText = outputOnly ? "输出测点已导出。" : "数据源总表已导出。";
+        StatusText = outputOnly ? "输出测点已导出。" : "点表已导出。";
     }
 
     public async Task ImportCsvAsync(Stream stream, CancellationToken cancellationToken = default)
@@ -345,7 +344,8 @@ public sealed partial class ClientManagementViewModel : ObservableObject
             "pointName",
             "dataType",
             "direction",
-            "address"
+            "address",
+            "sourceInputPointId"
         };
         var missingColumns = requiredColumns
             .Where(required => !columns.Contains(required, StringComparer.OrdinalIgnoreCase))
@@ -377,17 +377,15 @@ public sealed partial class ClientManagementViewModel : ObservableObject
 
             var dataTypeText = Value("dataType");
             var parsedDataTypeValue = PointDataType.Float64;
-            if (!string.IsNullOrWhiteSpace(dataTypeText) &&
-                !Enum.TryParse(dataTypeText, true, out parsedDataTypeValue))
+            if (!TryParseDataType(dataTypeText, out parsedDataTypeValue))
             {
                 errors.Add($"第 {lineNumber} 行数据类型无效：{dataTypeText}");
                 continue;
             }
 
-            var directionText = Value("direction");
-            var parsedDirectionValue = PointDirection.Output;
-            if (!string.IsNullOrWhiteSpace(directionText) &&
-                !Enum.TryParse(directionText, true, out parsedDirectionValue))
+            var directionText = Value("direction").Trim();
+            var parsedDirectionValue = PointDirection.Input;
+            if (!TryParseDirection(directionText, out parsedDirectionValue))
             {
                 errors.Add($"第 {lineNumber} 行方向无效：{directionText}");
                 continue;
@@ -416,11 +414,11 @@ public sealed partial class ClientManagementViewModel : ObservableObject
                 continue;
             }
 
-            var sourceOutputPointId = Value("referencePointId").Trim();
-            if (parsedDirectionValue == PointDirection.Input &&
-                string.IsNullOrWhiteSpace(sourceOutputPointId))
+            var sourceInputPointId = Value("sourceInputPointId").Trim();
+            if (parsedDirectionValue == PointDirection.Output &&
+                string.IsNullOrWhiteSpace(sourceInputPointId))
             {
-                errors.Add($"第 {lineNumber} 行 INPUT 测点必须填写 referencePointId。");
+                errors.Add($"第 {lineNumber} 行 OUTPUT 测点必须填写 sourceInputPointId。");
                 continue;
             }
 
@@ -432,7 +430,7 @@ public sealed partial class ClientManagementViewModel : ObservableObject
                 Unit = Value("unit"),
                 Direction = parsedDirectionValue,
                 Address = address,
-                SourceOutputPointId = sourceOutputPointId,
+                SourceInputPointId = sourceInputPointId,
                 Deadband = string.IsNullOrWhiteSpace(deadbandText)
                     ? 0
                     : double.Parse(deadbandText, NumberStyles.Float, CultureInfo.InvariantCulture),
@@ -546,6 +544,65 @@ public sealed partial class ClientManagementViewModel : ObservableObject
         value.Contains('\n')
             ? '"' + value.Replace("\"", "\"\"") + '"'
             : value;
+
+    private static string DirectionToCsv(PointDirection direction) =>
+        direction == PointDirection.Input ? "输入" : "输出";
+
+    private static bool TryParseDataType(string text, out PointDataType dataType)
+    {
+        var normalized = text.Trim().ToLowerInvariant();
+        switch (normalized)
+        {
+            case "bool":
+            case "boolean":
+            case "布尔":
+                dataType = PointDataType.Bool;
+                return true;
+            case "int16":
+            case "short":
+            case "短整型":
+                dataType = PointDataType.Int16;
+                return true;
+            case "int32":
+            case "int":
+            case "整型":
+                dataType = PointDataType.Int32;
+                return true;
+            case "float32":
+            case "float":
+            case "单精度":
+                dataType = PointDataType.Float32;
+                return true;
+            case "float64":
+            case "double":
+            case "浮点":
+                dataType = PointDataType.Float64;
+                return true;
+            case "string":
+            case "文本":
+                dataType = PointDataType.String;
+                return true;
+            default:
+                dataType = PointDataType.Float64;
+                return false;
+        }
+    }
+
+    private static bool TryParseDirection(string text, out PointDirection direction)
+    {
+        switch (text.Trim())
+        {
+            case "输入":
+                direction = PointDirection.Input;
+                return true;
+            case "输出":
+                direction = PointDirection.Output;
+                return true;
+            default:
+                direction = PointDirection.Input;
+                return false;
+        }
+    }
 
     private static IReadOnlyList<string[]> SplitCsvRecords(string csv)
     {
@@ -670,14 +727,29 @@ public sealed partial class EditablePointRow : ObservableObject
     [ObservableProperty] private string _pointName = string.Empty;
     [ObservableProperty] private PointDataType _dataType = PointDataType.Float64;
     [ObservableProperty] private string _unit = "/";
-    [ObservableProperty] private PointDirection _direction = PointDirection.Output;
+    [ObservableProperty] private PointDirection _direction = PointDirection.Input;
     [ObservableProperty] private string _address = string.Empty;
-    [ObservableProperty] private string _sourceOutputPointId = string.Empty;
+    [ObservableProperty] private string _sourceInputPointId = string.Empty;
     [ObservableProperty] private double _deadband;
     [ObservableProperty] private string _group = "默认";
 
     public IReadOnlyList<PointDataType> DataTypeOptions { get; } = Enum.GetValues<PointDataType>();
-    public IReadOnlyList<PointDirection> DirectionOptions { get; } = Enum.GetValues<PointDirection>();
+    public IReadOnlyList<PointDirectionOption> DirectionOptions { get; } =
+        PointDirectionOption.CreateAll();
+    public PointDirectionOption? SelectedDirection
+    {
+        get => DirectionOptions.FirstOrDefault(option => option.Value == Direction);
+        set
+        {
+            if (value is not null)
+            {
+                Direction = value.Value;
+            }
+        }
+    }
+
+    partial void OnDirectionChanged(PointDirection value) =>
+        OnPropertyChanged(nameof(SelectedDirection));
 
     public static EditablePointRow From(PointDefinition point) => new()
     {
@@ -687,7 +759,7 @@ public sealed partial class EditablePointRow : ObservableObject
         Unit = point.Unit,
         Direction = point.Direction,
         Address = point.Address,
-        SourceOutputPointId = point.SourceOutputPointId ?? string.Empty,
+        SourceInputPointId = point.SourceInputPointId ?? string.Empty,
         Deadband = point.Deadband,
         Group = point.Group
     };
@@ -700,10 +772,19 @@ public sealed partial class EditablePointRow : ObservableObject
         Unit = Unit.Trim(),
         Direction = Direction,
         Address = Address.Trim(),
-        SourceOutputPointId = string.IsNullOrWhiteSpace(SourceOutputPointId)
+        SourceInputPointId = string.IsNullOrWhiteSpace(SourceInputPointId)
             ? null
-            : SourceOutputPointId.Trim(),
+            : SourceInputPointId.Trim(),
         Deadband = Math.Max(0, Deadband),
         Group = string.IsNullOrWhiteSpace(Group) ? "默认" : Group.Trim()
     };
+}
+
+public sealed record PointDirectionOption(PointDirection Value, string Display)
+{
+    public static IReadOnlyList<PointDirectionOption> CreateAll() =>
+    [
+        new(PointDirection.Input, "输入（数据进入软件）"),
+        new(PointDirection.Output, "输出（软件分发数据）")
+    ];
 }

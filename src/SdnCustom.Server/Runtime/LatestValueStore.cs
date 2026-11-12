@@ -10,7 +10,7 @@ public interface ILatestValueStore
 {
     Task InitializeAsync(CancellationToken cancellationToken = default);
     Task UpdateAsync(IReadOnlyList<PointSample> samples, CancellationToken cancellationToken = default);
-    Task MarkOutputsCommLostAsync(
+    Task MarkInputsCommLostAsync(
         string clientCode,
         IReadOnlyList<PointDefinition> points,
         CancellationToken cancellationToken = default);
@@ -103,14 +103,14 @@ public sealed class LatestValueStore(IDbContextFactory<ServerDbContext> contextF
         ValuesChanged?.Invoke(this, samples);
     }
 
-    public async Task MarkOutputsCommLostAsync(
+    public async Task MarkInputsCommLostAsync(
         string clientCode,
         IReadOnlyList<PointDefinition> points,
         CancellationToken cancellationToken = default)
     {
         var now = UnixTime.NowNanoseconds();
         var values = points
-            .Where(point => point.Direction == PointDirection.Output)
+            .Where(point => point.Direction == PointDirection.Input)
             .Select(point => new PointSample(
                 clientCode,
                 point.PointId,
