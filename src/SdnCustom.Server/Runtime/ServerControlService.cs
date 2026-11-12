@@ -12,6 +12,8 @@ namespace SdnCustom.Server.Runtime;
 public interface IServerControlService
 {
     Task CreateClientAsync(string clientCode, string clientName, CancellationToken cancellationToken = default);
+    Task RenameClientAsync(string clientCode, string clientName, CancellationToken cancellationToken = default);
+    Task DeleteClientAsync(string clientCode, CancellationToken cancellationToken = default);
     Task StartClientAsync(string clientCode, CancellationToken cancellationToken = default);
     Task StopClientAsync(string clientCode, CancellationToken cancellationToken = default);
     Task SaveClientPointsAsync(
@@ -69,8 +71,55 @@ public sealed class ServerControlService : IServerControlService
         _logs.Add("INFO", "客户端管理", $"已登记客户端 {clientCode}（{clientName}）。");
     }
 
+    public async Task RenameClientAsync(
+        string clientCode,
+        string clientName,
+        CancellationToken cancellationToken = default)
+    {
+        var client = await _clients.RenameAsync(clientCode, clientName, cancellationToken).ConfigureAwait(false);
+        _logs.Add("INFO", "客户端管理", $"客户端 {clientCode} 已改名为 {client.ClientName}。");
+    }
+
+    public async Task DeleteClientAsync(string clientCode, CancellationToken cancellationToken = default)
+    {
+        var client = await _clients.GetAsync(clientCode, cancellationToken).ConfigureAwait(false)
+                     ?? throw new KeyNotFoundException($"客户端未登记：{clientCode}");
+        if (_agents.Find(clientCode) is not null)
+        {
+            throw new InvalidOperationException($"客户端 {clientCode} 当前在线，请先停止通讯并断开客户端连接。");
+        }
+
+        var crossClientReferences = (await _clients.ListAsync(cancellationToken).ConfigureAwait(false))
+            .Where(candidate => candidate.ClientCode != clientCode)
+            .SelectMany(candidate => candidate.Points
+                .Where(point =>
+                    point.Direction == SharedPointDirection.Input &&
+                    point.SourceOutputPointId?.StartsWith($"{clientCode}:", StringComparison.Ordinal) == true)
+                .Select(point => $"{candidate.ClientCode}:{point.PointId}"))
+            .ToArray();
+        if (crossClientReferences.Length > 0)
+        {
+            throw new InvalidOperationException(
+                $"客户端 {clientCode} 仍被其他 INPUT 测点引用：" +
+                string.Join("、", crossClientReferences.Take(5)));
+        }
+
+        await _latestValues.RemovePointsAsync(
+            clientCode,
+            client.Points.Select(point => point.PointId).ToArray(),
+            cancellationToken).ConfigureAwait(false);
+        _router.RemoveClient(clientCode);
+        await _clients.DeleteAsync(clientCode, cancellationToken).ConfigureAwait(false);
+        _logs.Add("INFO", "客户端管理", $"已删除客户端 {clientCode}（{client.ClientName}）。");
+    }
+
     public async Task StartClientAsync(string clientCode, CancellationToken cancellationToken = default)
     {
+        if (_agents.Find(clientCode) is null)
+        {
+            throw new InvalidOperationException($"客户端 {clientCode} 当前不在线。");
+        }
+
         await _clients.SetDesiredRunningAsync(clientCode, true, cancellationToken).ConfigureAwait(false);
         var sent = await _agents.SendAsync(clientCode, new ServerMessage
         {
@@ -79,7 +128,7 @@ public sealed class ServerControlService : IServerControlService
         }, cancellationToken).ConfigureAwait(false);
         if (!sent)
         {
-            throw new InvalidOperationException($"客户端 {clientCode} 当前不在线。");
+            throw new InvalidOperationException($"客户端 {clientCode} 已断开，启动命令未送达。");
         }
 
         _logs.Add("INFO", "通讯控制", $"已请求启动客户端 {clientCode}。");

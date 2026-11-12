@@ -81,6 +81,13 @@ public sealed class PersistenceTests
             Assert.Equal(PointQuality.CommLost, p2.Value.Quality);
             await latest.RemovePointsAsync("CLIENT-1", ["P1"]);
             Assert.DoesNotContain(latest.GetClient("CLIENT-1"), value => value.PointId == "P1");
+
+            var renamed = await clients.RenameAsync("CLIENT-1", "Renamed client");
+            Assert.Equal("Renamed client", renamed.ClientName);
+            Assert.Equal("Renamed client", (await clients.GetAsync("CLIENT-1"))!.ClientName);
+
+            await clients.DeleteAsync("CLIENT-1");
+            Assert.Null(await clients.GetAsync("CLIENT-1"));
         }
         finally
         {

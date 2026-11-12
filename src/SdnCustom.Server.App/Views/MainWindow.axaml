@@ -1,28 +1,49 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:SdnCustom.Server.App.ViewModels"
-        xmlns:sp="clr-namespace:ScottPlot.Avalonia;assembly=ScottPlot.Avalonia"
+        xmlns:controls="using:SdnCustom.Server.App.Controls"
         x:Class="SdnCustom.Server.App.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Width="1518" Height="920" MinWidth="1180" MinHeight="720"
-        Background="#F1F1F1"
+        Background="{DynamicResource AppBackgroundBrush}"
         Title="虚实数据交互工具（Simureal Data Nexus, SDN） - 数据中枢">
-  <Grid RowDefinitions="126,*,215" ColumnDefinitions="302,*">
-    <Border Grid.ColumnSpan="2" Background="#0B56A4">
-      <Grid RowDefinitions="34,*">
-        <Border Background="#0B4D92" Padding="14,4">
-          <DockPanel>
-            <TextBlock DockPanel.Dock="Left"
-                       Text="虚实数据交互工具（Simureal Data Nexus, SDN）- 数据中枢 - 实时通讯"
-                       Foreground="White" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
-            <TextBlock DockPanel.Dock="Right" Text="—  □  ×" Foreground="White" FontSize="18" />
-          </DockPanel>
-        </Border>
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="10,4,0,0" Spacing="12">
+  <Grid RowDefinitions="116,*,220" ColumnDefinitions="286,*">
+    <Border Grid.ColumnSpan="2">
+      <Border.Background>
+        <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,0%">
+          <GradientStop Offset="0" Color="#073B78" />
+          <GradientStop Offset="0.58" Color="#0B5CAD" />
+          <GradientStop Offset="1" Color="#147AC8" />
+        </LinearGradientBrush>
+      </Border.Background>
+      <Grid RowDefinitions="48,*">
+        <DockPanel Margin="18,0">
+          <Border Width="34" Height="34" CornerRadius="9" Background="#24FFFFFF"
+                  BorderBrush="#42FFFFFF" BorderThickness="1" VerticalAlignment="Center">
+            <TextBlock Text="SDN" Foreground="White" FontSize="10" FontWeight="Bold"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+          <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
+            <TextBlock Text="虚实数据交互工具" Foreground="White" FontSize="15" FontWeight="SemiBold" />
+            <TextBlock Text="Simureal Data Nexus · 数据中枢" Foreground="#B9D8F5" FontSize="11" />
+          </StackPanel>
+          <Border DockPanel.Dock="Right" Background="#20FFFFFF" BorderBrush="#36FFFFFF"
+                  BorderThickness="1" CornerRadius="12" Padding="10,4" VerticalAlignment="Center">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <Ellipse Width="7" Height="7" Fill="#72E3AE" VerticalAlignment="Center"
+                       IsVisible="{Binding HasOnlineClients}" />
+              <Ellipse Width="7" Height="7" Fill="#A8D8FF" VerticalAlignment="Center"
+                       IsVisible="{Binding HasNoOnlineClients}" />
+              <TextBlock Text="{Binding OnlineClients, StringFormat='在线客户端 {0}'}"
+                         Foreground="White" FontSize="12" />
+            </StackPanel>
+          </Border>
+        </DockPanel>
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="16,0,0,2" Spacing="3">
           <Button Classes="ribbon" Click="OpenSystemSettings_OnClick">
             <StackPanel>
               <TextBlock Text="♙" FontSize="29" HorizontalAlignment="Center" />
-              <TextBlock Text="用户中心" FontSize="12" HorizontalAlignment="Center" />
+              <TextBlock Text="系统设置" FontSize="12" HorizontalAlignment="Center" />
             </StackPanel>
           </Button>
           <Button Classes="ribbon" Click="OpenClientManagement_OnClick">
@@ -31,43 +52,49 @@
               <TextBlock Text="用户管理" FontSize="12" HorizontalAlignment="Center" />
             </StackPanel>
           </Button>
-          <Button Classes="ribbon">
+          <Button Classes="ribbon" Click="ShowDataView_OnClick">
             <StackPanel>
               <TextBlock Text="▥" FontSize="29" HorizontalAlignment="Center" />
               <TextBlock Text="数据视图" FontSize="12" HorizontalAlignment="Center" />
             </StackPanel>
           </Button>
-          <Button Classes="ribbon">
+          <Button Classes="ribbon" Click="ShowSimulation_OnClick">
             <StackPanel>
               <TextBlock Text="◇" FontSize="29" HorizontalAlignment="Center" />
               <TextBlock Text="数据模拟" FontSize="12" HorizontalAlignment="Center" />
             </StackPanel>
           </Button>
-          <Button Classes="ribbon">
+          <Button x:Name="HistoryNavButton" Classes="ribbon" Click="ShowHistory_OnClick">
             <StackPanel>
               <TextBlock Text="▤" FontSize="29" HorizontalAlignment="Center" />
               <TextBlock Text="历史数据" FontSize="12" HorizontalAlignment="Center" />
             </StackPanel>
           </Button>
-          <Button Classes="ribbon">
+          <Button x:Name="LogNavButton" Classes="ribbon" Click="FocusLogs_OnClick">
             <StackPanel>
               <TextBlock Text="▦" FontSize="29" HorizontalAlignment="Center" />
-              <TextBlock Text="日志窗口" FontSize="12" HorizontalAlignment="Center" />
+              <TextBlock Text="运行日志" FontSize="12" HorizontalAlignment="Center" />
             </StackPanel>
           </Button>
           <Button Classes="ribbon" Command="{Binding StartClientCommand}">
             <StackPanel>
-              <TextBlock Text="●" FontSize="29" Foreground="#3C4852" HorizontalAlignment="Center" />
+              <TextBlock Text="●" FontSize="29" Foreground="#B9F3D8" HorizontalAlignment="Center" />
               <TextBlock Text="启动通讯" FontSize="12" HorizontalAlignment="Center" />
             </StackPanel>
           </Button>
           <Button Classes="ribbon" Command="{Binding StopClientCommand}">
             <StackPanel>
-              <TextBlock Text="⏻" FontSize="29" Foreground="#D9362B" HorizontalAlignment="Center" />
+              <TextBlock Text="⏻" FontSize="29" Foreground="#FFD4D4" HorizontalAlignment="Center" />
               <TextBlock Text="停止通讯" FontSize="12" HorizontalAlignment="Center" />
             </StackPanel>
           </Button>
-          <Button Classes="ribbon">
+          <Button Classes="ribbon" Command="{Binding RefreshNowCommand}">
+            <StackPanel>
+              <TextBlock Text="⟳" FontSize="29" HorizontalAlignment="Center" />
+              <TextBlock Text="刷新数据" FontSize="12" HorizontalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button Classes="ribbon" Click="OpenHelp_OnClick">
             <StackPanel>
               <TextBlock Text="?" FontSize="29" HorizontalAlignment="Center" />
               <TextBlock Text="帮助" FontSize="12" HorizontalAlignment="Center" />
@@ -77,13 +104,18 @@
       </Grid>
     </Border>
 
-    <Border Grid.Row="1" Grid.Column="0" BorderBrush="#C5CED8" BorderThickness="1" Margin="7,7,4,5"
-            Background="#FAFAFA">
-      <Grid RowDefinitions="31,*">
-        <Border Background="#F2F5F8" BorderBrush="#C7D0DA" BorderThickness="0,0,0,1" Padding="8,4">
-          <TextBlock Text="系统监视器" FontWeight="SemiBold" />
+    <Border Grid.Row="1" Grid.Column="0" Classes="card" Margin="10,10,5,5">
+      <Grid RowDefinitions="42,*">
+        <Border Classes="tableHeader" Padding="12,0">
+          <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+            <TextBlock Text="系统监视器" Classes="h2" />
+            <Border Background="{DynamicResource BrandLightBrush}" CornerRadius="8" Padding="7,2">
+              <TextBlock Text="{Binding TotalPoints, StringFormat='{}{0} 点'}"
+                         Foreground="{DynamicResource BrandPrimaryBrush}" FontSize="11" />
+            </Border>
+          </StackPanel>
         </Border>
-        <TreeView Grid.Row="1" BorderThickness="0" Background="#FCFCFC">
+        <TreeView Grid.Row="1" BorderThickness="0" Background="Transparent" Padding="6">
           <TreeViewItem Header="仿真系统" IsExpanded="True">
             <TreeViewItem Header="虚拟操作" />
             <TreeViewItem Header="自定义视图" />
@@ -95,7 +127,10 @@
                     <StackPanel>
                       <TextBlock Text="{Binding ClientName}" FontWeight="SemiBold" />
                       <TextBlock Text="{Binding ClientCode}" FontSize="11" Foreground="#526171" />
-                      <TextBlock Text="{Binding OnlineText}" FontSize="11" Foreground="#2E7D55" />
+                      <StackPanel Orientation="Horizontal" Spacing="6">
+                        <TextBlock Text="{Binding OnlineText}" FontSize="11" Foreground="#2E7D55" />
+                        <TextBlock Text="{Binding RunningText}" FontSize="11" Foreground="#526171" />
+                      </StackPanel>
                     </StackPanel>
                   </DataTemplate>
                 </ListBox.ItemTemplate>
@@ -106,10 +141,10 @@
       </Grid>
     </Border>
 
-    <TabControl Grid.Row="1" Grid.Column="1" Margin="4,7,7,5">
+    <TabControl x:Name="WorkspaceTabs" Grid.Row="1" Grid.Column="1" Margin="5,10,10,5">
       <TabItem Header="数据视图">
         <Grid Margin="4" RowDefinitions="34,*">
-          <Border BorderBrush="#C8D0D9" BorderThickness="1" Padding="7,3" Background="#F7F8FA">
+          <Border Classes="toolbar">
             <DockPanel>
               <TextBlock Text="数据视图" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
               <TextBlock DockPanel.Dock="Right" Text="{Binding OperationMessage}" Foreground="#526171"
@@ -117,12 +152,21 @@
             </DockPanel>
           </Border>
           <Grid Grid.Row="1" ColumnDefinitions="*,*" Margin="0,5,0,0">
-            <Border BorderBrush="#B9C3CE" BorderThickness="1" Margin="0,0,3,0" Background="White">
-              <Grid RowDefinitions="34,*">
-                <Border Background="#F4F5F7" BorderBrush="#C8D0D9" BorderThickness="0,0,0,1" Padding="8,5">
+            <Border Classes="panel" Margin="0,0,4,0">
+              <Grid RowDefinitions="34,30,*">
+                <Border Classes="tableHeader" Padding="12,0">
                   <TextBlock Text="用户输出数据" FontWeight="SemiBold" />
                 </Border>
-                <ListBox Grid.Row="1" ItemsSource="{Binding OutputPoints}" Background="White" BorderThickness="0">
+                <Grid Grid.Row="1" ColumnDefinitions="1.5*,2*,0.8*,0.8*,1.2*,0.9*"
+                      Background="{DynamicResource SurfaceMutedBrush}">
+                  <TextBlock Text="测点 ID" Margin="7,6" />
+                  <TextBlock Grid.Column="1" Text="名称" Margin="7,6" />
+                  <TextBlock Grid.Column="2" Text="类型" Margin="7,6" />
+                  <TextBlock Grid.Column="3" Text="单位" Margin="7,6" />
+                  <TextBlock Grid.Column="4" Text="最新值" Margin="7,6" />
+                  <TextBlock Grid.Column="5" Text="质量" Margin="7,6" />
+                </Grid>
+                <ListBox Grid.Row="2" ItemsSource="{Binding OutputPoints}" Background="Transparent" BorderThickness="0">
                   <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="vm:PointRowViewModel">
                       <Grid ColumnDefinitions="1.5*,2*,0.8*,0.8*,1.2*,0.9*" Margin="3,7">
@@ -138,12 +182,21 @@
                 </ListBox>
               </Grid>
             </Border>
-            <Border Grid.Column="1" BorderBrush="#B9C3CE" BorderThickness="1" Margin="3,0,0,0" Background="White">
-              <Grid RowDefinitions="34,*">
-                <Border Background="#F4F5F7" BorderBrush="#C8D0D9" BorderThickness="0,0,0,1" Padding="8,5">
+            <Border Grid.Column="1" Classes="panel" Margin="4,0,0,0">
+              <Grid RowDefinitions="34,30,*">
+                <Border Classes="tableHeader" Padding="12,0">
                   <TextBlock Text="用户输入数据" FontWeight="SemiBold" />
                 </Border>
-                <ListBox Grid.Row="1" ItemsSource="{Binding InputPoints}" Background="White" BorderThickness="0">
+                <Grid Grid.Row="1" ColumnDefinitions="1.5*,2*,0.8*,0.8*,1.2*,0.9*"
+                      Background="{DynamicResource SurfaceMutedBrush}">
+                  <TextBlock Text="测点 ID" Margin="7,6" />
+                  <TextBlock Grid.Column="1" Text="名称" Margin="7,6" />
+                  <TextBlock Grid.Column="2" Text="类型" Margin="7,6" />
+                  <TextBlock Grid.Column="3" Text="单位" Margin="7,6" />
+                  <TextBlock Grid.Column="4" Text="最新值" Margin="7,6" />
+                  <TextBlock Grid.Column="5" Text="质量" Margin="7,6" />
+                </Grid>
+                <ListBox Grid.Row="2" ItemsSource="{Binding InputPoints}" Background="Transparent" BorderThickness="0">
                   <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="vm:PointRowViewModel">
                       <Grid ColumnDefinitions="1.5*,2*,0.8*,0.8*,1.2*,0.9*" Margin="3,7">
@@ -165,7 +218,7 @@
 
       <TabItem Header="实物数据模拟">
         <Grid Margin="4" RowDefinitions="72,*">
-          <Border BorderBrush="#C8D0D9" BorderThickness="1" Background="#F7F8FA" Padding="10">
+          <Border Classes="toolbar">
             <StackPanel Orientation="Horizontal" Spacing="12">
               <StackPanel>
                 <TextBlock Text="当前模拟用户" FontSize="12" />
@@ -177,7 +230,8 @@
               </StackPanel>
               <StackPanel>
                 <TextBlock Text="模拟频率(ms)" FontSize="12" />
-                <NumericUpDown Value="200" Minimum="50" Width="110" />
+                <NumericUpDown Value="{Binding SimulationIntervalMilliseconds}"
+                               Minimum="50" Maximum="60000" Increment="50" Width="110" />
               </StackPanel>
               <StackPanel>
                 <TextBlock Text="当前测点" FontSize="12" />
@@ -187,32 +241,45 @@
                 <TextBlock Text="模拟值" FontSize="12" />
                 <TextBox Text="{Binding WriteValue}" Width="130" />
               </StackPanel>
-              <Button Content="开始模拟" Command="{Binding WritePointCommand}" VerticalAlignment="Bottom"
-                      Background="#149BF5" Foreground="White" Padding="18,7" />
+              <Button Content="写入一次" Command="{Binding WritePointCommand}" VerticalAlignment="Bottom"
+                      Padding="16,7" />
+              <Button Classes="primary" Content="{Binding SimulationButtonText}"
+                      Command="{Binding ToggleSimulationCommand}" VerticalAlignment="Bottom" Padding="18,7" />
             </StackPanel>
           </Border>
-          <Border Grid.Row="1" BorderBrush="#B9C3CE" BorderThickness="1" Margin="0,5,0,0" Background="White">
-            <ListBox ItemsSource="{Binding Points}" SelectedItem="{Binding SelectedPoint}" BorderThickness="0">
-              <ListBox.ItemTemplate>
-                <DataTemplate x:DataType="vm:PointRowViewModel">
-                  <Grid ColumnDefinitions="1.4*,2*,0.8*,0.8*,1.2*,1.1*" Margin="4,8">
-                    <TextBlock Text="{Binding PointId}" />
-                    <TextBlock Grid.Column="1" Text="{Binding PointName}" />
-                    <TextBlock Grid.Column="2" Text="{Binding DataType}" />
-                    <TextBlock Grid.Column="3" Text="{Binding Unit}" />
-                    <TextBlock Grid.Column="4" Text="{Binding ValueText}" />
-                    <TextBlock Grid.Column="5" Text="{Binding TimestampText}" />
-                  </Grid>
-                </DataTemplate>
-              </ListBox.ItemTemplate>
-            </ListBox>
+          <Border Grid.Row="1" Classes="panel" Margin="0,6,0,0">
+            <Grid RowDefinitions="32,*">
+              <Grid ColumnDefinitions="1.4*,2*,0.8*,0.8*,1.2*,1.1*"
+                    Background="{DynamicResource SurfaceMutedBrush}">
+                <TextBlock Text="测点 ID" Margin="7,7" />
+                <TextBlock Grid.Column="1" Text="名称" Margin="7,7" />
+                <TextBlock Grid.Column="2" Text="类型" Margin="7,7" />
+                <TextBlock Grid.Column="3" Text="单位" Margin="7,7" />
+                <TextBlock Grid.Column="4" Text="最新值" Margin="7,7" />
+                <TextBlock Grid.Column="5" Text="更新时间" Margin="7,7" />
+              </Grid>
+              <ListBox Grid.Row="1" ItemsSource="{Binding InputPoints}" SelectedItem="{Binding SelectedPoint}" BorderThickness="0">
+                <ListBox.ItemTemplate>
+                  <DataTemplate x:DataType="vm:PointRowViewModel">
+                    <Grid ColumnDefinitions="1.4*,2*,0.8*,0.8*,1.2*,1.1*" Margin="4,8">
+                      <TextBlock Text="{Binding PointId}" />
+                      <TextBlock Grid.Column="1" Text="{Binding PointName}" />
+                      <TextBlock Grid.Column="2" Text="{Binding DataType}" />
+                      <TextBlock Grid.Column="3" Text="{Binding Unit}" />
+                      <TextBlock Grid.Column="4" Text="{Binding ValueText}" />
+                      <TextBlock Grid.Column="5" Text="{Binding TimestampText}" />
+                    </Grid>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+            </Grid>
           </Border>
         </Grid>
       </TabItem>
 
       <TabItem Header="历史数据查询">
         <Grid Margin="4" RowDefinitions="92,*">
-          <Border BorderBrush="#C8D0D9" BorderThickness="1" Background="#F7F8FA" Padding="10">
+          <Border Classes="toolbar">
             <StackPanel Spacing="8">
               <StackPanel Orientation="Horizontal" Spacing="8">
                 <TextBlock Text="数据用户" VerticalAlignment="Center" />
@@ -222,31 +289,38 @@
                 <TextBlock Text="结束时间" VerticalAlignment="Center" />
                 <TextBox Text="{Binding HistoryTo}" Width="175" />
                 <TextBlock Text="单次上限" VerticalAlignment="Center" />
-                <NumericUpDown Value="1000" Minimum="1" Maximum="10000" Width="105" />
-                <Button Content="查询" Command="{Binding QueryHistoryCommand}"
-                        Background="#00A5E5" Foreground="White" Padding="18,5" />
+                <NumericUpDown Value="{Binding HistoryLimit}" Minimum="1" Maximum="10000" Width="105" />
+                <Button Classes="primary" Content="查询" Command="{Binding QueryHistoryCommand}"
+                        Padding="18,5" />
+                <Button Classes="subtle" Content="清除条件" Command="{Binding ResetHistoryFilterCommand}"
+                        Padding="14,5" />
               </StackPanel>
               <StackPanel Orientation="Horizontal" Spacing="8">
                 <ComboBox ItemsSource="{Binding Points}" SelectedItem="{Binding SelectedPoint}" Width="240" />
-                <Button Content="绘制图表" Background="#00A5E5" Foreground="White" Padding="14,5" />
+                <Button Classes="primary" Content="绘制图表" Click="DrawChart_OnClick"
+                        Padding="14,5" />
                 <TextBlock Text="{Binding OperationMessage}" VerticalAlignment="Center" Foreground="#53687A" />
               </StackPanel>
             </StackPanel>
           </Border>
-          <Border Grid.Row="1" BorderBrush="#B9C3CE" BorderThickness="1" Margin="0,5,0,0" Background="White">
-            <sp:AvaPlot x:Name="RealtimeChart" />
+          <Border Grid.Row="1" Classes="panel" Margin="0,6,0,0">
+            <controls:HistoryLineChart x:Name="HistoryChart" />
           </Border>
         </Grid>
       </TabItem>
     </TabControl>
 
-    <Grid Grid.Row="2" Grid.ColumnSpan="2" ColumnDefinitions="*,*" Margin="7,5,7,7">
-      <Border BorderBrush="#C5CED8" BorderThickness="1" Margin="0,0,4,0" Background="White">
+    <Grid Grid.Row="2" Grid.ColumnSpan="2" ColumnDefinitions="*,*" Margin="10,5,10,10">
+      <Border x:Name="LogPanel" Classes="panel" Margin="0,0,4,0">
         <Grid RowDefinitions="31,*">
-          <Border Background="#F2F5F8" BorderBrush="#C7D0DA" BorderThickness="0,0,0,1" Padding="8,4">
-            <TextBlock Text="日志" FontWeight="SemiBold" />
+          <Border Classes="tableHeader" Padding="12,0">
+            <DockPanel>
+              <TextBlock Text="日志" FontWeight="SemiBold" />
+              <Button Classes="subtle" DockPanel.Dock="Right" Content="清空视图"
+                      Command="{Binding ClearLogsCommand}" Padding="10,2" />
+            </DockPanel>
           </Border>
-          <ListBox Grid.Row="1" ItemsSource="{Binding Logs}" BorderThickness="0">
+          <ListBox x:Name="LogList" Grid.Row="1" ItemsSource="{Binding Logs}" BorderThickness="0">
             <ListBox.ItemTemplate>
               <DataTemplate>
                 <TextBlock FontFamily="Consolas" FontSize="12" Text="{Binding}" />
@@ -255,25 +329,30 @@
           </ListBox>
         </Grid>
       </Border>
-      <Border Grid.Column="1" BorderBrush="#C5CED8" BorderThickness="1" Margin="4,0,0,0" Background="White">
+      <Border Grid.Column="1" Classes="panel" Margin="4,0,0,0">
         <Grid RowDefinitions="31,34,*">
-          <Border Background="#F2F5F8" BorderBrush="#C7D0DA" BorderThickness="0,0,0,1" Padding="8,4">
+          <Border Classes="tableHeader" Padding="12,0">
             <TextBlock Text="通讯状态" FontWeight="SemiBold" />
           </Border>
-          <Grid Grid.Row="1" ColumnDefinitions="80,2*,1.2*,1.2*" Background="#F7F8FA">
-            <TextBlock Text="序号" Margin="8,7" />
-            <TextBlock Grid.Column="1" Text="用户名" Margin="8,7" />
-            <TextBlock Grid.Column="2" Text="通讯协议" Margin="8,7" />
-            <TextBlock Grid.Column="3" Text="用户ID" Margin="8,7" />
+          <Grid Grid.Row="1" ColumnDefinitions="1.4*,1.8*,1*,1.8*,90,90"
+                Background="{DynamicResource SurfaceMutedBrush}">
+            <TextBlock Text="客户端 ID" Margin="8,7" />
+            <TextBlock Grid.Column="1" Text="名称" Margin="8,7" />
+            <TextBlock Grid.Column="2" Text="协议" Margin="8,7" />
+            <TextBlock Grid.Column="3" Text="设备地址" Margin="8,7" />
+            <TextBlock Grid.Column="4" Text="连接" Margin="8,7" />
+            <TextBlock Grid.Column="5" Text="通讯" Margin="8,7" />
           </Grid>
           <ListBox Grid.Row="2" ItemsSource="{Binding Clients}" BorderThickness="0">
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="vm:ClientRowViewModel">
-                <Grid ColumnDefinitions="80,2*,1.2*,1.2*" Margin="0,3">
+                <Grid ColumnDefinitions="1.4*,1.8*,1*,1.8*,90,90" Margin="0,3">
                   <TextBlock Text="{Binding ClientCode}" Margin="10,3" />
                   <TextBlock Grid.Column="1" Text="{Binding ClientName}" Margin="8,3" />
                   <TextBlock Grid.Column="2" Text="{Binding Protocol}" Margin="8,3" />
                   <TextBlock Grid.Column="3" Text="{Binding Endpoint}" Margin="8,3" />
+                  <TextBlock Grid.Column="4" Text="{Binding OnlineText}" Margin="8,3" />
+                  <TextBlock Grid.Column="5" Text="{Binding RunningText}" Margin="8,3" />
                 </Grid>
               </DataTemplate>
             </ListBox.ItemTemplate>

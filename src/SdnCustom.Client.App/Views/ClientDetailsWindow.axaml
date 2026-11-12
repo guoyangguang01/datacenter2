@@ -3,51 +3,120 @@
         xmlns:vm="using:SdnCustom.Client.App.ViewModels"
         x:Class="SdnCustom.Client.App.Views.ClientDetailsWindow"
         x:DataType="vm:ClientViewModel"
-        Width="500" Height="330" CanResize="False"
-        Background="#F1F1F1"
+        Width="760" Height="720" MinWidth="680" MinHeight="620"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource AppBackgroundBrush}"
         Title="详细设置">
-  <Grid RowDefinitions="42,*,62">
-    <Border Background="#0B56A4">
-      <TextBlock Text="详细设置" Foreground="White" FontSize="20" FontWeight="Bold"
-                 Margin="12,7" />
+  <Grid RowDefinitions="52,*,68">
+    <Border Background="{DynamicResource BrandDarkBrush}">
+      <TextBlock Text="通讯详细设置" Foreground="White" Classes="h1"
+                 Margin="16,0" VerticalAlignment="Center" />
     </Border>
 
-    <Grid Grid.Row="1" ColumnDefinitions="170,150,150" RowDefinitions="52,42,42,42"
-          Margin="30,18,22,8">
-      <TextBlock Grid.Column="1" Text="中心发往用户" FontSize="16" HorizontalAlignment="Center" />
-      <TextBlock Grid.Column="2" Text="用户发往中心" FontSize="16" HorizontalAlignment="Center" />
+    <ScrollViewer Grid.Row="1">
+      <StackPanel Margin="20,12" Spacing="12">
+        <Border Classes="card">
+          <StackPanel Spacing="8">
+            <TextBlock Text="服务端 TLS 设置" FontSize="16" FontWeight="SemiBold" />
+            <Grid ColumnDefinitions="150,220,100,160" RowDefinitions="34,34,34"
+                  ColumnSpacing="8" RowSpacing="4">
+              <TextBlock Text="安全连接：" VerticalAlignment="Center" />
+              <CheckBox Grid.Column="1" Content="启用 TLS" IsChecked="{Binding UseTls}"
+                        VerticalAlignment="Center" />
+              <TextBlock Grid.Row="1" Text="信任自动证书：" VerticalAlignment="Center" />
+              <CheckBox Grid.Row="1" Grid.Column="1" Content="允许未受信任证书"
+                        IsChecked="{Binding AllowUntrustedServerCertificate}"
+                        VerticalAlignment="Center" />
+              <TextBlock Grid.Row="2" Text="证书指纹：" VerticalAlignment="Center" />
+              <TextBox Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3"
+                       Text="{Binding ServerCertificateThumbprint}"
+                       Watermark="关闭自动信任时填写 SHA-1 指纹" />
+            </Grid>
+          </StackPanel>
+        </Border>
 
-      <TextBlock Grid.Row="1" Text="发送频率：" VerticalAlignment="Center" HorizontalAlignment="Right" />
-      <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="5"
-                  HorizontalAlignment="Center">
-        <NumericUpDown Value="{Binding CenterToUserFrequencyMilliseconds}"
-                       Minimum="20" Maximum="60000" Increment="50" Width="100" />
-        <TextBlock Text="ms" VerticalAlignment="Center" />
+        <Border Classes="card">
+          <StackPanel Spacing="8">
+            <TextBlock Text="设备连接设置" FontSize="16" FontWeight="SemiBold" />
+            <Grid ColumnDefinitions="150,220,100,160" RowDefinitions="34,34,34,34"
+                  ColumnSpacing="8" RowSpacing="4">
+              <TextBlock Text="通讯协议：" VerticalAlignment="Center" />
+              <ComboBox Grid.Column="1" ItemsSource="{Binding ProtocolOptions}"
+                        SelectedItem="{Binding Protocol}" />
+              <TextBlock Grid.Column="2" Text="超时(ms)：" VerticalAlignment="Center" />
+              <NumericUpDown Grid.Column="3" Value="{Binding TimeoutMilliseconds}"
+                             Minimum="100" Maximum="120000" Increment="500" />
+
+              <TextBlock Grid.Row="1" Text="TCP 设备 IP：" VerticalAlignment="Center" />
+              <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding DeviceHost}" />
+              <TextBlock Grid.Row="1" Grid.Column="2" Text="端口：" VerticalAlignment="Center" />
+              <TextBox Grid.Row="1" Grid.Column="3" Text="{Binding DevicePort}" />
+
+              <TextBlock Grid.Row="2" Text="OPC UA Endpoint：" VerticalAlignment="Center" />
+              <TextBox Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3"
+                       Text="{Binding OpcUaEndpoint}"
+                       Watermark="opc.tcp://127.0.0.1:4840" />
+              <TextBlock Grid.Row="3" Grid.ColumnSpan="4" Foreground="#6A7786"
+                         Text="TCP 协议使用设备 IP/端口；OPC UA 协议使用 Endpoint。切换协议后请保存并重新连接。" />
+            </Grid>
+          </StackPanel>
+        </Border>
+
+        <Border Classes="card">
+          <StackPanel Spacing="8">
+            <TextBlock Text="发送策略" FontSize="16" FontWeight="SemiBold" />
+            <Grid ColumnDefinitions="170,150,150" RowDefinitions="34,34,34,34"
+                  ColumnSpacing="10" RowSpacing="4">
+              <TextBlock Grid.Column="1" Text="中心发往用户" HorizontalAlignment="Center" />
+              <TextBlock Grid.Column="2" Text="用户发往中心" HorizontalAlignment="Center" />
+
+              <TextBlock Grid.Row="1" Text="发送频率：" VerticalAlignment="Center"
+                         HorizontalAlignment="Right" />
+              <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal"
+                          HorizontalAlignment="Center" Spacing="5">
+                <NumericUpDown Value="{Binding CenterToUserFrequencyMilliseconds}"
+                               Minimum="20" Maximum="60000" Increment="50" Width="100" />
+                <TextBlock Text="ms" VerticalAlignment="Center" />
+              </StackPanel>
+              <StackPanel Grid.Row="1" Grid.Column="2" Orientation="Horizontal"
+                          HorizontalAlignment="Center" Spacing="5">
+                <NumericUpDown Value="{Binding UserToCenterFrequencyMilliseconds}"
+                               Minimum="20" Maximum="60000" Increment="50" Width="100" />
+                <TextBlock Text="ms" VerticalAlignment="Center" />
+              </StackPanel>
+
+              <TextBlock Grid.Row="2" Text="允许缺项：" VerticalAlignment="Center"
+                         HorizontalAlignment="Right" />
+              <CheckBox Grid.Row="2" Grid.Column="1" IsChecked="{Binding AllowCenterToUserMissingItems}"
+                        HorizontalAlignment="Center" />
+              <CheckBox Grid.Row="2" Grid.Column="2" IsChecked="{Binding AllowUserToCenterMissingItems}"
+                        HorizontalAlignment="Center" />
+
+              <TextBlock Grid.Row="3" Text="变化时发送：" VerticalAlignment="Center"
+                         HorizontalAlignment="Right" />
+              <CheckBox Grid.Row="3" Grid.Column="1" IsChecked="{Binding SendCenterToUserOnChange}"
+                        HorizontalAlignment="Center" />
+              <CheckBox Grid.Row="3" Grid.Column="2" IsChecked="{Binding SendUserToCenterOnChange}"
+                        HorizontalAlignment="Center" />
+            </Grid>
+          </StackPanel>
+        </Border>
+
+        <Border Classes="card">
+          <CheckBox Content="启动客户端后自动连接服务端并恢复通讯"
+                    IsChecked="{Binding AutoStart}" />
+        </Border>
+
+        <TextBlock Text="{Binding ConfigPath, StringFormat='配置文件：{0}'}"
+                   Foreground="#53687A" TextWrapping="Wrap" />
+        <TextBlock Text="{Binding OperationMessage}" Foreground="#53687A" TextWrapping="Wrap" />
       </StackPanel>
-      <StackPanel Grid.Row="1" Grid.Column="2" Orientation="Horizontal" Spacing="5"
-                  HorizontalAlignment="Center">
-        <NumericUpDown Value="{Binding UserToCenterFrequencyMilliseconds}"
-                       Minimum="20" Maximum="60000" Increment="50" Width="100" />
-        <TextBlock Text="ms" VerticalAlignment="Center" />
-      </StackPanel>
-
-      <TextBlock Grid.Row="2" Text="允许缺项：" VerticalAlignment="Center" HorizontalAlignment="Right" />
-      <CheckBox Grid.Row="2" Grid.Column="1" IsChecked="{Binding AllowCenterToUserMissingItems}"
-                HorizontalAlignment="Center" />
-      <CheckBox Grid.Row="2" Grid.Column="2" IsChecked="{Binding AllowUserToCenterMissingItems}"
-                HorizontalAlignment="Center" />
-
-      <TextBlock Grid.Row="3" Text="数据变化时发送：" VerticalAlignment="Center" HorizontalAlignment="Right" />
-      <CheckBox Grid.Row="3" Grid.Column="1" IsChecked="{Binding SendCenterToUserOnChange}"
-                HorizontalAlignment="Center" />
-      <CheckBox Grid.Row="3" Grid.Column="2" IsChecked="{Binding SendUserToCenterOnChange}"
-                HorizontalAlignment="Center" />
-    </Grid>
+    </ScrollViewer>
 
     <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center"
                 VerticalAlignment="Center" Spacing="24">
-      <Button Content="确定" Width="100" Click="SaveAndClose_OnClick" />
-      <Button Content="取消" Width="100" Click="Cancel_OnClick" />
+      <Button Classes="primary" Content="保存并关闭" Width="116" Click="SaveAndClose_OnClick" />
+      <Button Classes="subtle" Content="取消" Width="100" Click="Cancel_OnClick" />
     </StackPanel>
   </Grid>
 </Window>

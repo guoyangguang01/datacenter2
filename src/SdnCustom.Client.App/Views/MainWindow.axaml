@@ -3,87 +3,121 @@
         xmlns:vm="using:SdnCustom.Client.App.ViewModels"
         x:Class="SdnCustom.Client.App.Views.MainWindow"
         x:DataType="vm:ClientViewModel"
-        Width="1320" Height="780" MinWidth="1000" MinHeight="650"
-        Background="#F1F1F1"
+        Width="1360" Height="800" MinWidth="1180" MinHeight="680"
+        Background="{DynamicResource AppBackgroundBrush}"
         Title="数据用户 - 单连接客户端 - 实时通讯">
-  <Grid RowDefinitions="48,165,*,190">
-    <Border Background="#0B56A4">
-      <TextBlock Text="{Binding ClientName, StringFormat='数据用户 - {0} - 实时通讯'}"
-                 Foreground="White" FontSize="18" FontWeight="SemiBold" Margin="16,10" />
+  <Grid RowDefinitions="62,174,*,196">
+    <Border>
+      <Border.Background>
+        <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,0%">
+          <GradientStop Offset="0" Color="#073B78" />
+          <GradientStop Offset="0.62" Color="#0B5CAD" />
+          <GradientStop Offset="1" Color="#147AC8" />
+        </LinearGradientBrush>
+      </Border.Background>
+      <DockPanel Margin="18,0">
+        <Border Width="34" Height="34" CornerRadius="9" Background="#24FFFFFF"
+                BorderBrush="#42FFFFFF" BorderThickness="1" VerticalAlignment="Center">
+          <TextBlock Text="SDN" Foreground="White" FontSize="10" FontWeight="Bold"
+                     HorizontalAlignment="Center" VerticalAlignment="Center" />
+        </Border>
+        <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
+          <TextBlock Text="{Binding ClientName, StringFormat='数据用户 · {0}'}"
+                     Foreground="White" FontSize="16" FontWeight="SemiBold" />
+          <TextBlock Text="单连接客户端 · 实时通讯" Foreground="#B9D8F5" FontSize="11" />
+        </StackPanel>
+        <Border DockPanel.Dock="Right" Background="#20FFFFFF" BorderBrush="#36FFFFFF"
+                BorderThickness="1" CornerRadius="12" Padding="11,5" VerticalAlignment="Center">
+          <StackPanel Orientation="Horizontal" Spacing="7">
+            <Ellipse Width="7" Height="7" Fill="#72E3AE" VerticalAlignment="Center"
+                     IsVisible="{Binding IsServerConnected}" />
+            <Ellipse Width="7" Height="7" Fill="#FFD4D4" VerticalAlignment="Center"
+                     IsVisible="{Binding IsServerDisconnected}" />
+            <TextBlock Text="{Binding StatusText}" Foreground="White" FontSize="12" />
+          </StackPanel>
+        </Border>
+      </DockPanel>
     </Border>
 
-    <Grid Grid.Row="1" Margin="10,6,10,8">
+    <Grid Grid.Row="1" Margin="10,8,10,8">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="*" />
         <ColumnDefinition Width="*" />
         <ColumnDefinition Width="*" />
       </Grid.ColumnDefinitions>
 
-      <Grid ColumnDefinitions="70,120,38,90,90" RowDefinitions="28,34,34" Margin="0,0,15,0">
-        <TextBlock Grid.ColumnSpan="5" Text="数据中心设置" FontSize="16" FontWeight="SemiBold" />
-        <Border Grid.ColumnSpan="5" Grid.Row="0" VerticalAlignment="Bottom"
-                BorderBrush="#BFC8D1" BorderThickness="0,0,0,1" Margin="110,0,0,4" />
-        <TextBlock Grid.Row="1" Text="IP:" VerticalAlignment="Center" />
-        <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ServerHost}" />
-        <TextBlock Grid.Row="1" Grid.Column="2" Text="端口:" VerticalAlignment="Center" />
-        <TextBox Grid.Row="1" Grid.Column="3" Text="{Binding ServerPort}" />
-        <Button Grid.Row="1" Grid.Column="4" Grid.RowSpan="2"
-                Content="{Binding ServerConnectionButtonText}" Command="{Binding ToggleServerCommand}"
-                Background="#F8F9FA" BorderBrush="#C4CDD6" FontSize="16" />
-        <TextBlock Grid.Row="2" Text="TLS:" VerticalAlignment="Center" />
-        <CheckBox Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Content="安全连接"
-                  IsChecked="{Binding UseTls}" />
-      </Grid>
-
-      <Grid Grid.Column="1" ColumnDefinitions="105,*" RowDefinitions="28,34,34" Margin="15,0">
-        <TextBlock Grid.ColumnSpan="2" Text="数据用户设置" FontSize="16" FontWeight="SemiBold" />
-        <Border Grid.ColumnSpan="2" Grid.Row="0" VerticalAlignment="Bottom"
-                BorderBrush="#BFC8D1" BorderThickness="0,0,0,1" Margin="110,0,0,4" />
-        <TextBlock Grid.Row="1" Text="数据用户选择:" VerticalAlignment="Center" />
-        <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ClientName}" />
-        <TextBlock Grid.Row="2" Text="通讯协议选择:" VerticalAlignment="Center" />
-        <Grid Grid.Row="2" Grid.Column="1" ColumnDefinitions="*,110" ColumnSpacing="8">
-          <ComboBox ItemsSource="{Binding ProtocolOptions}" SelectedItem="{Binding Protocol}" />
-          <Button Grid.Column="1" Content="登录" Command="{Binding ConnectServerCommand}"
-                  Background="#FAFAFA" BorderBrush="#C4CDD6" />
+      <Border Classes="card" Margin="0,0,5,0" Padding="14">
+        <Grid ColumnDefinitions="58,*,34,68,92" RowDefinitions="28,34,34"
+              ColumnSpacing="6">
+          <TextBlock Grid.ColumnSpan="5" Text="数据中心设置" Classes="h2" />
+          <TextBlock Grid.Row="1" Text="IP" Classes="muted" VerticalAlignment="Center" />
+          <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ServerHost}" />
+          <TextBlock Grid.Row="1" Grid.Column="2" Text="端口" Classes="muted"
+                     VerticalAlignment="Center" />
+          <TextBox Grid.Row="1" Grid.Column="3" Text="{Binding ServerPort}" />
+          <Button Grid.Row="1" Grid.Column="4" Classes="primary"
+                  Content="{Binding ServerConnectionButtonText}" Command="{Binding ToggleServerCommand}" />
+          <TextBlock Grid.Row="2" Text="TLS" Classes="muted" VerticalAlignment="Center" />
+          <CheckBox Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Content="安全连接"
+                    IsChecked="{Binding UseTls}" />
+          <Button Grid.Row="2" Grid.Column="3" Content="保存" Command="{Binding SaveCommand}" />
+          <Button Grid.Row="2" Grid.Column="4" Content="重载" Command="{Binding ReloadCommand}" />
         </Grid>
-      </Grid>
+      </Border>
 
-      <Grid Grid.Column="2" ColumnDefinitions="62,110,38,95,110,105" RowDefinitions="28,34,34" Margin="15,0,0,0">
-        <TextBlock Grid.ColumnSpan="6" Text="实时通讯设置" FontSize="16" FontWeight="SemiBold" />
-        <Border Grid.ColumnSpan="6" Grid.Row="0" VerticalAlignment="Bottom"
-                BorderBrush="#BFC8D1" BorderThickness="0,0,0,1" Margin="105,0,0,4" />
-        <TextBlock Grid.Row="1" Text="设备 IP:" VerticalAlignment="Center" />
-        <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding DeviceHost}" />
-        <TextBlock Grid.Row="1" Grid.Column="2" Text="端口:" VerticalAlignment="Center" />
-        <TextBox Grid.Row="1" Grid.Column="3" Text="{Binding DevicePort}" />
-        <Button Grid.Row="1" Grid.Column="4" Content="详细设置" Click="OpenDetails_OnClick"
-                Background="#FAFAFA" BorderBrush="#C4CDD6" />
-        <Button Grid.Row="1" Grid.Column="5" Content="启动通讯" Command="{Binding StartCommunicationCommand}"
-                Background="#FAFAFA" BorderBrush="#C4CDD6" />
-        <TextBlock Grid.Row="2" Text="客户端代码:" VerticalAlignment="Center" />
-        <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding ClientCode}" />
-        <Button Grid.Row="2" Grid.Column="4" Content="停止通讯" Command="{Binding StopCommunicationCommand}"
-                Background="#FAFAFA" BorderBrush="#C4CDD6" />
-      </Grid>
+      <Border Grid.Column="1" Classes="card" Margin="5,0" Padding="14">
+        <Grid ColumnDefinitions="96,*" RowDefinitions="28,34,34" ColumnSpacing="8">
+          <TextBlock Grid.ColumnSpan="2" Text="数据用户设置" Classes="h2" />
+          <TextBlock Grid.Row="1" Text="客户端名称" Classes="muted" VerticalAlignment="Center" />
+          <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ClientName}" />
+          <TextBlock Grid.Row="2" Text="通讯协议" Classes="muted" VerticalAlignment="Center" />
+          <Grid Grid.Row="2" Grid.Column="1" ColumnDefinitions="*,92" ColumnSpacing="8">
+            <ComboBox ItemsSource="{Binding ProtocolOptions}" SelectedItem="{Binding Protocol}" />
+            <Button Grid.Column="1" Classes="primary" Content="连接"
+                    Command="{Binding ConnectServerCommand}" />
+          </Grid>
+        </Grid>
+      </Border>
+
+      <Border Grid.Column="2" Classes="card" Margin="5,0,0,0" Padding="14">
+        <Grid ColumnDefinitions="44,*,32,56,76,76" RowDefinitions="28,34,34"
+              ColumnSpacing="6">
+          <TextBlock Grid.ColumnSpan="6" Text="实时通讯设置" Classes="h2" />
+          <TextBlock Grid.Row="1" Text="设备 IP" Classes="muted" VerticalAlignment="Center" />
+          <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding DeviceHost}" />
+          <TextBlock Grid.Row="1" Grid.Column="2" Text="端口" Classes="muted"
+                     VerticalAlignment="Center" />
+          <TextBox Grid.Row="1" Grid.Column="3" Text="{Binding DevicePort}" />
+          <Button Grid.Row="1" Grid.Column="4" Content="详细设置" Click="OpenDetails_OnClick" />
+          <Button Grid.Row="1" Grid.Column="5" Classes="success" Content="启动"
+                  Command="{Binding StartCommunicationCommand}" />
+          <TextBlock Grid.Row="2" Text="代码" Classes="muted" VerticalAlignment="Center" />
+          <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding ClientCode}" />
+          <Button Grid.Row="2" Grid.Column="5" Classes="danger" Content="停止"
+                  Command="{Binding StopCommunicationCommand}" />
+        </Grid>
+      </Border>
     </Grid>
 
     <Grid Grid.Row="2" ColumnDefinitions="*,*" Margin="10,0">
-      <Border BorderBrush="#B7C1CB" BorderThickness="1" Margin="0,0,4,0" Background="White">
+      <Border Classes="panel" Margin="0,0,5,0">
         <Grid RowDefinitions="48,*">
-          <Border Background="#FAFAFA" BorderBrush="#C7D0DA" BorderThickness="0,0,0,1" Padding="8,5">
+          <Border Classes="tableHeader" Padding="12,0">
             <DockPanel>
-              <TextBlock Text="用户实时数据" FontSize="17" FontWeight="Bold" />
+              <TextBlock Text="用户实时数据" Classes="h2" />
               <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
                 <TextBlock Text="接收" />
-                <TextBlock Text="{Binding OutputPointCount, StringFormat='{}{0} 个'}" Foreground="#D9362B" FontWeight="Bold" />
+                <TextBlock Text="{Binding OutputPointCount, StringFormat='{}{0} 个'}"
+                           Foreground="{DynamicResource BrandPrimaryBrush}" FontWeight="Bold" />
                 <TextBlock Text="上传" />
-                <TextBlock Text="{Binding UploadLatencyText}" Foreground="#D9362B" FontWeight="Bold" />
+                <TextBlock Text="{Binding UploadLatencyText}"
+                           Foreground="{DynamicResource SuccessBrush}" FontWeight="Bold" />
               </StackPanel>
             </DockPanel>
           </Border>
           <Grid Grid.Row="1" RowDefinitions="38,*">
-            <Grid ColumnDefinitions="1.3*,2.2*,1.1*,0.8*,1*,1.3*" Background="#F7F8FA" Margin="0">
+            <Grid ColumnDefinitions="1.3*,2.2*,1.1*,0.8*,1*,1.3*"
+                  Background="{DynamicResource SurfaceMutedBrush}" Margin="0">
               <TextBlock Text="测点ID" Margin="12,9" />
               <TextBlock Grid.Column="1" Text="名称" Margin="8,9" />
               <TextBlock Grid.Column="2" Text="数据" Margin="8,9" />
@@ -109,21 +143,24 @@
         </Grid>
       </Border>
 
-      <Border Grid.Column="1" BorderBrush="#B7C1CB" BorderThickness="1" Margin="4,0,0,0" Background="White">
+      <Border Grid.Column="1" Classes="panel" Margin="5,0,0,0">
         <Grid RowDefinitions="48,*">
-          <Border Background="#FAFAFA" BorderBrush="#C7D0DA" BorderThickness="0,0,0,1" Padding="8,5">
+          <Border Classes="tableHeader" Padding="12,0">
             <DockPanel>
-              <TextBlock Text="中心源实时数据" FontSize="17" FontWeight="Bold" />
+              <TextBlock Text="中心源实时数据" Classes="h2" />
               <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
                 <TextBlock Text="接收" />
-                <TextBlock Text="{Binding InputPointCount, StringFormat='{}{0} 个'}" Foreground="#D9362B" FontWeight="Bold" />
+                <TextBlock Text="{Binding InputPointCount, StringFormat='{}{0} 个'}"
+                           Foreground="{DynamicResource BrandPrimaryBrush}" FontWeight="Bold" />
                 <TextBlock Text="下发" />
-                <TextBlock Text="{Binding DownloadLatencyText}" Foreground="#D9362B" FontWeight="Bold" />
+                <TextBlock Text="{Binding DownloadLatencyText}"
+                           Foreground="{DynamicResource SuccessBrush}" FontWeight="Bold" />
               </StackPanel>
             </DockPanel>
           </Border>
           <Grid Grid.Row="1" RowDefinitions="38,*">
-            <Grid ColumnDefinitions="1.3*,2.2*,1.1*,0.8*,1*,1.3*" Background="#F7F8FA">
+            <Grid ColumnDefinitions="1.3*,2.2*,1.1*,0.8*,1*,1.3*"
+                  Background="{DynamicResource SurfaceMutedBrush}">
               <TextBlock Text="测点ID" Margin="12,9" />
               <TextBlock Grid.Column="1" Text="名称" Margin="8,9" />
               <TextBlock Grid.Column="2" Text="数据" Margin="8,9" />
@@ -150,14 +187,17 @@
       </Border>
     </Grid>
 
-    <Border Grid.Row="3" BorderBrush="#C5CED8" BorderThickness="1" Margin="10,6,10,8"
-            Background="White">
+    <Border Grid.Row="3" Classes="panel" Margin="10,7,10,10">
       <Grid RowDefinitions="34,*">
-        <Border Background="#F2F5F8" BorderBrush="#C7D0DA" BorderThickness="0,0,0,1" Padding="8,5">
+        <Border Classes="tableHeader" Padding="12,0">
           <DockPanel>
             <TextBlock Text="运行日志" FontWeight="SemiBold" />
-            <Button DockPanel.Dock="Right" Content="通讯参数设置" Click="OpenDetails_OnClick"
-                    Padding="10,3" />
+            <TextBlock DockPanel.Dock="Right" Text="{Binding OperationMessage}"
+                       Foreground="#53687A" VerticalAlignment="Center" Margin="0,0,12,0" />
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" Margin="0,0,12,0">
+              <Button Classes="subtle" Content="清空日志" Command="{Binding ClearLogsCommand}" Padding="10,3" />
+              <Button Content="通讯参数设置" Click="OpenDetails_OnClick" Padding="10,3" />
+            </StackPanel>
           </DockPanel>
         </Border>
         <ListBox Grid.Row="1" ItemsSource="{Binding Logs}" BorderThickness="0">

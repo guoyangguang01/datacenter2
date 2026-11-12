@@ -10,6 +10,13 @@ public sealed partial class ClientDetailsWindow : Window
     public ClientDetailsWindow()
     {
         InitializeComponent();
+        Closed += async (_, _) =>
+        {
+            if (DataContext is ClientViewModel viewModel)
+            {
+                await viewModel.ReloadConfigurationAsync();
+            }
+        };
     }
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
@@ -18,7 +25,10 @@ public sealed partial class ClientDetailsWindow : Window
     {
         if (DataContext is ClientViewModel viewModel)
         {
-            await viewModel.SaveCommand.ExecuteAsync(null);
+            if (!await viewModel.SaveConfigurationAsync())
+            {
+                return;
+            }
         }
         Close();
     }

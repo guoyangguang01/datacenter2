@@ -74,6 +74,56 @@ public sealed class GrpcRegistrationTests
         }
     }
 
+    [Fact]
+    public async Task RemoteAdminCanRenameAndDeleteOfflineClient()
+    {
+        var dataDirectory = Path.Combine(Path.GetTempPath(), "sdncustom-tests", Guid.NewGuid().ToString("N"));
+        var grpcPort = GetFreePort();
+        var httpPort = GetFreePort();
+        WebApplication? app = null;
+        try
+        {
+            app = ServerHost.Build([], settings =>
+            {
+                settings.DataDirectory = dataDirectory;
+                settings.GrpcPort = grpcPort;
+                settings.HttpPort = httpPort;
+                settings.UseTls = false;
+            });
+            await ServerHost.InitializeAsync(app);
+            var admin = app.Services.GetRequiredService<SdnCustom.Server.Admin.IAdminFacade>();
+            await admin.CreateClientAsync("CLIENT-DELETE", "Original name");
+            await app.StartAsync();
+
+            var remote = await SdnCustom.Server.Admin.RemoteAdminFacade.TryCreateAsync(httpPort);
+            Assert.NotNull(remote);
+            await remote.RenameClientAsync("CLIENT-DELETE", "Renamed client");
+            var renamed = Assert.Single((await remote.GetSnapshotAsync()).Clients);
+            Assert.Equal("Renamed client", renamed.ClientName);
+
+            await remote.DeleteClientAsync("CLIENT-DELETE");
+            Assert.Empty((await remote.GetSnapshotAsync()).Clients);
+        }
+        finally
+        {
+            if (app is not null)
+            {
+                await app.StopAsync();
+                await app.DisposeAsync();
+            }
+            if (Directory.Exists(dataDirectory))
+            {
+                try
+                {
+                    Directory.Delete(dataDirectory, true);
+                }
+                catch (IOException)
+                {
+                }
+            }
+        }
+    }
+
     private static AgentMessage Hello(string clientCode)
     {
         var hello = new Hello

@@ -66,6 +66,26 @@ public sealed class RemoteAdminFacade : IAdminFacade
         await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task RenameClientAsync(
+        string clientCode,
+        string clientName,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _httpClient.PutAsJsonAsync(
+            $"api/clients/{Uri.EscapeDataString(clientCode)}",
+            new UpdateClientRequest(clientName),
+            cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task DeleteClientAsync(string clientCode, CancellationToken cancellationToken = default)
+    {
+        using var response = await _httpClient.DeleteAsync(
+            $"api/clients/{Uri.EscapeDataString(clientCode)}",
+            cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task StartClientAsync(string clientCode, CancellationToken cancellationToken = default)
     {
         using var response = await _httpClient.PostAsync(

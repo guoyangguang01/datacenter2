@@ -32,6 +32,8 @@ public interface IAdminFacade
     Task<AdminSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ServerLogEntry>> GetLogsAsync(int count = 500, CancellationToken cancellationToken = default);
     Task CreateClientAsync(string clientCode, string clientName, CancellationToken cancellationToken = default);
+    Task RenameClientAsync(string clientCode, string clientName, CancellationToken cancellationToken = default);
+    Task DeleteClientAsync(string clientCode, CancellationToken cancellationToken = default);
     Task StartClientAsync(string clientCode, CancellationToken cancellationToken = default);
     Task StopClientAsync(string clientCode, CancellationToken cancellationToken = default);
     Task SaveClientPointsAsync(
@@ -114,6 +116,12 @@ public sealed class AdminFacade : IAdminFacade
 
     public Task CreateClientAsync(string clientCode, string clientName, CancellationToken cancellationToken = default) =>
         _control.CreateClientAsync(clientCode, clientName, cancellationToken);
+
+    public Task RenameClientAsync(string clientCode, string clientName, CancellationToken cancellationToken = default) =>
+        _control.RenameClientAsync(clientCode, clientName, cancellationToken);
+
+    public Task DeleteClientAsync(string clientCode, CancellationToken cancellationToken = default) =>
+        _control.DeleteClientAsync(clientCode, cancellationToken);
 
     public Task StartClientAsync(string clientCode, CancellationToken cancellationToken = default) =>
         _control.StartClientAsync(clientCode, cancellationToken);

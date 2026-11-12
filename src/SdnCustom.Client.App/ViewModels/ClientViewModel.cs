@@ -43,6 +43,10 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private string _downloadLatencyText = "--ms";
     [ObservableProperty] private string _operationMessage = string.Empty;
     [ObservableProperty] private string _configPath = string.Empty;
+    [ObservableProperty] private bool _isServerConnected;
+    [ObservableProperty] private bool _isDeviceRunning;
+    [ObservableProperty] private bool _isSupervisorRunning;
+    public bool IsServerDisconnected => !IsServerConnected;
 
     public ObservableCollection<LatestValueRow> LatestValues { get; } = [];
     public ObservableCollection<ClientPointRow> OutputPoints { get; } = [];
@@ -67,6 +71,7 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
             var configuration = await _configStore.LoadAsync();
             ApplyConfiguration(configuration);
             OperationMessage = File.Exists(ConfigPath) ? "配置已加载。" : "尚未保存配置，请完成通讯设置并保存。";
+            RefreshSupervisorState();
         }
         catch (Exception exception)
         {
@@ -75,20 +80,40 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
     }
 
     [RelayCommand]
-    private async Task SaveAsync()
+    private Task SaveAsync() => SaveConfigurationAsync();
+
+    public async Task<bool> SaveConfigurationAsync()
     {
         try
         {
             await _configStore.SaveAsync(BuildConfiguration());
             OperationMessage = $"配置已保存：{ConfigPath}";
+            return true;
         }
         catch (Exception exception)
         {
             OperationMessage = exception.Message;
+            return false;
         }
     }
 
     [RelayCommand]
+    private Task ReloadAsync() => ReloadConfigurationAsync();
+
+    public async Task ReloadConfigurationAsync()
+    {
+        try
+        {
+            ApplyConfiguration(await _configStore.LoadAsync());
+            OperationMessage = "已重新载入最近保存的配置。";
+        }
+        catch (Exception exception)
+        {
+            OperationMessage = $"载入配置失败：{exception.Message}";
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanConnectServer))]
     private async Task ConnectServerAsync()
     {
         try
@@ -98,6 +123,7 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
             ServerConnectionButtonText = "断开";
             StatusText = "正在连接服务端...";
             OperationMessage = "客户端监督器已启动。";
+            RefreshSupervisorState();
         }
         catch (Exception exception)
         {
@@ -106,18 +132,23 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
-    [RelayCommand]
+    private bool CanConnectServer() => !IsSupervisorRunning;
+
+    [RelayCommand(CanExecute = nameof(CanDisconnectServer))]
     private async Task DisconnectServerAsync()
     {
         await _supervisor.StopAsync();
         ServerConnectionButtonText = "连接服务端";
         StatusText = "已断开服务端";
+        RefreshSupervisorState();
     }
+
+    private bool CanDisconnectServer() => IsSupervisorRunning;
 
     [RelayCommand]
     private async Task ToggleServerAsync()
     {
-        if (_supervisor.IsServerConnected)
+        if (_supervisor.IsRunning)
         {
             await DisconnectServerAsync();
         }
@@ -127,7 +158,7 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanStartCommunication))]
     private async Task StartCommunicationAsync()
     {
         try
@@ -138,10 +169,39 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
         {
             OperationMessage = exception.Message;
         }
+        finally
+        {
+            RefreshSupervisorState();
+        }
     }
 
+    [RelayCommand(CanExecute = nameof(CanStopCommunication))]
+    private async Task StopCommunicationAsync()
+    {
+        try
+        {
+            await _supervisor.StopCommunicationAsync();
+            OperationMessage = "设备通讯已停止。";
+        }
+        catch (Exception exception)
+        {
+            OperationMessage = exception.Message;
+        }
+        finally
+        {
+            RefreshSupervisorState();
+        }
+    }
+
+    private bool CanStartCommunication() => IsServerConnected && !IsDeviceRunning;
+    private bool CanStopCommunication() => IsDeviceRunning;
+
     [RelayCommand]
-    private Task StopCommunicationAsync() => _supervisor.StopCommunicationAsync();
+    private void ClearLogs()
+    {
+        Logs.Clear();
+        OperationMessage = "运行日志视图已清空。";
+    }
 
     public async ValueTask DisposeAsync()
     {
@@ -217,6 +277,7 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
         {
             StatusText = runtimeEvent.Message;
             ServerConnectionButtonText = _supervisor.IsServerConnected ? "断开" : "连接服务端";
+            RefreshSupervisorState();
             if (runtimeEvent.LatestValues is null)
             {
                 return;
@@ -242,6 +303,32 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
             DownloadLatencyText = "0ms";
             RebuildPointRows();
         });
+    }
+
+    private void RefreshSupervisorState()
+    {
+        IsServerConnected = _supervisor.IsServerConnected;
+        IsDeviceRunning = _supervisor.IsDeviceRunning;
+        IsSupervisorRunning = _supervisor.IsRunning;
+        ConnectServerCommand.NotifyCanExecuteChanged();
+        DisconnectServerCommand.NotifyCanExecuteChanged();
+        StartCommunicationCommand.NotifyCanExecuteChanged();
+        StopCommunicationCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnIsServerConnectedChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsServerDisconnected));
+        RefreshCommandStates();
+    }
+    partial void OnIsDeviceRunningChanged(bool value) => RefreshCommandStates();
+    partial void OnIsSupervisorRunningChanged(bool value) =>
+        ConnectServerCommand.NotifyCanExecuteChanged();
+
+    private void RefreshCommandStates()
+    {
+        StartCommunicationCommand.NotifyCanExecuteChanged();
+        StopCommunicationCommand.NotifyCanExecuteChanged();
     }
 
     private void OnLogReceived(object? sender, ClientLogEntry entry)

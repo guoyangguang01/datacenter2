@@ -1,0 +1,41 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="SdnCustom.Server.App.Views.HelpWindow"
+        Width="720" Height="620" MinWidth="600" MinHeight="480"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource AppBackgroundBrush}"
+        Title="操作说明">
+  <Grid RowDefinitions="52,*,60">
+    <Border Background="{DynamicResource BrandDarkBrush}">
+      <TextBlock Text="SDNCustom 操作说明" Foreground="White" Classes="h1"
+                 Margin="16,0" VerticalAlignment="Center" />
+    </Border>
+    <ScrollViewer Grid.Row="1" Margin="18,14">
+      <Border Classes="card">
+      <StackPanel Spacing="12">
+        <TextBlock Text="首次配置" Classes="h2" />
+        <TextBlock TextWrapping="Wrap"
+                   Text="1. 在“用户管理”中创建客户端，代码必须与客户端进程填写的一致。&#10;2. 在点表编辑区新增或导入测点，INPUT 测点必须引用 OUTPUT 测点。&#10;3. 保存点表后，在线客户端会自动收到配置。" />
+
+        <TextBlock Text="通讯控制" Classes="h2" />
+        <TextBlock TextWrapping="Wrap"
+                   Text="客户端在线后，可在顶部“启动通讯/停止通讯”控制设备采集。客户端离线时启动按钮不可用；停止命令仍可取消已经保存的期望运行状态。" />
+
+        <TextBlock Text="数据模拟" Classes="h2" />
+        <TextBlock TextWrapping="Wrap"
+                   Text="“数据模拟”只列出 INPUT 测点。填写目标值并设置周期后启动，服务端会按周期向在线客户端发送写入命令；再次点击可停止。" />
+
+        <TextBlock Text="历史数据" Classes="h2" />
+        <TextBlock TextWrapping="Wrap"
+                   Text="选择客户端、测点和时间范围后查询。查询成功后自动绘制图表，也可手动点击“绘制图表”；清除条件会恢复当前实时数据图表。" />
+
+        <TextBlock Text="安全与故障排查" Classes="h2" />
+        <TextBlock TextWrapping="Wrap"
+                   Text="客户端代码是唯一身份依据，请仅在可信内网使用。服务端默认启用 TLS；生产环境应替换开发 InfluxDB Token。连接、写入和路由错误可在“服务端日志”窗口查看。" />
+      </StackPanel>
+      </Border>
+    </ScrollViewer>
+    <Button Grid.Row="2" Classes="primary" Content="关闭" Width="100" HorizontalAlignment="Center"
+            VerticalAlignment="Center" Click="Close_OnClick" />
+  </Grid>
+</Window>

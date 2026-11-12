@@ -1,52 +1,53 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="SdnCustom.Server.App.Views.SystemSettingsWindow"
-        Width="420" Height="520" CanResize="False"
-        Background="#F1F1F1"
+        Width="460" Height="540" CanResize="False"
+        Background="{DynamicResource AppBackgroundBrush}"
         Title="系统设置">
-  <Grid RowDefinitions="42,*">
-    <Border Background="#0B56A4">
-      <TextBlock Text="系统设置" Foreground="White" FontSize="20" FontWeight="Bold" Margin="10,6" />
+  <Grid RowDefinitions="52,*">
+    <Border Background="{DynamicResource BrandDarkBrush}">
+      <TextBlock Text="系统设置" Foreground="White" Classes="h1" Margin="16,0"
+                 VerticalAlignment="Center" />
     </Border>
-    <StackPanel Grid.Row="1" Margin="14">
-      <Border BorderBrush="#BCC6D0" BorderThickness="1" Margin="0,8,0,12" Padding="12">
+    <StackPanel Grid.Row="1" Margin="16">
+      <Border Classes="card" Margin="0,8,0,12">
         <StackPanel Spacing="8">
-          <TextBlock Text="通信服务" FontWeight="SemiBold" />
+          <TextBlock Text="通信服务" Classes="h2" />
           <Grid ColumnDefinitions="90,*,54,95" RowDefinitions="34,34" ColumnSpacing="8">
-            <TextBlock Text="IP" VerticalAlignment="Center" />
+            <TextBlock Text="IP" Classes="muted" VerticalAlignment="Center" />
             <TextBlock Grid.Column="1" Text="0.0.0.0" VerticalAlignment="Center" />
-            <TextBlock Grid.Column="2" Text="端口" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="2" Text="端口" Classes="muted" VerticalAlignment="Center" />
             <TextBlock Grid.Column="3" Text="7443（gRPC）" VerticalAlignment="Center" />
-            <TextBlock Grid.Row="1" Text="管理接口" VerticalAlignment="Center" />
+            <TextBlock Grid.Row="1" Text="管理接口" Classes="muted" VerticalAlignment="Center" />
             <TextBlock Grid.Row="1" Grid.Column="1" Text="127.0.0.1:7444" VerticalAlignment="Center" />
-            <TextBlock Grid.Row="1" Grid.Column="2" Text="TLS" VerticalAlignment="Center" />
-            <TextBlock Grid.Row="1" Grid.Column="3" Text="已启用" VerticalAlignment="Center" />
+            <TextBlock Grid.Row="1" Grid.Column="2" Text="TLS" Classes="muted" VerticalAlignment="Center" />
+            <TextBlock Grid.Row="1" Grid.Column="3" Text="已启用"
+                       Foreground="{DynamicResource SuccessBrush}" VerticalAlignment="Center" />
           </Grid>
         </StackPanel>
       </Border>
-      <Border BorderBrush="#BCC6D0" BorderThickness="1" Margin="0,0,0,12" Padding="12">
+      <Border Classes="card" Margin="0,0,0,12">
         <StackPanel Spacing="8">
-          <TextBlock Text="时序数据库" FontWeight="SemiBold" />
+          <TextBlock Text="时序数据库" Classes="h2" />
           <Grid ColumnDefinitions="90,*" RowDefinitions="34,34" ColumnSpacing="8">
-            <TextBlock Text="类型" VerticalAlignment="Center" />
+            <TextBlock Text="类型" Classes="muted" VerticalAlignment="Center" />
             <TextBlock Grid.Column="1" Text="InfluxDB 2.7" VerticalAlignment="Center" />
-            <TextBlock Grid.Row="1" Text="地址" VerticalAlignment="Center" />
+            <TextBlock Grid.Row="1" Text="地址" Classes="muted" VerticalAlignment="Center" />
             <TextBlock Grid.Row="1" Grid.Column="1" Text="http://127.0.0.1:8086" VerticalAlignment="Center" />
           </Grid>
         </StackPanel>
       </Border>
-      <Border BorderBrush="#BCC6D0" BorderThickness="1" Margin="0,0,0,12" Padding="12">
+      <Border Classes="card" Margin="0,0,0,12">
         <StackPanel Spacing="8">
-          <TextBlock Text="系统管理" FontWeight="SemiBold" />
+          <TextBlock Text="系统管理" Classes="h2" />
           <Grid ColumnDefinitions="90,*" RowSpacing="8">
-            <TextBlock Text="数据目录" VerticalAlignment="Center" />
+            <TextBlock Text="数据目录" Classes="muted" VerticalAlignment="Center" />
             <TextBlock Grid.Column="1" Text="data/sdncustom.db" VerticalAlignment="Center" />
           </Grid>
         </StackPanel>
       </Border>
       <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="18" Margin="0,8">
-        <Button Content="OK" Width="90" Click="Close_OnClick" />
-        <Button Content="Cancel" Width="90" Click="Close_OnClick" />
+        <Button Classes="primary" Content="关闭" Width="100" Click="Close_OnClick" />
       </StackPanel>
     </StackPanel>
   </Grid>

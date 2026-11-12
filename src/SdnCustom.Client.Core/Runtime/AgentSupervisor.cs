@@ -50,6 +50,7 @@ public sealed class AgentSupervisor : IAsyncDisposable
 
     public bool IsServerConnected => _serverConnected;
     public bool IsDeviceRunning => _deviceRunning;
+    public bool IsRunning => _supervisorTask is { IsCompleted: false };
     public IReadOnlyDictionary<string, SharedPointSample> LatestValues => _latestValues;
 
     public async Task StartAsync(CancellationToken cancellationToken = default)

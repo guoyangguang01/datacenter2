@@ -13,24 +13,68 @@ public sealed partial class ClientManagementViewModel : ObservableObject
     private readonly IAdminFacade _admin;
 
     [ObservableProperty] private ClientOption? _selectedClient;
+    [ObservableProperty] private PointFilterOption? _selectedPointFilter;
+    [ObservableProperty] private string _selectedClientName = string.Empty;
     [ObservableProperty] private EditablePointRow? _selectedPoint;
     [ObservableProperty] private string _newClientCode = string.Empty;
     [ObservableProperty] private string _newClientName = string.Empty;
     [ObservableProperty] private string _statusText = string.Empty;
     [ObservableProperty] private bool _canEditPoints = true;
     [ObservableProperty] private bool _isPointsReadOnly;
+    [ObservableProperty] private bool _canManageClient;
 
     public ObservableCollection<ClientOption> Clients { get; } = [];
     public ObservableCollection<EditablePointRow> Points { get; } = [];
+    public ObservableCollection<EditablePointRow> FilteredPoints { get; } = [];
+    public IReadOnlyList<PointFilterOption> PointFilters { get; } =
+    [
+        new("全部", null),
+        new("输出测点", PointDirection.Output),
+        new("输入测点", PointDirection.Input)
+    ];
     public IReadOnlyList<PointDataType> DataTypeOptions { get; } = Enum.GetValues<PointDataType>();
     public IReadOnlyList<PointDirection> DirectionOptions { get; } = Enum.GetValues<PointDirection>();
+    public string ClientCountText => $"{Clients.Count} 个客户端";
+    public bool HasNoClients => Clients.Count == 0;
+    public string SelectedClientStateText
+    {
+        get
+        {
+            if (SelectedClient is null)
+            {
+                return "尚未选择客户端";
+            }
+
+            var connection = SelectedClient.Online ? "在线" : "离线";
+            var running = SelectedClient.DesiredRunning ? "运行中" : "已停止";
+            return $"{connection} · {running} · {Points.Count} 个测点";
+        }
+    }
+    public bool ShowPoints => SelectedClient is not null && FilteredPoints.Count > 0;
+    public bool ShowNoClientState => SelectedClient is null;
+    public bool ShowNoPointsState => SelectedClient is not null && Points.Count == 0;
+    public bool ShowNoFilteredPoints =>
+        SelectedClient is not null && Points.Count > 0 && FilteredPoints.Count == 0;
 
     public ClientManagementViewModel(IAdminFacade admin)
     {
         _admin = admin;
+        SelectedPointFilter = PointFilters[0];
     }
 
-    partial void OnSelectedClientChanged(ClientOption? value) => LoadPoints();
+    partial void OnSelectedClientChanged(ClientOption? value)
+    {
+        SelectedClientName = value?.ClientName ?? string.Empty;
+        CanManageClient = value is not null;
+        LoadPoints();
+        NotifyLayoutState();
+        RenameClientCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnSelectedClientNameChanged(string value) => RenameClientCommand.NotifyCanExecuteChanged();
+    partial void OnNewClientCodeChanged(string value) => CreateClientCommand.NotifyCanExecuteChanged();
+    partial void OnNewClientNameChanged(string value) => CreateClientCommand.NotifyCanExecuteChanged();
+    partial void OnSelectedPointFilterChanged(PointFilterOption? value) => RefreshFilteredPoints();
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
@@ -49,6 +93,14 @@ public sealed partial class ClientManagementViewModel : ObservableObject
         SelectedClient = Clients.FirstOrDefault(client => client.ClientCode == selectedCode)
                          ?? Clients.FirstOrDefault();
         StatusText = $"已加载 {Clients.Count} 个客户端。";
+        NotifyLayoutState();
+    }
+
+    [RelayCommand]
+    private async Task RefreshAsync()
+    {
+        await InitializeAsync();
+        StatusText = $"已刷新，共 {Clients.Count} 个客户端。";
     }
 
     public async Task RefreshRunStateAsync(CancellationToken cancellationToken = default)
@@ -74,6 +126,7 @@ public sealed partial class ClientManagementViewModel : ObservableObject
                 StatusText = $"{SelectedClient.ClientName} 正在运行通讯，点表已锁定。";
             }
         }
+        OnPropertyChanged(nameof(SelectedClientStateText));
     }
 
     [RelayCommand]
@@ -104,7 +157,10 @@ public sealed partial class ClientManagementViewModel : ObservableObject
             Group = "默认"
         };
         Points.Add(row);
-        SelectedPoint = row;
+        SelectedPointFilter = PointFilters.First(filter => filter.Direction == row.Direction);
+        RefreshFilteredPoints();
+        SelectedPoint = FilteredPoints.FirstOrDefault(point => point.PointId == row.PointId);
+        NotifyLayoutState();
     }
 
     [RelayCommand]
@@ -119,7 +175,7 @@ public sealed partial class ClientManagementViewModel : ObservableObject
         if (SelectedPoint is not null)
         {
             Points.Remove(SelectedPoint);
-            SelectedPoint = Points.FirstOrDefault();
+            RefreshFilteredPoints();
         }
     }
 
@@ -152,7 +208,7 @@ public sealed partial class ClientManagementViewModel : ObservableObject
         }
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanCreateClient))]
     private async Task CreateClientAsync()
     {
         try
@@ -168,6 +224,57 @@ public sealed partial class ClientManagementViewModel : ObservableObject
         catch (Exception exception)
         {
             StatusText = $"创建失败：{exception.Message}";
+        }
+    }
+
+    private bool CanCreateClient() =>
+        !string.IsNullOrWhiteSpace(NewClientCode) && !string.IsNullOrWhiteSpace(NewClientName);
+
+    [RelayCommand(CanExecute = nameof(CanRenameClient))]
+    private async Task RenameClientAsync()
+    {
+        if (SelectedClient is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _admin.RenameClientAsync(SelectedClient.ClientCode, SelectedClientName);
+            var code = SelectedClient.ClientCode;
+            await InitializeAsync();
+            SelectedClient = Clients.FirstOrDefault(client => client.ClientCode == code);
+            StatusText = $"已更新客户端 {code} 的名称。";
+        }
+        catch (Exception exception)
+        {
+            StatusText = $"改名失败：{exception.Message}";
+        }
+    }
+
+    private bool CanRenameClient() =>
+        SelectedClient is not null &&
+        !string.IsNullOrWhiteSpace(SelectedClientName) &&
+        !string.Equals(SelectedClientName.Trim(), SelectedClient.ClientName, StringComparison.Ordinal);
+
+    public async Task DeleteSelectedClientAsync()
+    {
+        if (SelectedClient is null)
+        {
+            StatusText = "请先选择客户端系统。";
+            return;
+        }
+
+        var code = SelectedClient.ClientCode;
+        try
+        {
+            await _admin.DeleteClientAsync(code);
+            await InitializeAsync();
+            StatusText = $"已删除客户端 {code}。";
+        }
+        catch (Exception exception)
+        {
+            StatusText = $"删除失败：{exception.Message}";
         }
     }
 
@@ -267,7 +374,7 @@ public sealed partial class ClientManagementViewModel : ObservableObject
         {
             Points.Add(point);
         }
-        SelectedPoint = Points.FirstOrDefault();
+        RefreshFilteredPoints();
         StatusText = $"已导入 {Points.Count} 个测点，点击保存后下发。";
     }
 
@@ -276,8 +383,10 @@ public sealed partial class ClientManagementViewModel : ObservableObject
         Points.Clear();
         if (SelectedClient is null)
         {
+            FilteredPoints.Clear();
             CanEditPoints = false;
             IsPointsReadOnly = true;
+            NotifyLayoutState();
             return;
         }
 
@@ -287,10 +396,45 @@ public sealed partial class ClientManagementViewModel : ObservableObject
         {
             Points.Add(EditablePointRow.From(point));
         }
-        SelectedPoint = Points.FirstOrDefault();
+        RefreshFilteredPoints();
         StatusText = CanEditPoints
             ? $"{SelectedClient.ClientName}：{Points.Count} 个测点。"
             : $"{SelectedClient.ClientName} 正在运行通讯，点表已锁定。";
+        NotifyLayoutState();
+    }
+
+    private void NotifyLayoutState()
+    {
+        OnPropertyChanged(nameof(ClientCountText));
+        OnPropertyChanged(nameof(HasNoClients));
+        OnPropertyChanged(nameof(SelectedClientStateText));
+        OnPropertyChanged(nameof(ShowPoints));
+        OnPropertyChanged(nameof(ShowNoClientState));
+        OnPropertyChanged(nameof(ShowNoPointsState));
+        OnPropertyChanged(nameof(ShowNoFilteredPoints));
+    }
+
+    private void RefreshFilteredPoints()
+    {
+        var selectedPointId = SelectedPoint?.PointId;
+        FilteredPoints.Clear();
+        foreach (var point in Points.Where(point =>
+                     SelectedPointFilter?.Direction is null ||
+                     point.Direction == SelectedPointFilter.Direction))
+        {
+            FilteredPoints.Add(point);
+        }
+
+        foreach (var filter in PointFilters)
+        {
+            filter.Count = filter.Direction is null
+                ? Points.Count
+                : Points.Count(point => point.Direction == filter.Direction);
+        }
+
+        SelectedPoint = FilteredPoints.FirstOrDefault(point => point.PointId == selectedPointId)
+                        ?? FilteredPoints.FirstOrDefault();
+        NotifyLayoutState();
     }
 
     private static string Escape(string value) =>
@@ -333,10 +477,28 @@ public sealed partial class ClientManagementViewModel : ObservableObject
     }
 }
 
+public sealed partial class PointFilterOption : ObservableObject
+{
+    [ObservableProperty] private int _count;
+
+    public PointFilterOption(string label, PointDirection? direction)
+    {
+        Label = label;
+        Direction = direction;
+    }
+
+    public string Label { get; }
+    public PointDirection? Direction { get; }
+    public string Display => Count > 0 ? $"{Label}  {Count}" : Label;
+
+    partial void OnCountChanged(int value) => OnPropertyChanged(nameof(Display));
+}
+
 public sealed partial class ClientOption : ObservableObject
 {
     [ObservableProperty] private bool _online;
     [ObservableProperty] private bool _desiredRunning;
+    [ObservableProperty] private string _clientName;
 
     public ClientOption(
         string clientCode,
@@ -353,7 +515,6 @@ public sealed partial class ClientOption : ObservableObject
     }
 
     public string ClientCode { get; }
-    public string ClientName { get; }
     public IReadOnlyList<PointDefinition> Points { get; }
     public string Display => $"{ClientName}  ({ClientCode})";
 }

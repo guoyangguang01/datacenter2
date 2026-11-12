@@ -101,6 +101,23 @@ public static class ServerHost
             await admin.CreateClientAsync(request.ClientCode, request.ClientName, cancellationToken);
             return Results.Created($"/api/clients/{request.ClientCode}", request);
         });
+        app.MapPut("/api/clients/{clientCode}", async (
+            string clientCode,
+            UpdateClientRequest request,
+            IAdminFacade admin,
+            CancellationToken cancellationToken) =>
+        {
+            await admin.RenameClientAsync(clientCode, request.ClientName, cancellationToken);
+            return Results.NoContent();
+        });
+        app.MapDelete("/api/clients/{clientCode}", async (
+            string clientCode,
+            IAdminFacade admin,
+            CancellationToken cancellationToken) =>
+        {
+            await admin.DeleteClientAsync(clientCode, cancellationToken);
+            return Results.NoContent();
+        });
         app.MapPost("/api/clients/{clientCode}/start", async (
             string clientCode,
             IAdminFacade admin,

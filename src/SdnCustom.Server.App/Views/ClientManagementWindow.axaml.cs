@@ -91,4 +91,21 @@ public sealed partial class ClientManagementWindow : Window
         await using var stream = await files[0].OpenReadAsync();
         await viewModel.ImportCsvAsync(stream);
     }
+
+    private async void DeleteClient_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ClientManagementViewModel viewModel || viewModel.SelectedClient is null)
+        {
+            return;
+        }
+
+        var confirmation = new ConfirmationWindow(
+            $"确定删除客户端“{viewModel.SelectedClient.ClientName} ({viewModel.SelectedClient.ClientCode})”吗？\n" +
+            "该客户端的最新值和点表配置会同时删除，此操作不可撤销。",
+            "删除");
+        if (await confirmation.ShowDialog<bool>(this))
+        {
+            await viewModel.DeleteSelectedClientAsync();
+        }
+    }
 }

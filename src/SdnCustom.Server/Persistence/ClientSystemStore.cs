@@ -36,6 +36,11 @@ public interface IClientSystemStore
         string clientCode,
         string clientName,
         CancellationToken cancellationToken = default);
+    Task<ClientSystemRecord> RenameAsync(
+        string clientCode,
+        string clientName,
+        CancellationToken cancellationToken = default);
+    Task DeleteAsync(string clientCode, CancellationToken cancellationToken = default);
     Task<ClientSystemRecord> RegisterAsync(
         ClientRegistration registration,
         CancellationToken cancellationToken = default);
@@ -104,6 +109,37 @@ public sealed class ClientSystemStore(IDbContextFactory<ServerDbContext> context
         context.ClientSystems.Add(entity);
         await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return Map(entity);
+    }
+
+    public async Task<ClientSystemRecord> RenameAsync(
+        string clientCode,
+        string clientName,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(clientName);
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var entity = await context.ClientSystems
+            .Include(item => item.Points)
+            .SingleOrDefaultAsync(item => item.ClientCode == clientCode, cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new KeyNotFoundException($"客户端未登记：{clientCode}");
+
+        entity.ClientName = clientName.Trim();
+        entity.LastSeen = DateTimeOffset.UtcNow;
+        await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return Map(entity);
+    }
+
+    public async Task DeleteAsync(string clientCode, CancellationToken cancellationToken = default)
+    {
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var entity = await context.ClientSystems
+            .SingleOrDefaultAsync(item => item.ClientCode == clientCode, cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new KeyNotFoundException($"客户端未登记：{clientCode}");
+
+        context.ClientSystems.Remove(entity);
+        await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<ClientSystemRecord> RegisterAsync(
