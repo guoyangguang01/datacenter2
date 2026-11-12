@@ -25,10 +25,25 @@ logs/*
 # Data
 data/
 data.bak-*/
+*.db
+*.db-shm
+*.db-wal
+*.pfx
+*.cer
 
 # Node
 node_modules/
 dist/
+
+# .NET local SDK / build output
+.dotnet/
+.dotnet-home/
+.nuget/
+artifacts/
+.vs/
+TestResults/
+bin/
+obj/
 
 # Environment
 .env

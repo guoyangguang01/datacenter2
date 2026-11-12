@@ -1,47 +1,21 @@
-version: '3.8'
-
 services:
-  redis:
-    image: redis:7-alpine
-    container_name: sdncustom-redis
+  influxdb:
+    image: influxdb:2.7
+    container_name: sdncustom-influxdb
     ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    command: redis-server --appendonly yes
-    restart: unless-stopped
-
-  tdengine:
-    image: tdengine/tdengine:latest
-    container_name: sdncustom-tdengine
-    ports:
-      - "6030:6030"
-      - "6041:6041"
-      - "6043:6043"
-      - "6044:6044"
-      - "6060:6060"
-    volumes:
-      - tdengine_data:/var/lib/taos
-      - tdengine_log:/var/log/taos
+      - "8086:8086"
     environment:
-      - TAOS_FQDN=tdengine
-    restart: unless-stopped
-
-  mosquitto:
-    image: eclipse-mosquitto:2
-    container_name: sdncustom-mosquitto
-    ports:
-      - "1883:1883"      # MQTT
-      - "9001:9001"      # MQTT over WebSocket
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: admin
+      DOCKER_INFLUXDB_INIT_PASSWORD: sdncustom-admin
+      DOCKER_INFLUXDB_INIT_ORG: sdncustom
+      DOCKER_INFLUXDB_INIT_BUCKET: sdncustom
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: sdncustom-dev-token
     volumes:
-      - mosquitto_data:/mosquitto/data
-      - mosquitto_log:/mosquitto/log
-      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - influxdb_data:/var/lib/influxdb2
+      - influxdb_config:/etc/influxdb2
     restart: unless-stopped
 
 volumes:
-  redis_data:
-  tdengine_data:
-  tdengine_log:
-  mosquitto_data:
-  mosquitto_log:
+  influxdb_data:
+  influxdb_config:

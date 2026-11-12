@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SdnCustom.Contracts\SdnCustom.Contracts.csproj" />
+    <ProjectReference Include="..\SdnCustom.Protocols\SdnCustom.Protocols.csproj" />
+    <ProjectReference Include="..\SdnCustom.Shared\SdnCustom.Shared.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Grpc.Net.Client" />
+  </ItemGroup>
+</Project>

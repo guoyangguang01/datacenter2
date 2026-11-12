@@ -1,0 +1,173 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:SdnCustom.Client.App.ViewModels"
+        x:Class="SdnCustom.Client.App.Views.MainWindow"
+        x:DataType="vm:ClientViewModel"
+        Width="1320" Height="780" MinWidth="1000" MinHeight="650"
+        Background="#F1F1F1"
+        Title="数据用户 - 单连接客户端 - 实时通讯">
+  <Grid RowDefinitions="48,165,*,190">
+    <Border Background="#0B56A4">
+      <TextBlock Text="{Binding ClientName, StringFormat='数据用户 - {0} - 实时通讯'}"
+                 Foreground="White" FontSize="18" FontWeight="SemiBold" Margin="16,10" />
+    </Border>
+
+    <Grid Grid.Row="1" Margin="10,6,10,8">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="*" />
+      </Grid.ColumnDefinitions>
+
+      <Grid ColumnDefinitions="70,120,38,90,90" RowDefinitions="28,34,34" Margin="0,0,15,0">
+        <TextBlock Grid.ColumnSpan="5" Text="数据中心设置" FontSize="16" FontWeight="SemiBold" />
+        <Border Grid.ColumnSpan="5" Grid.Row="0" VerticalAlignment="Bottom"
+                BorderBrush="#BFC8D1" BorderThickness="0,0,0,1" Margin="110,0,0,4" />
+        <TextBlock Grid.Row="1" Text="IP:" VerticalAlignment="Center" />
+        <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ServerHost}" />
+        <TextBlock Grid.Row="1" Grid.Column="2" Text="端口:" VerticalAlignment="Center" />
+        <TextBox Grid.Row="1" Grid.Column="3" Text="{Binding ServerPort}" />
+        <Button Grid.Row="1" Grid.Column="4" Grid.RowSpan="2"
+                Content="{Binding ServerConnectionButtonText}" Command="{Binding ToggleServerCommand}"
+                Background="#F8F9FA" BorderBrush="#C4CDD6" FontSize="16" />
+        <TextBlock Grid.Row="2" Text="TLS:" VerticalAlignment="Center" />
+        <CheckBox Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Content="安全连接"
+                  IsChecked="{Binding UseTls}" />
+      </Grid>
+
+      <Grid Grid.Column="1" ColumnDefinitions="105,*" RowDefinitions="28,34,34" Margin="15,0">
+        <TextBlock Grid.ColumnSpan="2" Text="数据用户设置" FontSize="16" FontWeight="SemiBold" />
+        <Border Grid.ColumnSpan="2" Grid.Row="0" VerticalAlignment="Bottom"
+                BorderBrush="#BFC8D1" BorderThickness="0,0,0,1" Margin="110,0,0,4" />
+        <TextBlock Grid.Row="1" Text="数据用户选择:" VerticalAlignment="Center" />
+        <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ClientName}" />
+        <TextBlock Grid.Row="2" Text="通讯协议选择:" VerticalAlignment="Center" />
+        <Grid Grid.Row="2" Grid.Column="1" ColumnDefinitions="*,110" ColumnSpacing="8">
+          <ComboBox ItemsSource="{Binding ProtocolOptions}" SelectedItem="{Binding Protocol}" />
+          <Button Grid.Column="1" Content="登录" Command="{Binding ConnectServerCommand}"
+                  Background="#FAFAFA" BorderBrush="#C4CDD6" />
+        </Grid>
+      </Grid>
+
+      <Grid Grid.Column="2" ColumnDefinitions="62,110,38,95,110,105" RowDefinitions="28,34,34" Margin="15,0,0,0">
+        <TextBlock Grid.ColumnSpan="6" Text="实时通讯设置" FontSize="16" FontWeight="SemiBold" />
+        <Border Grid.ColumnSpan="6" Grid.Row="0" VerticalAlignment="Bottom"
+                BorderBrush="#BFC8D1" BorderThickness="0,0,0,1" Margin="105,0,0,4" />
+        <TextBlock Grid.Row="1" Text="设备 IP:" VerticalAlignment="Center" />
+        <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding DeviceHost}" />
+        <TextBlock Grid.Row="1" Grid.Column="2" Text="端口:" VerticalAlignment="Center" />
+        <TextBox Grid.Row="1" Grid.Column="3" Text="{Binding DevicePort}" />
+        <Button Grid.Row="1" Grid.Column="4" Content="详细设置" Click="OpenDetails_OnClick"
+                Background="#FAFAFA" BorderBrush="#C4CDD6" />
+        <Button Grid.Row="1" Grid.Column="5" Content="启动通讯" Command="{Binding StartCommunicationCommand}"
+                Background="#FAFAFA" BorderBrush="#C4CDD6" />
+        <TextBlock Grid.Row="2" Text="客户端代码:" VerticalAlignment="Center" />
+        <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding ClientCode}" />
+        <Button Grid.Row="2" Grid.Column="4" Content="停止通讯" Command="{Binding StopCommunicationCommand}"
+                Background="#FAFAFA" BorderBrush="#C4CDD6" />
+      </Grid>
+    </Grid>
+
+    <Grid Grid.Row="2" ColumnDefinitions="*,*" Margin="10,0">
+      <Border BorderBrush="#B7C1CB" BorderThickness="1" Margin="0,0,4,0" Background="White">
+        <Grid RowDefinitions="48,*">
+          <Border Background="#FAFAFA" BorderBrush="#C7D0DA" BorderThickness="0,0,0,1" Padding="8,5">
+            <DockPanel>
+              <TextBlock Text="用户实时数据" FontSize="17" FontWeight="Bold" />
+              <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="接收" />
+                <TextBlock Text="{Binding OutputPointCount, StringFormat='{}{0} 个'}" Foreground="#D9362B" FontWeight="Bold" />
+                <TextBlock Text="上传" />
+                <TextBlock Text="{Binding UploadLatencyText}" Foreground="#D9362B" FontWeight="Bold" />
+              </StackPanel>
+            </DockPanel>
+          </Border>
+          <Grid Grid.Row="1" RowDefinitions="38,*">
+            <Grid ColumnDefinitions="1.3*,2.2*,1.1*,0.8*,1*,1.3*" Background="#F7F8FA" Margin="0">
+              <TextBlock Text="测点ID" Margin="12,9" />
+              <TextBlock Grid.Column="1" Text="名称" Margin="8,9" />
+              <TextBlock Grid.Column="2" Text="数据" Margin="8,9" />
+              <TextBlock Grid.Column="3" Text="单位" Margin="8,9" />
+              <TextBlock Grid.Column="4" Text="质量" Margin="8,9" />
+              <TextBlock Grid.Column="5" Text="更新时间" Margin="8,9" />
+            </Grid>
+            <ListBox Grid.Row="1" ItemsSource="{Binding OutputPoints}" BorderThickness="0">
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:ClientPointRow">
+                  <Grid ColumnDefinitions="1.3*,2.2*,1.1*,0.8*,1*,1.3*" Margin="0,7">
+                    <TextBlock Text="{Binding PointId}" Margin="12,0" />
+                    <TextBlock Grid.Column="1" Text="{Binding PointName}" Margin="8,0" />
+                    <TextBlock Grid.Column="2" Text="{Binding Data}" Margin="8,0" />
+                    <TextBlock Grid.Column="3" Text="{Binding Unit}" Margin="8,0" />
+                    <TextBlock Grid.Column="4" Text="{Binding Quality}" Margin="8,0" />
+                    <TextBlock Grid.Column="5" Text="{Binding Timestamp}" Margin="8,0" />
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </Grid>
+        </Grid>
+      </Border>
+
+      <Border Grid.Column="1" BorderBrush="#B7C1CB" BorderThickness="1" Margin="4,0,0,0" Background="White">
+        <Grid RowDefinitions="48,*">
+          <Border Background="#FAFAFA" BorderBrush="#C7D0DA" BorderThickness="0,0,0,1" Padding="8,5">
+            <DockPanel>
+              <TextBlock Text="中心源实时数据" FontSize="17" FontWeight="Bold" />
+              <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="接收" />
+                <TextBlock Text="{Binding InputPointCount, StringFormat='{}{0} 个'}" Foreground="#D9362B" FontWeight="Bold" />
+                <TextBlock Text="下发" />
+                <TextBlock Text="{Binding DownloadLatencyText}" Foreground="#D9362B" FontWeight="Bold" />
+              </StackPanel>
+            </DockPanel>
+          </Border>
+          <Grid Grid.Row="1" RowDefinitions="38,*">
+            <Grid ColumnDefinitions="1.3*,2.2*,1.1*,0.8*,1*,1.3*" Background="#F7F8FA">
+              <TextBlock Text="测点ID" Margin="12,9" />
+              <TextBlock Grid.Column="1" Text="名称" Margin="8,9" />
+              <TextBlock Grid.Column="2" Text="数据" Margin="8,9" />
+              <TextBlock Grid.Column="3" Text="单位" Margin="8,9" />
+              <TextBlock Grid.Column="4" Text="质量" Margin="8,9" />
+              <TextBlock Grid.Column="5" Text="更新时间" Margin="8,9" />
+            </Grid>
+            <ListBox Grid.Row="1" ItemsSource="{Binding InputPoints}" BorderThickness="0">
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:ClientPointRow">
+                  <Grid ColumnDefinitions="1.3*,2.2*,1.1*,0.8*,1*,1.3*" Margin="0,7">
+                    <TextBlock Text="{Binding PointId}" Margin="12,0" />
+                    <TextBlock Grid.Column="1" Text="{Binding PointName}" Margin="8,0" />
+                    <TextBlock Grid.Column="2" Text="{Binding Data}" Margin="8,0" />
+                    <TextBlock Grid.Column="3" Text="{Binding Unit}" Margin="8,0" />
+                    <TextBlock Grid.Column="4" Text="{Binding Quality}" Margin="8,0" />
+                    <TextBlock Grid.Column="5" Text="{Binding Timestamp}" Margin="8,0" />
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </Grid>
+        </Grid>
+      </Border>
+    </Grid>
+
+    <Border Grid.Row="3" BorderBrush="#C5CED8" BorderThickness="1" Margin="10,6,10,8"
+            Background="White">
+      <Grid RowDefinitions="34,*">
+        <Border Background="#F2F5F8" BorderBrush="#C7D0DA" BorderThickness="0,0,0,1" Padding="8,5">
+          <DockPanel>
+            <TextBlock Text="运行日志" FontWeight="SemiBold" />
+            <Button DockPanel.Dock="Right" Content="通讯参数设置" Click="OpenDetails_OnClick"
+                    Padding="10,3" />
+          </DockPanel>
+        </Border>
+        <ListBox Grid.Row="1" ItemsSource="{Binding Logs}" BorderThickness="0">
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <TextBlock FontFamily="Consolas" FontSize="12" Text="{Binding}" />
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Grid>
+    </Border>
+  </Grid>
+</Window>

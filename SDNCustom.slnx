@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SdnCustom.Client.App/SdnCustom.Client.App.csproj" />
+    <Project Path="src/SdnCustom.Client.Core/SdnCustom.Client.Core.csproj" />
+    <Project Path="src/SdnCustom.Contracts/SdnCustom.Contracts.csproj" />
+    <Project Path="src/SdnCustom.Protocols/SdnCustom.Protocols.csproj" />
+    <Project Path="src/SdnCustom.Server.App/SdnCustom.Server.App.csproj" />
+    <Project Path="src/SdnCustom.Server/SdnCustom.Server.csproj" />
+    <Project Path="src/SdnCustom.Shared/SdnCustom.Shared.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SdnCustom.Tests/SdnCustom.Tests.csproj" />
+  </Folder>
+</Solution>

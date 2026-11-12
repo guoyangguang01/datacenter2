@@ -1,0 +1,19 @@
+[Unit]
+Description=SDNCustom IoT data hub
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+User=sdncustom
+Group=sdncustom
+WorkingDirectory=/opt/sdncustom
+ExecStart=/opt/sdncustom/SdnCustom.Server.App --headless
+Environment=AVALONIA_TELEMETRY_OPTOUT=1
+Environment=SdnCustom__DataDirectory=/var/lib/sdncustom
+Restart=always
+RestartSec=3
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target
