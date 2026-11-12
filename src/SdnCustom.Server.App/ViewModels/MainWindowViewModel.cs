@@ -17,6 +17,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private DateTimeOffset? _logViewClearedAt;
     private string? _lastSelectedClientCode;
     private string? _lastSelectedPointId;
+    private int _historyQueryGeneration;
 
     [ObservableProperty] private ClientRowViewModel? _selectedClient;
     [ObservableProperty] private PointRowViewModel? _selectedPoint;
@@ -42,9 +43,11 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public ObservableCollection<ServerLogEntry> Logs { get; } = [];
     public ObservableCollection<HistoryPoint> History { get; } = [];
     public string SimulationButtonText => IsSimulationRunning ? "停止模拟" : "开始模拟";
+    public bool IsSimulationConfigurationEnabled => !IsSimulationRunning;
     public bool HasOnlineClients => OnlineClients > 0;
     public bool HasNoOnlineClients => !HasOnlineClients;
     public event EventHandler? HistoryQueryCompleted;
+    public event EventHandler? HistoryChartResetRequested;
 
     public MainWindowViewModel(IAdminFacade admin)
     {
@@ -60,8 +63,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
         _lastSelectedClientCode = value?.ClientCode;
         if (clientChanged)
         {
+            Interlocked.Increment(ref _historyQueryGeneration);
             StopSimulation();
             IsHistoryChartActive = false;
+            HistoryChartResetRequested?.Invoke(this, EventArgs.Empty);
         }
         RefreshPoints();
         NotifyCommandStates();
@@ -76,7 +81,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
         _lastSelectedPointId = value?.PointId;
         if (pointChanged)
         {
+            Interlocked.Increment(ref _historyQueryGeneration);
+            StopSimulation();
             IsHistoryChartActive = false;
+            HistoryChartResetRequested?.Invoke(this, EventArgs.Empty);
         }
         NotifyCommandStates();
     }
@@ -88,6 +96,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     partial void OnIsSimulationRunningChanged(bool value)
     {
         OnPropertyChanged(nameof(SimulationButtonText));
+        OnPropertyChanged(nameof(IsSimulationConfigurationEnabled));
         ToggleSimulationCommand.NotifyCanExecuteChanged();
         WritePointCommand.NotifyCanExecuteChanged();
     }
@@ -122,6 +131,16 @@ public sealed partial class MainWindowViewModel : ObservableObject
             SelectedClient = Clients.FirstOrDefault(client => client.ClientCode == selectedCode) ?? Clients.FirstOrDefault();
             RefreshPoints();
             SelectedPoint = Points.FirstOrDefault(point => point.PointId == selectedPointId) ?? Points.FirstOrDefault();
+            if (IsSimulationRunning &&
+                SelectedClient is not
+                {
+                    Online: true,
+                    DesiredRunning: true,
+                    CommunicationState: ClientConnectionState.Connected
+                })
+            {
+                StopSimulation();
+            }
 
             Logs.Clear();
             foreach (var entry in (await _admin.GetLogsAsync(300, cancellationToken))
@@ -194,6 +213,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private async Task StopClientAsync()
     {
         if (SelectedClient is null) return;
+        StopSimulation();
         try
         {
             await _admin.StopClientAsync(SelectedClient.ClientCode);
@@ -215,7 +235,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         try
         {
             await WriteSelectedPointOnceAsync(SelectedClient.ClientCode, SelectedPoint, WriteValue);
-            OperationMessage = $"已发送写命令：{SelectedPoint.PointId} = {WriteValue}";
+            OperationMessage = $"写入成功：{SelectedPoint.PointId} = {WriteValue}";
         }
         catch (Exception exception)
         {
@@ -225,7 +245,12 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     private bool CanWritePoint() =>
         !IsSimulationRunning &&
-        SelectedClient is { Online: true } &&
+        SelectedClient is
+        {
+            Online: true,
+            DesiredRunning: true,
+            CommunicationState: ClientConnectionState.Connected
+        } &&
         SelectedPoint is { Direction: PointDirection.Input } &&
         !string.IsNullOrWhiteSpace(WriteValue);
 
@@ -255,7 +280,12 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     private bool CanToggleSimulation() =>
         IsSimulationRunning ||
-        (SelectedClient is { Online: true } &&
+        (SelectedClient is
+         {
+             Online: true,
+             DesiredRunning: true,
+             CommunicationState: ClientConnectionState.Connected
+         } &&
          SelectedPoint is { Direction: PointDirection.Input } &&
          !string.IsNullOrWhiteSpace(WriteValue));
 
@@ -263,6 +293,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private async Task QueryHistoryAsync()
     {
         if (SelectedClient is null || SelectedPoint is null) return;
+        var queryGeneration = Interlocked.Increment(ref _historyQueryGeneration);
+        var selectedClientCode = SelectedClient.ClientCode;
+        var selectedPointId = SelectedPoint.PointId;
         IsHistoryQuerying = true;
         OperationMessage = "正在查询历史数据...";
         try
@@ -271,12 +304,20 @@ public sealed partial class MainWindowViewModel : ObservableObject
             var to = DateTimeOffset.Parse(HistoryTo);
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             var records = await _admin.QueryHistoryAsync(
-                SelectedClient.ClientCode,
-                SelectedPoint.PointId,
+                selectedClientCode,
+                selectedPointId,
                 from,
                 to,
                 Math.Clamp(HistoryLimit, 1, 10000),
                 timeout.Token);
+            if (queryGeneration != Volatile.Read(ref _historyQueryGeneration) ||
+                SelectedClient?.ClientCode != selectedClientCode ||
+                SelectedPoint?.PointId != selectedPointId)
+            {
+                OperationMessage = "查询完成，但当前选择已变化，旧结果已丢弃。";
+                return;
+            }
+
             History.Clear();
             foreach (var record in records)
             {
@@ -312,11 +353,13 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void ResetHistoryFilter()
     {
+        Interlocked.Increment(ref _historyQueryGeneration);
         HistoryFrom = DateTime.Now.AddHours(-1).ToString("yyyy-MM-dd HH:mm:ss");
         HistoryTo = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
         HistoryLimit = 1000;
         History.Clear();
         IsHistoryChartActive = false;
+        HistoryChartResetRequested?.Invoke(this, EventArgs.Empty);
         OperationMessage = "历史查询条件已清除。";
     }
 
@@ -340,7 +383,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
             {
                 await WriteSelectedPointOnceAsync(clientCode, point, rawValue, cancellationToken);
                 var timestamp = DateTime.Now.ToString("HH:mm:ss");
-                OperationMessage = $"{timestamp} 已模拟写入 {point.PointId} = {rawValue}";
+                OperationMessage = $"{timestamp} 写入成功：{point.PointId} = {rawValue}";
                 await Task.Delay(
                     Math.Clamp(SimulationIntervalMilliseconds, 50, 60000),
                     cancellationToken);
@@ -482,8 +525,18 @@ public sealed class ClientRowViewModel(AdminClientView client)
     public string ClientName => client.ClientName;
     public bool Online => client.Online;
     public bool DesiredRunning => client.DesiredRunning;
+    public ClientConnectionState CommunicationState => client.CommunicationState;
     public string OnlineText => client.Online ? "在线" : "离线";
     public string RunningText => client.DesiredRunning ? "期望运行" : "已停止";
+    public string CommunicationText => client.Online
+        ? client.CommunicationState switch
+        {
+            ClientConnectionState.Connected => "通讯正常",
+            ClientConnectionState.Connecting => "正在连接设备",
+            ClientConnectionState.Error => "通讯故障",
+            _ => "通讯未启动"
+        }
+        : "客户端离线";
     public string Protocol => client.Protocol.ToString();
     public string Endpoint => client.Endpoint;
     public string DisplayName => $"{client.ClientName}  ({client.ClientCode})";

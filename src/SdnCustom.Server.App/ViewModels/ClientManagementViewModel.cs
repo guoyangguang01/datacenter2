@@ -11,6 +11,7 @@ namespace SdnCustom.Server.App.ViewModels;
 public sealed partial class ClientManagementViewModel : ObservableObject
 {
     private readonly IAdminFacade _admin;
+    private readonly SemaphoreSlim _runStateRefreshGate = new(1, 1);
 
     [ObservableProperty] private ClientOption? _selectedClient;
     [ObservableProperty] private PointFilterOption? _selectedPointFilter;
@@ -46,8 +47,7 @@ public sealed partial class ClientManagementViewModel : ObservableObject
             }
 
             var connection = SelectedClient.Online ? "在线" : "离线";
-            var running = SelectedClient.DesiredRunning ? "运行中" : "已停止";
-            return $"{connection} · {running} · {Points.Count} 个测点";
+            return $"{connection} · {SelectedClient.CommunicationText} · {Points.Count} 个测点";
         }
     }
     public bool ShowPoints => SelectedClient is not null && FilteredPoints.Count > 0;
@@ -88,6 +88,7 @@ public sealed partial class ClientManagementViewModel : ObservableObject
                 client.ClientName,
                 client.Online,
                 client.DesiredRunning,
+                client.CommunicationState,
                 client.Points));
         }
         SelectedClient = Clients.FirstOrDefault(client => client.ClientCode == selectedCode)
@@ -105,28 +106,37 @@ public sealed partial class ClientManagementViewModel : ObservableObject
 
     public async Task RefreshRunStateAsync(CancellationToken cancellationToken = default)
     {
-        var snapshot = await _admin.GetSnapshotAsync(cancellationToken);
-        foreach (var client in Clients)
+        if (!await _runStateRefreshGate.WaitAsync(0, cancellationToken))
         {
-            var current = snapshot.Clients.FirstOrDefault(item => item.ClientCode == client.ClientCode);
-            if (current is null)
-            {
-                continue;
-            }
-            client.Online = current.Online;
-            client.DesiredRunning = current.DesiredRunning;
+            return;
         }
 
-        if (SelectedClient is not null)
+        try
         {
-            CanEditPoints = !(SelectedClient.Online && SelectedClient.DesiredRunning);
-            IsPointsReadOnly = !CanEditPoints;
-            if (!CanEditPoints)
+            var snapshot = await _admin.GetSnapshotAsync(cancellationToken);
+            foreach (var client in Clients)
             {
-                StatusText = $"{SelectedClient.ClientName} 正在运行通讯，点表已锁定。";
+                var current = snapshot.Clients.FirstOrDefault(item => item.ClientCode == client.ClientCode);
+                if (current is null)
+                {
+                    continue;
+                }
+                client.Online = current.Online;
+                client.DesiredRunning = current.DesiredRunning;
+                client.CommunicationState = current.CommunicationState;
             }
+
+            if (SelectedClient is not null)
+            {
+                CanEditPoints = CanEditSelectedClientPoints();
+                IsPointsReadOnly = !CanEditPoints;
+            }
+            OnPropertyChanged(nameof(SelectedClientStateText));
         }
-        OnPropertyChanged(nameof(SelectedClientStateText));
+        finally
+        {
+            _runStateRefreshGate.Release();
+        }
     }
 
     [RelayCommand]
@@ -319,54 +329,137 @@ public sealed partial class ClientManagementViewModel : ObservableObject
         }
 
         using var reader = new StreamReader(stream, Encoding.UTF8, true, leaveOpen: true);
-        var header = await reader.ReadLineAsync(cancellationToken);
-        if (header is null)
+        var records = SplitCsvRecords(await reader.ReadToEndAsync(cancellationToken));
+        if (records.Count == 0)
         {
+            StatusText = "导入失败：CSV 文件为空。";
             return;
         }
 
-        var columns = header.Split(',')
+        var columns = records[0]
             .Select(column => column.Trim().TrimStart('\uFEFF'))
             .ToArray();
-        var imported = new List<EditablePointRow>();
-        while (await reader.ReadLineAsync(cancellationToken) is { } line)
+        var requiredColumns = new[]
         {
-            if (string.IsNullOrWhiteSpace(line))
+            "pointId",
+            "pointName",
+            "dataType",
+            "direction",
+            "address"
+        };
+        var missingColumns = requiredColumns
+            .Where(required => !columns.Contains(required, StringComparer.OrdinalIgnoreCase))
+            .ToArray();
+        if (missingColumns.Length > 0)
+        {
+            StatusText = $"导入失败：CSV 缺少必需列 {string.Join("、", missingColumns)}。";
+            return;
+        }
+
+        var imported = new List<EditablePointRow>();
+        var errors = new List<string>();
+        for (var recordIndex = 1; recordIndex < records.Count; recordIndex++)
+        {
+            var values = records[recordIndex];
+            if (values.All(string.IsNullOrWhiteSpace))
             {
                 continue;
             }
 
-            var values = SplitCsv(line);
+            var lineNumber = recordIndex + 1;
             string Value(string name)
             {
                 var index = Array.FindIndex(
                     columns,
                     column => column.Equals(name, StringComparison.OrdinalIgnoreCase));
-                return index >= 0 && index < values.Count ? values[index] : string.Empty;
+                return index >= 0 && index < values.Length ? values[index] : string.Empty;
+            }
+
+            var dataTypeText = Value("dataType");
+            var parsedDataTypeValue = PointDataType.Float64;
+            if (!string.IsNullOrWhiteSpace(dataTypeText) &&
+                !Enum.TryParse(dataTypeText, true, out parsedDataTypeValue))
+            {
+                errors.Add($"第 {lineNumber} 行数据类型无效：{dataTypeText}");
+                continue;
+            }
+
+            var directionText = Value("direction");
+            var parsedDirectionValue = PointDirection.Output;
+            if (!string.IsNullOrWhiteSpace(directionText) &&
+                !Enum.TryParse(directionText, true, out parsedDirectionValue))
+            {
+                errors.Add($"第 {lineNumber} 行方向无效：{directionText}");
+                continue;
+            }
+
+            var deadbandText = Value("deadband");
+            if (!string.IsNullOrWhiteSpace(deadbandText) &&
+                !double.TryParse(
+                    deadbandText,
+                    NumberStyles.Float,
+                    CultureInfo.InvariantCulture,
+                    out _))
+            {
+                errors.Add($"第 {lineNumber} 行死区无效：{deadbandText}");
+                continue;
+            }
+
+            var pointId = Value("pointId").Trim();
+            var pointName = Value("pointName").Trim();
+            var address = Value("address").Trim();
+            if (string.IsNullOrWhiteSpace(pointId) ||
+                string.IsNullOrWhiteSpace(pointName) ||
+                string.IsNullOrWhiteSpace(address))
+            {
+                errors.Add($"第 {lineNumber} 行测点 ID、名称和地址不能为空。");
+                continue;
+            }
+
+            var sourceOutputPointId = Value("referencePointId").Trim();
+            if (parsedDirectionValue == PointDirection.Input &&
+                string.IsNullOrWhiteSpace(sourceOutputPointId))
+            {
+                errors.Add($"第 {lineNumber} 行 INPUT 测点必须填写 referencePointId。");
+                continue;
             }
 
             imported.Add(new EditablePointRow
             {
-                PointId = Value("pointId"),
-                PointName = Value("pointName"),
-                DataType = Enum.TryParse<PointDataType>(Value("dataType"), true, out var dataType)
-                    ? dataType
-                    : PointDataType.Float64,
+                PointId = pointId,
+                PointName = pointName,
+                DataType = parsedDataTypeValue,
                 Unit = Value("unit"),
-                Direction = Enum.TryParse<PointDirection>(Value("direction"), true, out var direction)
-                    ? direction
-                    : PointDirection.Output,
-                Address = Value("address"),
-                SourceOutputPointId = Value("referencePointId"),
-                Deadband = double.TryParse(
-                    Value("deadband"),
-                    NumberStyles.Float,
-                    CultureInfo.InvariantCulture,
-                    out var deadband)
-                    ? deadband
-                    : 0,
+                Direction = parsedDirectionValue,
+                Address = address,
+                SourceOutputPointId = sourceOutputPointId,
+                Deadband = string.IsNullOrWhiteSpace(deadbandText)
+                    ? 0
+                    : double.Parse(deadbandText, NumberStyles.Float, CultureInfo.InvariantCulture),
                 Group = string.IsNullOrWhiteSpace(Value("group")) ? "默认" : Value("group")
             });
+        }
+
+        var duplicateIds = imported
+            .GroupBy(point => point.PointId, StringComparer.Ordinal)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .ToArray();
+        if (duplicateIds.Length > 0)
+        {
+            errors.Add($"测点 ID 重复：{string.Join("、", duplicateIds)}");
+        }
+
+        if (errors.Count > 0)
+        {
+            StatusText = $"导入失败：{string.Join("；", errors.Take(5))}";
+            return;
+        }
+
+        if (imported.Count == 0)
+        {
+            StatusText = "导入失败：CSV 中没有可用测点。";
+            return;
         }
 
         Points.Clear();
@@ -390,7 +483,7 @@ public sealed partial class ClientManagementViewModel : ObservableObject
             return;
         }
 
-        CanEditPoints = !(SelectedClient.Online && SelectedClient.DesiredRunning);
+        CanEditPoints = CanEditSelectedClientPoints();
         IsPointsReadOnly = !CanEditPoints;
         foreach (var point in SelectedClient.Points)
         {
@@ -413,6 +506,15 @@ public sealed partial class ClientManagementViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowNoPointsState));
         OnPropertyChanged(nameof(ShowNoFilteredPoints));
     }
+
+    private bool CanEditSelectedClientPoints() =>
+        SelectedClient is not
+        {
+            Online: true
+        } ||
+        (!SelectedClient.DesiredRunning &&
+         SelectedClient.CommunicationState is not
+             (ClientConnectionState.Connected or ClientConnectionState.Connecting));
 
     private void RefreshFilteredPoints()
     {
@@ -438,23 +540,27 @@ public sealed partial class ClientManagementViewModel : ObservableObject
     }
 
     private static string Escape(string value) =>
-        value.Contains(',') || value.Contains('"')
+        value.Contains(',') ||
+        value.Contains('"') ||
+        value.Contains('\r') ||
+        value.Contains('\n')
             ? '"' + value.Replace("\"", "\"\"") + '"'
             : value;
 
-    private static IReadOnlyList<string> SplitCsv(string line)
+    private static IReadOnlyList<string[]> SplitCsvRecords(string csv)
     {
+        var records = new List<string[]>();
         var values = new List<string>();
-        var builder = new StringBuilder();
+        var field = new StringBuilder();
         var quoted = false;
-        for (var index = 0; index < line.Length; index++)
+        for (var index = 0; index < csv.Length; index++)
         {
-            var character = line[index];
+            var character = csv[index];
             if (character == '"')
             {
-                if (quoted && index + 1 < line.Length && line[index + 1] == '"')
+                if (quoted && index + 1 < csv.Length && csv[index + 1] == '"')
                 {
-                    builder.Append('"');
+                    field.Append('"');
                     index++;
                 }
                 else
@@ -464,16 +570,40 @@ public sealed partial class ClientManagementViewModel : ObservableObject
             }
             else if (character == ',' && !quoted)
             {
-                values.Add(builder.ToString());
-                builder.Clear();
+                values.Add(field.ToString());
+                field.Clear();
+            }
+            else if (character is '\r' or '\n' && !quoted)
+            {
+                if (character == '\r' && index + 1 < csv.Length && csv[index + 1] == '\n')
+                {
+                    index++;
+                }
+
+                values.Add(field.ToString());
+                field.Clear();
+                if (values.Any(value => value.Length > 0))
+                {
+                    records.Add(values.ToArray());
+                }
+                values.Clear();
             }
             else
             {
-                builder.Append(character);
+                field.Append(character);
             }
         }
-        values.Add(builder.ToString().TrimEnd('\r'));
-        return values;
+
+        if (field.Length > 0 || values.Count > 0)
+        {
+            values.Add(field.ToString());
+            if (values.Any(value => value.Length > 0))
+            {
+                records.Add(values.ToArray());
+            }
+        }
+
+        return records;
     }
 }
 
@@ -498,6 +628,7 @@ public sealed partial class ClientOption : ObservableObject
 {
     [ObservableProperty] private bool _online;
     [ObservableProperty] private bool _desiredRunning;
+    [ObservableProperty] private ClientConnectionState _communicationState;
     [ObservableProperty] private string _clientName;
 
     public ClientOption(
@@ -505,18 +636,32 @@ public sealed partial class ClientOption : ObservableObject
         string clientName,
         bool online,
         bool desiredRunning,
+        ClientConnectionState communicationState,
         IReadOnlyList<PointDefinition> points)
     {
         ClientCode = clientCode;
         ClientName = clientName;
         Online = online;
         DesiredRunning = desiredRunning;
+        CommunicationState = communicationState;
         Points = points;
     }
 
     public string ClientCode { get; }
     public IReadOnlyList<PointDefinition> Points { get; }
     public string Display => $"{ClientName}  ({ClientCode})";
+    public string CommunicationText => CommunicationState switch
+    {
+        ClientConnectionState.Connected => "通讯正常",
+        ClientConnectionState.Connecting => "正在连接设备",
+        ClientConnectionState.Error => "通讯故障",
+        _ => Online ? "通讯未启动" : "客户端离线"
+    };
+
+    partial void OnCommunicationStateChanged(ClientConnectionState value) =>
+        OnPropertyChanged(nameof(CommunicationText));
+    partial void OnOnlineChanged(bool value) =>
+        OnPropertyChanged(nameof(CommunicationText));
 }
 
 public sealed partial class EditablePointRow : ObservableObject

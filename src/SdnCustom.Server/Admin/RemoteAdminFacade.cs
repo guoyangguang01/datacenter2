@@ -20,7 +20,7 @@ public sealed class RemoteAdminFacade : IAdminFacade
 
     public RemoteAdminFacade(Uri baseAddress)
     {
-        _httpClient = new HttpClient { BaseAddress = baseAddress, Timeout = TimeSpan.FromSeconds(10) };
+        _httpClient = new HttpClient { BaseAddress = baseAddress, Timeout = TimeSpan.FromSeconds(45) };
     }
 
     public static async Task<RemoteAdminFacade?> TryCreateAsync(
@@ -30,8 +30,23 @@ public sealed class RemoteAdminFacade : IAdminFacade
         var facade = new RemoteAdminFacade(new Uri($"http://127.0.0.1:{localHttpPort}/"));
         try
         {
-            using var response = await facade._httpClient.GetAsync("health", cancellationToken).ConfigureAwait(false);
-            return response.IsSuccessStatusCode ? facade : null;
+            var health = await facade._httpClient
+                .GetFromJsonAsync<HealthProbe>("health", JsonOptions, cancellationToken)
+                .ConfigureAwait(false);
+            if (!string.Equals(health?.Status, "ok", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            if (string.Equals(health?.Service, "sdncustom", StringComparison.OrdinalIgnoreCase))
+            {
+                return facade;
+            }
+
+            var legacySnapshot = await facade._httpClient
+                .GetFromJsonAsync<AdminSnapshot>("api/status", JsonOptions, cancellationToken)
+                .ConfigureAwait(false);
+            return legacySnapshot?.Clients is not null ? facade : null;
         }
         catch (HttpRequestException)
         {
@@ -41,10 +56,22 @@ public sealed class RemoteAdminFacade : IAdminFacade
         {
             return null;
         }
+        catch (JsonException)
+        {
+            return null;
+        }
+        catch (NotSupportedException)
+        {
+            return null;
+        }
     }
 
     public Task<AdminSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default) =>
         GetAsync<AdminSnapshot>("api/status", cancellationToken);
+
+    public Task<AdminSystemSettingsView> GetSystemSettingsAsync(
+        CancellationToken cancellationToken = default) =>
+        GetAsync<AdminSystemSettingsView>("api/system/settings", cancellationToken);
 
     public async Task<IReadOnlyList<ServerLogEntry>> GetLogsAsync(
         int count = 500,
@@ -167,4 +194,6 @@ public sealed class RemoteAdminFacade : IAdminFacade
         throw new HttpRequestException(
             $"服务端管理接口失败：{(int)response.StatusCode} {response.ReasonPhrase} {body}");
     }
+
+    private sealed record HealthProbe(string? Status, string? Service);
 }

@@ -46,14 +46,9 @@ public static class ClientConfigurationValidator
             errors.Add("OPC UA Endpoint 不是有效 URI。");
         }
 
-        if (configuration.CenterToUserFrequencyMilliseconds is < 20 or > 60000)
-        {
-            errors.Add("中心发往用户频率必须在 20-60000ms 之间。");
-        }
-
         if (configuration.UserToCenterFrequencyMilliseconds is < 20 or > 60000)
         {
-            errors.Add("用户发往中心频率必须在 20-60000ms 之间。");
+            errors.Add("采集发送周期必须在 20-60000ms 之间。");
         }
 
         var duplicates = configuration.Points
@@ -65,16 +60,58 @@ public static class ClientConfigurationValidator
             errors.Add($"测点 ID 重复：{duplicate}");
         }
 
+        var pointsById = configuration.Points
+            .GroupBy(point => point.PointId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
         foreach (var point in configuration.Points)
         {
-            if (string.IsNullOrWhiteSpace(point.PointId) || string.IsNullOrWhiteSpace(point.Address))
+            if (string.IsNullOrWhiteSpace(point.PointId) ||
+                string.IsNullOrWhiteSpace(point.PointName) ||
+                string.IsNullOrWhiteSpace(point.Address))
             {
-                errors.Add("测点 ID 和地址不能为空。");
+                errors.Add("测点 ID、名称和地址不能为空。");
             }
 
             if (point.Direction == PointDirection.Input && string.IsNullOrWhiteSpace(point.SourceOutputPointId))
             {
                 errors.Add($"输入测点 {point.PointId} 必须引用 OUTPUT 测点。");
+                continue;
+            }
+
+            if (point.Direction != PointDirection.Input ||
+                string.IsNullOrWhiteSpace(point.SourceOutputPointId))
+            {
+                continue;
+            }
+
+            var source = point.SourceOutputPointId.Trim();
+            var separator = source.IndexOf(':');
+            var sourceClient = separator > 0 ? source[..separator] : configuration.ClientCode;
+            if (separator > 0)
+            {
+                source = source[(separator + 1)..];
+            }
+
+            if (!string.Equals(sourceClient, configuration.ClientCode, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (!pointsById.TryGetValue(source, out var sourcePoint))
+            {
+                errors.Add($"输入测点 {point.PointId} 引用的 OUTPUT 测点不存在：{source}");
+                continue;
+            }
+
+            if (sourcePoint.Direction != PointDirection.Output)
+            {
+                errors.Add($"输入测点 {point.PointId} 必须引用 OUTPUT 测点，不能引用 {sourcePoint.Direction}。");
+            }
+
+            if (sourcePoint.DataType != point.DataType)
+            {
+                errors.Add(
+                    $"输入测点 {point.PointId} 与源 OUTPUT 测点 {source} 的数据类型必须一致。");
             }
         }
 

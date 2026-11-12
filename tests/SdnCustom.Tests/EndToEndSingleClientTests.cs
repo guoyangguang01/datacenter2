@@ -13,6 +13,87 @@ namespace SdnCustom.Tests;
 public sealed class EndToEndSingleClientTests
 {
     [Fact]
+    public async Task DeviceStartFailureKeepsServerSessionAndReportsCommunicationError()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var dataDirectory = Path.Combine(Path.GetTempPath(), "sdncustom-tests", Guid.NewGuid().ToString("N"));
+        var configPath = Path.Combine(Path.GetTempPath(), "sdncustom-tests", Guid.NewGuid().ToString("N"), "client.json");
+        var grpcPort = GetFreePort();
+        var httpPort = GetFreePort();
+        var unavailableDevicePort = GetFreePort();
+        var app = ServerHost.Build([], settings =>
+        {
+            settings.DataDirectory = dataDirectory;
+            settings.GrpcPort = grpcPort;
+            settings.HttpPort = httpPort;
+            settings.UseTls = false;
+        });
+        AgentSupervisor? supervisor = null;
+
+        try
+        {
+            await ServerHost.InitializeAsync(app, timeout.Token);
+            var admin = app.Services.GetRequiredService<IAdminFacade>();
+            await admin.CreateClientAsync("FAILED-DEVICE", "Failed device", timeout.Token);
+            await app.StartAsync(timeout.Token);
+
+            var store = new ClientConfigStore(configPath);
+            await store.SaveAsync(new ClientConfiguration
+            {
+                ClientCode = "FAILED-DEVICE",
+                ClientName = "Failed device",
+                Server = new ServerConnectionOptions
+                {
+                    Host = "127.0.0.1",
+                    Port = grpcPort,
+                    UseTls = false
+                },
+                Device = new DeviceOptions
+                {
+                    Protocol = ClientProtocol.CustomTcp,
+                    Host = "127.0.0.1",
+                    Port = unavailableDevicePort,
+                    TimeoutMilliseconds = 500
+                }
+            }, timeout.Token);
+
+            supervisor = new AgentSupervisor(store);
+            await supervisor.StartAsync(timeout.Token);
+            await WaitUntilAsync(
+                async () => (await admin.GetSnapshotAsync(timeout.Token)).OnlineClients == 1,
+                timeout.Token);
+
+            await admin.StartClientAsync("FAILED-DEVICE", timeout.Token);
+            await WaitUntilAsync(
+                async () => (await admin.GetSnapshotAsync(timeout.Token))
+                    .Clients.Single().CommunicationState == ClientConnectionState.Error,
+                timeout.Token);
+
+            var failed = (await admin.GetSnapshotAsync(timeout.Token)).Clients.Single();
+            Assert.True(failed.Online);
+            Assert.True(failed.DesiredRunning);
+            Assert.Equal(ClientConnectionState.Error, failed.CommunicationState);
+
+            await admin.StopClientAsync("FAILED-DEVICE", timeout.Token);
+            await WaitUntilAsync(
+                async () => (await admin.GetSnapshotAsync(timeout.Token))
+                    .Clients.Single().CommunicationState == ClientConnectionState.Disconnected,
+                timeout.Token);
+        }
+        finally
+        {
+            if (supervisor is not null)
+            {
+                await supervisor.DisposeAsync();
+            }
+            await app.StopAsync(CancellationToken.None);
+            await app.DisposeAsync();
+            TryDeleteDirectory(dataDirectory);
+            TryDeleteDirectory(Path.GetDirectoryName(configPath));
+        }
+    }
+
+    [Fact]
     public async Task ClientConnectsStartsTcpAcquisitionAndPublishesValues()
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
@@ -95,6 +176,73 @@ public sealed class EndToEndSingleClientTests
                            updated.Points[0].PointName == "Temperature from server";
                 },
                 timeout.Token);
+            var invalidReference = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                admin.SaveClientPointsAsync(
+                    "E2E-CLIENT",
+                    [
+                        new PointDefinition
+                        {
+                            PointId = "TEMP",
+                            PointName = "Output",
+                            Address = "40001",
+                            DataType = PointDataType.Float64,
+                            Direction = PointDirection.Output
+                        },
+                        new PointDefinition
+                        {
+                            PointId = "IN-1",
+                            PointName = "First input",
+                            Address = "40002",
+                            DataType = PointDataType.Float64,
+                            Direction = PointDirection.Input,
+                            SourceOutputPointId = "IN-2"
+                        },
+                        new PointDefinition
+                        {
+                            PointId = "IN-2",
+                            PointName = "Second input",
+                            Address = "40003",
+                            DataType = PointDataType.Float64,
+                            Direction = PointDirection.Input,
+                            SourceOutputPointId = "TEMP"
+                        }
+                    ],
+                    timeout.Token));
+            Assert.Contains("必须引用 OUTPUT", invalidReference.Message);
+            await admin.SaveClientPointsAsync(
+                "E2E-CLIENT",
+                [
+                    new PointDefinition
+                    {
+                        PointId = " TEMP ",
+                        PointName = " Temperature ",
+                        Address = " 40001 ",
+                        DataType = PointDataType.Float64,
+                        Direction = PointDirection.Output
+                    },
+                    new PointDefinition
+                    {
+                        PointId = " IN ",
+                        PointName = " Input ",
+                        Address = " 40002 ",
+                        DataType = PointDataType.Float64,
+                        Direction = PointDirection.Input,
+                        SourceOutputPointId = " E2E-CLIENT: TEMP "
+                    }
+                ],
+                timeout.Token);
+            ClientConfiguration? normalized = null;
+            await WaitUntilAsync(
+                async () =>
+                {
+                    normalized = await store.LoadAsync(timeout.Token);
+                    return normalized.Points.Any(point => point.Direction == PointDirection.Input);
+                },
+                timeout.Token);
+            var normalizedInput = normalized!.Points.Single(point => point.Direction == PointDirection.Input);
+            Assert.Equal("IN", normalizedInput.PointId);
+            Assert.Equal("E2E-CLIENT:TEMP", normalizedInput.SourceOutputPointId);
+
             await admin.StartClientAsync("E2E-CLIENT", timeout.Token);
             await WaitUntilAsync(
                 async () =>
@@ -103,6 +251,10 @@ public sealed class EndToEndSingleClientTests
                     return snapshot.Clients.Single().LatestValues
                         .Any(value => value.PointId == "TEMP" && Equals(value.Value, 21.5));
                 },
+                timeout.Token);
+            await WaitUntilAsync(
+                async () => (await admin.GetSnapshotAsync(timeout.Token))
+                    .Clients.Single().CommunicationState == ClientConnectionState.Connected,
                 timeout.Token);
 
             var blocked = await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -121,6 +273,10 @@ public sealed class EndToEndSingleClientTests
             Assert.Contains("先停止通讯", blocked.Message);
 
             await admin.StopClientAsync("E2E-CLIENT", timeout.Token);
+            await WaitUntilAsync(
+                async () => (await admin.GetSnapshotAsync(timeout.Token))
+                    .Clients.Single().CommunicationState == ClientConnectionState.Disconnected,
+                timeout.Token);
             await admin.SaveClientPointsAsync(
                 "E2E-CLIENT",
                 [
@@ -134,7 +290,8 @@ public sealed class EndToEndSingleClientTests
                 ],
                 timeout.Token);
             await WaitUntilAsync(
-                async () => (await store.LoadAsync(timeout.Token)).Points.SingleOrDefault()?.PointName == "Updated after stop",
+                async () => (await store.LoadAsync(timeout.Token)).Points
+                    .FirstOrDefault(point => point.PointId == "TEMP")?.PointName == "Updated after stop",
                 timeout.Token);
         }
         finally

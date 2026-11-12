@@ -143,8 +143,10 @@
         <Border Grid.Row="2" Classes="toolbar" Margin="0,0,0,6">
           <Grid ColumnDefinitions="*,Auto">
             <StackPanel Orientation="Horizontal" Spacing="7">
-              <Button Classes="primary" Content="⇩ 导出输出测点" Click="ExportOutputs_OnClick" />
-              <Button Content="导出数据源总表" Click="ExportAll_OnClick" />
+              <Button Classes="primary" Content="⇩ 导出输出测点" Click="ExportOutputs_OnClick"
+                      IsEnabled="{Binding CanManageClient}" />
+              <Button Content="导出数据源总表" Click="ExportAll_OnClick"
+                      IsEnabled="{Binding CanManageClient}" />
               <Button Content="导入数据源总表" Click="Import_OnClick"
                       IsEnabled="{Binding CanEditPoints}" />
             </StackPanel>
@@ -152,7 +154,7 @@
               <Button Classes="primary" Content="保存点表" Command="{Binding SavePointsCommand}"
                       IsEnabled="{Binding CanEditPoints}" Width="98" />
               <Button Classes="subtle" Content="取消修改" Command="{Binding CancelChangesCommand}"
-                      Width="98" />
+                      IsEnabled="{Binding CanManageClient}" Width="98" />
             </StackPanel>
           </Grid>
         </Border>

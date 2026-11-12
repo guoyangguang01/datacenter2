@@ -129,7 +129,7 @@
                       <TextBlock Text="{Binding ClientCode}" FontSize="11" Foreground="#526171" />
                       <StackPanel Orientation="Horizontal" Spacing="6">
                         <TextBlock Text="{Binding OnlineText}" FontSize="11" Foreground="#2E7D55" />
-                        <TextBlock Text="{Binding RunningText}" FontSize="11" Foreground="#526171" />
+                        <TextBlock Text="{Binding CommunicationText}" FontSize="11" Foreground="#526171" />
                       </StackPanel>
                     </StackPanel>
                   </DataTemplate>
@@ -226,20 +226,24 @@
               </StackPanel>
               <StackPanel>
                 <TextBlock Text="数据用户" FontSize="12" />
-                <ComboBox ItemsSource="{Binding Clients}" SelectedItem="{Binding SelectedClient}" Width="150" />
+                <ComboBox ItemsSource="{Binding Clients}" SelectedItem="{Binding SelectedClient}" Width="150"
+                          IsEnabled="{Binding IsSimulationConfigurationEnabled}" />
               </StackPanel>
               <StackPanel>
                 <TextBlock Text="模拟频率(ms)" FontSize="12" />
                 <NumericUpDown Value="{Binding SimulationIntervalMilliseconds}"
-                               Minimum="50" Maximum="60000" Increment="50" Width="110" />
+                               Minimum="50" Maximum="60000" Increment="50" Width="110"
+                               IsEnabled="{Binding IsSimulationConfigurationEnabled}" />
               </StackPanel>
               <StackPanel>
                 <TextBlock Text="当前测点" FontSize="12" />
-                <ComboBox ItemsSource="{Binding InputPoints}" SelectedItem="{Binding SelectedPoint}" Width="170" />
+                <ComboBox ItemsSource="{Binding InputPoints}" SelectedItem="{Binding SelectedPoint}" Width="170"
+                          IsEnabled="{Binding IsSimulationConfigurationEnabled}" />
               </StackPanel>
               <StackPanel>
                 <TextBlock Text="模拟值" FontSize="12" />
-                <TextBox Text="{Binding WriteValue}" Width="130" />
+                <TextBox Text="{Binding WriteValue}" Width="130"
+                         IsEnabled="{Binding IsSimulationConfigurationEnabled}" />
               </StackPanel>
               <Button Content="写入一次" Command="{Binding WritePointCommand}" VerticalAlignment="Bottom"
                       Padding="16,7" />
@@ -352,7 +356,7 @@
                   <TextBlock Grid.Column="2" Text="{Binding Protocol}" Margin="8,3" />
                   <TextBlock Grid.Column="3" Text="{Binding Endpoint}" Margin="8,3" />
                   <TextBlock Grid.Column="4" Text="{Binding OnlineText}" Margin="8,3" />
-                  <TextBlock Grid.Column="5" Text="{Binding RunningText}" Margin="8,3" />
+                  <TextBlock Grid.Column="5" Text="{Binding CommunicationText}" Margin="8,3" />
                 </Grid>
               </DataTemplate>
             </ListBox.ItemTemplate>

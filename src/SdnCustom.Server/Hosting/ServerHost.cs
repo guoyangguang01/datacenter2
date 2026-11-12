@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -64,7 +65,11 @@ public static class ServerHost
         });
 
         builder.Services.AddDbContextFactory<ServerDbContext>(options =>
-            options.UseSqlite($"Data Source={databasePath}"));
+            options.UseSqlite(new SqliteConnectionStringBuilder
+            {
+                DataSource = databasePath,
+                DefaultTimeout = 30
+            }.ToString()));
         builder.Services.AddGrpc(options =>
         {
             options.MaxReceiveMessageSize = 16 * 1024 * 1024;
@@ -74,6 +79,7 @@ public static class ServerHost
         builder.Services.AddSingleton<IClientSystemStore, ClientSystemStore>();
         builder.Services.AddSingleton<ILatestValueStore, LatestValueStore>();
         builder.Services.AddSingleton<IAgentRegistry, AgentRegistry>();
+        builder.Services.AddSingleton<IClientCommunicationStateStore, ClientCommunicationStateStore>();
         builder.Services.AddSingleton<IPointRouter, PointRouter>();
         builder.Services.AddSingleton<IServerLogStore, ServerLogStore>();
         builder.Services.AddSingleton<InfluxHistoryStore>();
@@ -85,9 +91,18 @@ public static class ServerHost
 
         var app = builder.Build();
         app.MapGrpcService<AgentGatewayService>();
-        app.MapGet("/health", () => Results.Ok(new { status = "ok", time = DateTimeOffset.UtcNow }));
+        app.MapGet("/health", () => Results.Ok(new
+        {
+            status = "ok",
+            service = "sdncustom",
+            time = DateTimeOffset.UtcNow
+        }));
         app.MapGet("/api/status", async (IAdminFacade admin, CancellationToken cancellationToken) =>
             Results.Ok(await admin.GetSnapshotAsync(cancellationToken)));
+        app.MapGet("/api/system/settings", async (
+            IAdminFacade admin,
+            CancellationToken cancellationToken) =>
+            Results.Ok(await admin.GetSystemSettingsAsync(cancellationToken)));
         app.MapGet("/api/logs", async (
             int? count,
             IAdminFacade admin,

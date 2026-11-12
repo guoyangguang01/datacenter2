@@ -29,24 +29,18 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private string _opcUaEndpoint = "opc.tcp://127.0.0.1:4840";
     [ObservableProperty] private int _timeoutMilliseconds = 5000;
     [ObservableProperty] private bool _autoStart;
-    [ObservableProperty] private int _centerToUserFrequencyMilliseconds = 200;
     [ObservableProperty] private int _userToCenterFrequencyMilliseconds = 200;
-    [ObservableProperty] private bool _allowCenterToUserMissingItems = true;
-    [ObservableProperty] private bool _allowUserToCenterMissingItems = true;
-    [ObservableProperty] private bool _sendCenterToUserOnChange;
-    [ObservableProperty] private bool _sendUserToCenterOnChange;
     [ObservableProperty] private string _statusText = "未连接服务端";
     [ObservableProperty] private string _serverConnectionButtonText = "连接服务端";
     [ObservableProperty] private int _outputPointCount;
     [ObservableProperty] private int _inputPointCount;
-    [ObservableProperty] private string _uploadLatencyText = "--ms";
-    [ObservableProperty] private string _downloadLatencyText = "--ms";
     [ObservableProperty] private string _operationMessage = string.Empty;
     [ObservableProperty] private string _configPath = string.Empty;
     [ObservableProperty] private bool _isServerConnected;
     [ObservableProperty] private bool _isDeviceRunning;
     [ObservableProperty] private bool _isSupervisorRunning;
     public bool IsServerDisconnected => !IsServerConnected;
+    public bool IsConnectionConfigurationEnabled => !IsSupervisorRunning;
 
     public ObservableCollection<LatestValueRow> LatestValues { get; } = [];
     public ObservableCollection<ClientPointRow> OutputPoints { get; } = [];
@@ -79,11 +73,19 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanSaveConfiguration))]
     private Task SaveAsync() => SaveConfigurationAsync();
+
+    private bool CanSaveConfiguration() => !IsSupervisorRunning;
 
     public async Task<bool> SaveConfigurationAsync()
     {
+        if (_supervisor.IsRunning)
+        {
+            OperationMessage = "配置正在使用中。请先断开服务端，再保存配置。";
+            return false;
+        }
+
         try
         {
             await _configStore.SaveAsync(BuildConfiguration());
@@ -120,7 +122,6 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
         {
             await _configStore.SaveAsync(BuildConfiguration());
             await _supervisor.StartAsync();
-            ServerConnectionButtonText = "断开";
             StatusText = "正在连接服务端...";
             OperationMessage = "客户端监督器已启动。";
             RefreshSupervisorState();
@@ -138,7 +139,6 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
     private async Task DisconnectServerAsync()
     {
         await _supervisor.StopAsync();
-        ServerConnectionButtonText = "连接服务端";
         StatusText = "已断开服务端";
         RefreshSupervisorState();
     }
@@ -216,12 +216,7 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
         ClientCode = ClientCode.Trim(),
         ClientName = ClientName.Trim(),
         AutoStart = AutoStart,
-        CenterToUserFrequencyMilliseconds = CenterToUserFrequencyMilliseconds,
         UserToCenterFrequencyMilliseconds = UserToCenterFrequencyMilliseconds,
-        AllowCenterToUserMissingItems = AllowCenterToUserMissingItems,
-        AllowUserToCenterMissingItems = AllowUserToCenterMissingItems,
-        SendCenterToUserOnChange = SendCenterToUserOnChange,
-        SendUserToCenterOnChange = SendUserToCenterOnChange,
         Server = new ServerConnectionOptions
         {
             Host = ServerHost.Trim(),
@@ -256,12 +251,7 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
         OpcUaEndpoint = configuration.Device.OpcUaEndpoint;
         TimeoutMilliseconds = configuration.Device.TimeoutMilliseconds;
         AutoStart = configuration.AutoStart;
-        CenterToUserFrequencyMilliseconds = configuration.CenterToUserFrequencyMilliseconds;
         UserToCenterFrequencyMilliseconds = configuration.UserToCenterFrequencyMilliseconds;
-        AllowCenterToUserMissingItems = configuration.AllowCenterToUserMissingItems;
-        AllowUserToCenterMissingItems = configuration.AllowUserToCenterMissingItems;
-        SendCenterToUserOnChange = configuration.SendCenterToUserOnChange;
-        SendUserToCenterOnChange = configuration.SendUserToCenterOnChange;
         _configuredPoints = configuration.Points.ToList();
         _pointLookup.Clear();
         foreach (var point in _configuredPoints)
@@ -276,10 +266,14 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
         Dispatcher.UIThread.Post(() =>
         {
             StatusText = runtimeEvent.Message;
-            ServerConnectionButtonText = _supervisor.IsServerConnected ? "断开" : "连接服务端";
             RefreshSupervisorState();
             if (runtimeEvent.LatestValues is null)
             {
+                if (runtimeEvent.State != ClientConnectionState.Connected)
+                {
+                    _latestByPointId.Clear();
+                    RebuildPointRows();
+                }
                 return;
             }
 
@@ -299,8 +293,6 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
                     UnixTime.FromNanoseconds(sample.Value.TimestampUnixNanoseconds).ToLocalTime()));
             }
 
-            UploadLatencyText = "0ms";
-            DownloadLatencyText = "0ms";
             RebuildPointRows();
         });
     }
@@ -310,8 +302,14 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
         IsServerConnected = _supervisor.IsServerConnected;
         IsDeviceRunning = _supervisor.IsDeviceRunning;
         IsSupervisorRunning = _supervisor.IsRunning;
+        ServerConnectionButtonText = IsServerConnected
+            ? "断开"
+            : IsSupervisorRunning
+                ? "取消连接"
+                : "连接服务端";
         ConnectServerCommand.NotifyCanExecuteChanged();
         DisconnectServerCommand.NotifyCanExecuteChanged();
+        SaveCommand.NotifyCanExecuteChanged();
         StartCommunicationCommand.NotifyCanExecuteChanged();
         StopCommunicationCommand.NotifyCanExecuteChanged();
     }
@@ -323,7 +321,13 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
     }
     partial void OnIsDeviceRunningChanged(bool value) => RefreshCommandStates();
     partial void OnIsSupervisorRunningChanged(bool value) =>
-        ConnectServerCommand.NotifyCanExecuteChanged();
+        RefreshSupervisorConfigurationState();
+
+    private void RefreshSupervisorConfigurationState()
+    {
+        OnPropertyChanged(nameof(IsConnectionConfigurationEnabled));
+        SaveCommand.NotifyCanExecuteChanged();
+    }
 
     private void RefreshCommandStates()
     {

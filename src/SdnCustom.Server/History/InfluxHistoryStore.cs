@@ -16,16 +16,29 @@ public sealed class InfluxHistoryStore : BackgroundService, IHistoryStore
     private readonly InfluxSettings _settings;
     private readonly IServerLogStore _logs;
     private readonly Channel<IReadOnlyList<PointSample>> _queue;
+    private int _missingTokenReported;
+    private int _droppedBatches;
 
     public InfluxHistoryStore(IOptions<ServerSettings> settings, IServerLogStore logs)
     {
         _settings = settings.Value.Influx;
         _logs = logs;
-        _queue = Channel.CreateBounded<IReadOnlyList<PointSample>>(new BoundedChannelOptions(_settings.QueueCapacity)
+        _queue = Channel.CreateBounded<IReadOnlyList<PointSample>>(new BoundedChannelOptions(
+            Math.Max(1, _settings.QueueCapacity))
         {
             FullMode = BoundedChannelFullMode.DropOldest,
             SingleReader = true,
             SingleWriter = false
+        }, _ =>
+        {
+            var dropped = Interlocked.Increment(ref _droppedBatches);
+            if (dropped == 1 || dropped % 100 == 0)
+            {
+                _logs.Add(
+                    "WARN",
+                    "InfluxDB",
+                    $"历史写入队列已满，累计丢弃 {dropped} 个批次。");
+            }
         });
         _httpClient.BaseAddress = new Uri(_settings.Url.TrimEnd('/') + "/");
         if (!string.IsNullOrWhiteSpace(_settings.Token))
@@ -80,10 +93,21 @@ public sealed class InfluxHistoryStore : BackgroundService, IHistoryStore
             {
                 if (string.IsNullOrWhiteSpace(_settings.Token))
                 {
+                    if (Interlocked.Exchange(ref _missingTokenReported, 1) == 0)
+                    {
+                        _logs.Add("WARN", "InfluxDB", "未配置 InfluxDB Token，历史数据将被丢弃。");
+                    }
                     continue;
                 }
 
-                var lineProtocol = string.Join('\n', batch.Select(InfluxLineProtocol.From));
+                var samples = batch.ToList();
+                var batchSize = Math.Max(1, _settings.BatchSize);
+                while (samples.Count < batchSize && _queue.Reader.TryRead(out var next))
+                {
+                    samples.AddRange(next);
+                }
+
+                var lineProtocol = string.Join('\n', samples.Select(InfluxLineProtocol.From));
                 var uri = $"api/v2/write?org={Uri.EscapeDataString(_settings.Org)}&bucket={Uri.EscapeDataString(_settings.Bucket)}&precision=ns";
                 using var content = new StringContent(lineProtocol, Encoding.UTF8, "text/plain");
                 using var response = await _httpClient.PostAsync(uri, content, stoppingToken).ConfigureAwait(false);
@@ -117,17 +141,23 @@ public sealed class InfluxHistoryStore : BackgroundService, IHistoryStore
     {
         var result = new List<HistoryPoint>();
         string[]? headers = null;
-        foreach (var line in csv.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        foreach (var columns in ParseCsvRecords(csv))
         {
-            if (line.StartsWith('#') || string.IsNullOrWhiteSpace(line))
+            if (columns.Length == 0 ||
+                columns.All(string.IsNullOrWhiteSpace) ||
+                columns[0].StartsWith('#'))
             {
                 continue;
             }
 
-            var columns = SplitCsv(line);
-            if (headers is null)
+            if (columns.Contains("_time", StringComparer.Ordinal))
             {
                 headers = columns;
+                continue;
+            }
+
+            if (headers is null)
+            {
                 continue;
             }
 
@@ -151,13 +181,75 @@ public sealed class InfluxHistoryStore : BackgroundService, IHistoryStore
 
     private static object? ParseValue(string? text)
     {
-        if (string.IsNullOrEmpty(text)) return null;
+        if (text is null) return null;
+        if (text.Length == 0) return string.Empty;
         if (bool.TryParse(text, out var boolean)) return boolean;
         if (long.TryParse(text, CultureInfo.InvariantCulture, out var integer)) return integer;
         if (double.TryParse(text, CultureInfo.InvariantCulture, out var number)) return number;
         return text;
     }
 
-    private static string[] SplitCsv(string line) => line.TrimEnd('\r').Split(',');
+    private static IReadOnlyList<string[]> ParseCsvRecords(string csv)
+    {
+        var records = new List<string[]>();
+        var fields = new List<string>();
+        var field = new StringBuilder();
+        var quoted = false;
+        for (var index = 0; index < csv.Length; index++)
+        {
+            var character = csv[index];
+            if (character == '"')
+            {
+                if (quoted && index + 1 < csv.Length && csv[index + 1] == '"')
+                {
+                    field.Append('"');
+                    index++;
+                }
+                else
+                {
+                    quoted = !quoted;
+                }
+                continue;
+            }
+
+            if (!quoted && character == ',')
+            {
+                fields.Add(field.ToString());
+                field.Clear();
+                continue;
+            }
+
+            if (!quoted && character is '\r' or '\n')
+            {
+                if (character == '\r' && index + 1 < csv.Length && csv[index + 1] == '\n')
+                {
+                    index++;
+                }
+
+                fields.Add(field.ToString());
+                field.Clear();
+                if (fields.Any(value => value.Length > 0))
+                {
+                    records.Add(fields.ToArray());
+                }
+                fields.Clear();
+                continue;
+            }
+
+            field.Append(character);
+        }
+
+        if (field.Length > 0 || fields.Count > 0)
+        {
+            fields.Add(field.ToString());
+            if (fields.Any(value => value.Length > 0))
+            {
+                records.Add(fields.ToArray());
+            }
+        }
+
+        return records;
+    }
+
     private static string EscapeFlux(string value) => value.Replace("\\", "\\\\").Replace("\"", "\\\"");
 }

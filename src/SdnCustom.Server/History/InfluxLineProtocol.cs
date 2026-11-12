@@ -25,8 +25,16 @@ public static class InfluxLineProtocol
     }
 
     private static string EscapeTag(string value) =>
-        value.Replace(" ", "\\ ").Replace(",", "\\,").Replace("=", "\\=");
+        value.Replace("\\", "\\\\")
+            .Replace(" ", "\\ ")
+            .Replace(",", "\\,")
+            .Replace("=", "\\=")
+            .Replace("\r", "\\r")
+            .Replace("\n", "\\n");
 
     private static string EscapeField(string value) =>
-        value.Replace("\\", "\\\\").Replace("\"", "\\\"");
+        value.Replace("\\", "\\\\")
+            .Replace("\"", "\\\"")
+            .Replace("\r", "\\r")
+            .Replace("\n", "\\n");
 }

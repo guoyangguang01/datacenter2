@@ -4,6 +4,7 @@ using SdnCustom.Server.History;
 using SdnCustom.Server.Persistence;
 using SdnCustom.Shared;
 using SdnCustom.Shared.Model;
+using SharedClientConnectionState = SdnCustom.Shared.Model.ClientConnectionState;
 using SharedPointDirection = SdnCustom.Shared.Model.PointDirection;
 using SharedPointDefinition = SdnCustom.Shared.Model.PointDefinition;
 
@@ -38,6 +39,7 @@ public sealed class ServerControlService : IServerControlService
 {
     private readonly IClientSystemStore _clients;
     private readonly IAgentRegistry _agents;
+    private readonly IClientCommunicationStateStore _communicationStates;
     private readonly IHistoryStore _history;
     private readonly IServerLogStore _logs;
     private readonly ITelemetryService _telemetry;
@@ -47,6 +49,7 @@ public sealed class ServerControlService : IServerControlService
     public ServerControlService(
         IClientSystemStore clients,
         IAgentRegistry agents,
+        IClientCommunicationStateStore communicationStates,
         IHistoryStore history,
         IServerLogStore logs,
         ITelemetryService telemetry,
@@ -55,6 +58,7 @@ public sealed class ServerControlService : IServerControlService
     {
         _clients = clients;
         _agents = agents;
+        _communicationStates = communicationStates;
         _history = history;
         _logs = logs;
         _telemetry = telemetry;
@@ -110,6 +114,7 @@ public sealed class ServerControlService : IServerControlService
             cancellationToken).ConfigureAwait(false);
         _router.RemoveClient(clientCode);
         await _clients.DeleteAsync(clientCode, cancellationToken).ConfigureAwait(false);
+        _communicationStates.Clear(clientCode);
         _logs.Add("INFO", "客户端管理", $"已删除客户端 {clientCode}（{client.ClientName}）。");
     }
 
@@ -128,6 +133,7 @@ public sealed class ServerControlService : IServerControlService
         }, cancellationToken).ConfigureAwait(false);
         if (!sent)
         {
+            await _clients.SetDesiredRunningAsync(clientCode, false, cancellationToken).ConfigureAwait(false);
             throw new InvalidOperationException($"客户端 {clientCode} 已断开，启动命令未送达。");
         }
 
@@ -155,13 +161,17 @@ public sealed class ServerControlService : IServerControlService
     {
         var previous = await _clients.GetAsync(clientCode, cancellationToken).ConfigureAwait(false)
                        ?? throw new KeyNotFoundException($"客户端未登记：{clientCode}");
-        if (previous.DesiredRunning && _agents.Find(clientCode) is not null)
+        var communicationState = _communicationStates.Get(clientCode)?.State;
+        if (_agents.Find(clientCode) is not null &&
+            (previous.DesiredRunning ||
+             communicationState is SharedClientConnectionState.Connected or SharedClientConnectionState.Connecting))
         {
             throw new InvalidOperationException("客户端正在运行通讯，必须先停止通讯才能修改点表。");
         }
 
-        ValidatePointReferences(clientCode, points);
-        var stored = await _clients.SavePointsAsync(clientCode, points, cancellationToken).ConfigureAwait(false);
+        var normalizedPoints = points.Select(NormalizePoint).ToArray();
+        await ValidatePointReferencesAsync(clientCode, normalizedPoints, cancellationToken).ConfigureAwait(false);
+        var stored = await _clients.SavePointsAsync(clientCode, normalizedPoints, cancellationToken).ConfigureAwait(false);
         var remainingIds = stored.Points.Select(point => point.PointId).ToHashSet(StringComparer.Ordinal);
         var removedIds = previous.Points
             .Select(point => point.PointId)
@@ -183,7 +193,7 @@ public sealed class ServerControlService : IServerControlService
         _logs.Add(
             "INFO",
             "客户端管理",
-            $"已保存客户端 {clientCode} 的点表，共 {points.Count} 点；在线下发：{(sent ? "是" : "否")}。");
+            $"已保存客户端 {clientCode} 的点表，共 {normalizedPoints.Length} 点；在线下发：{(sent ? "是" : "否")}。");
     }
 
     public async Task WritePointAsync(
@@ -213,28 +223,93 @@ public sealed class ServerControlService : IServerControlService
         CancellationToken cancellationToken = default) =>
         _history.QueryAsync(clientCode, pointId, from, to, limit, cancellationToken);
 
-    private static void ValidatePointReferences(string clientCode, IReadOnlyList<SharedPointDefinition> points)
+    private async Task ValidatePointReferencesAsync(
+        string clientCode,
+        IReadOnlyList<SharedPointDefinition> points,
+        CancellationToken cancellationToken)
     {
-        var ids = points.Select(point => point.PointId).ToHashSet(StringComparer.Ordinal);
-        foreach (var point in points.Where(point => point.Direction == SharedPointDirection.Input))
-        {
-            var source = point.SourceOutputPointId;
-            if (string.IsNullOrWhiteSpace(source))
-            {
-                throw new InvalidOperationException($"INPUT 测点 {point.PointId} 缺少源 OUTPUT。");
-            }
+        var catalogs = (await _clients.ListAsync(cancellationToken).ConfigureAwait(false))
+            .ToDictionary(
+                client => client.ClientCode,
+                client => (IReadOnlyList<SharedPointDefinition>)client.Points,
+                StringComparer.Ordinal);
+        catalogs[clientCode] = points;
 
-            var localSource = source.Contains(':', StringComparison.Ordinal)
-                ? source[(source.IndexOf(':') + 1)..]
-                : source;
-            var sourceClient = source.Contains(':', StringComparison.Ordinal)
-                ? source[..source.IndexOf(':')]
-                : clientCode;
-            if (sourceClient == clientCode && !ids.Contains(localSource))
+        foreach (var (targetClientCode, catalog) in catalogs)
+        {
+            foreach (var input in catalog.Where(point => point.Direction == SharedPointDirection.Input))
             {
-                throw new InvalidOperationException(
-                    $"INPUT 测点 {point.PointId} 引用的本客户端 OUTPUT 不存在：{localSource}");
+                var source = input.SourceOutputPointId;
+                if (string.IsNullOrWhiteSpace(source))
+                {
+                    throw new InvalidOperationException($"INPUT 测点 {input.PointId} 缺少源 OUTPUT。");
+                }
+
+                source = source.Trim();
+                var separator = source.IndexOf(':');
+                var sourceClientCode = separator > 0 ? source[..separator] : targetClientCode;
+                var sourcePointId = separator > 0 ? source[(separator + 1)..] : source;
+                if (string.IsNullOrWhiteSpace(sourceClientCode) ||
+                    string.IsNullOrWhiteSpace(sourcePointId))
+                {
+                    throw new InvalidOperationException(
+                        $"INPUT 测点 {targetClientCode}:{input.PointId} 的源 OUTPUT 引用格式无效：{source}");
+                }
+
+                if (!catalogs.TryGetValue(sourceClientCode, out var sourceCatalog))
+                {
+                    throw new InvalidOperationException(
+                        $"INPUT 测点 {targetClientCode}:{input.PointId} 引用的客户端不存在：{sourceClientCode}");
+                }
+
+                var sourcePoint = sourceCatalog.FirstOrDefault(point =>
+                    string.Equals(point.PointId, sourcePointId, StringComparison.Ordinal));
+                if (sourcePoint is null)
+                {
+                    throw new InvalidOperationException(
+                        $"INPUT 测点 {targetClientCode}:{input.PointId} 引用的 OUTPUT 不存在：" +
+                        $"{sourceClientCode}:{sourcePointId}");
+                }
+
+                if (sourcePoint.Direction != SharedPointDirection.Output)
+                {
+                    throw new InvalidOperationException(
+                        $"INPUT 测点 {targetClientCode}:{input.PointId} 必须引用 OUTPUT，" +
+                        $"{sourceClientCode}:{sourcePointId} 当前为 {sourcePoint.Direction}。");
+                }
+
+                if (sourcePoint.DataType != input.DataType)
+                {
+                    throw new InvalidOperationException(
+                        $"INPUT 测点 {targetClientCode}:{input.PointId} 与源 OUTPUT " +
+                        $"{sourceClientCode}:{sourcePointId} 的数据类型不一致。");
+                }
             }
         }
+    }
+
+    private static SharedPointDefinition NormalizePoint(SharedPointDefinition point)
+    {
+        var source = string.IsNullOrWhiteSpace(point.SourceOutputPointId)
+            ? null
+            : point.SourceOutputPointId.Trim();
+        if (source?.IndexOf(':') > 0)
+        {
+            var separator = source.IndexOf(':');
+            source = $"{source[..separator].Trim()}:{source[(separator + 1)..].Trim()}";
+        }
+
+        return new SharedPointDefinition
+        {
+            PointId = point.PointId?.Trim() ?? string.Empty,
+            PointName = point.PointName?.Trim() ?? string.Empty,
+            Address = point.Address?.Trim() ?? string.Empty,
+            DataType = point.DataType,
+            Unit = point.Unit?.Trim() ?? string.Empty,
+            Direction = point.Direction,
+            SourceOutputPointId = source,
+            Deadband = Math.Max(0, point.Deadband),
+            Group = string.IsNullOrWhiteSpace(point.Group) ? "默认" : point.Group.Trim()
+        };
     }
 }

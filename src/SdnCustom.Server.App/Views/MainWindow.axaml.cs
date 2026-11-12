@@ -15,6 +15,9 @@ public sealed partial class MainWindow : Window
     private readonly Border _logPanel;
     private readonly ListBox _logList;
     private MainWindowViewModel? _viewModel;
+    private ClientManagementWindow? _clientManagementWindow;
+    private SystemSettingsWindow? _systemSettingsWindow;
+    private HelpWindow? _helpWindow;
 
     public MainWindow()
     {
@@ -47,18 +50,36 @@ public sealed partial class MainWindow : Window
 
     private void OpenClientManagement_OnClick(object? sender, RoutedEventArgs e)
     {
-        if (App.AdminFacade is not null)
+        if (ActivateExistingWindow(_clientManagementWindow))
         {
-            new ClientManagementWindow
-            {
-                DataContext = new ClientManagementViewModel(App.AdminFacade)
-            }.Show(this);
+            return;
         }
+
+        if (App.AdminFacade is null)
+        {
+            return;
+        }
+
+        var window = new ClientManagementWindow
+        {
+            DataContext = new ClientManagementViewModel(App.AdminFacade)
+        };
+        window.Closed += (_, _) => ClearWindowReference(window, ref _clientManagementWindow);
+        _clientManagementWindow = window;
+        window.Show(this);
     }
 
     private void OpenSystemSettings_OnClick(object? sender, RoutedEventArgs e)
     {
-        new SystemSettingsWindow().Show(this);
+        if (ActivateExistingWindow(_systemSettingsWindow))
+        {
+            return;
+        }
+
+        var window = new SystemSettingsWindow(App.AdminFacade);
+        window.Closed += (_, _) => ClearWindowReference(window, ref _systemSettingsWindow);
+        _systemSettingsWindow = window;
+        window.Show(this);
     }
 
     private void ShowDataView_OnClick(object? sender, RoutedEventArgs e) => _workspaceTabs.SelectedIndex = 0;
@@ -81,7 +102,44 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private void OpenHelp_OnClick(object? sender, RoutedEventArgs e) => new HelpWindow().Show(this);
+    private void OpenHelp_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (ActivateExistingWindow(_helpWindow))
+        {
+            return;
+        }
+
+        var window = new HelpWindow();
+        window.Closed += (_, _) => ClearWindowReference(window, ref _helpWindow);
+        _helpWindow = window;
+        window.Show(this);
+    }
+
+    private static bool ActivateExistingWindow(Window? window)
+    {
+        if (window is null)
+        {
+            return false;
+        }
+
+        if (window.WindowState == WindowState.Minimized)
+        {
+            window.WindowState = WindowState.Normal;
+        }
+        window.Activate();
+        return true;
+    }
+
+    private static void ClearWindowReference<TWindow>(
+        TWindow window,
+        ref TWindow? reference)
+        where TWindow : Window
+    {
+        if (ReferenceEquals(reference, window))
+        {
+            reference = null;
+        }
+    }
 
     private void DrawChart_OnClick(object? sender, RoutedEventArgs e)
     {
@@ -102,12 +160,14 @@ public sealed partial class MainWindow : Window
         if (_viewModel is not null)
         {
             _viewModel.HistoryQueryCompleted -= OnHistoryQueryCompleted;
+            _viewModel.HistoryChartResetRequested -= OnHistoryChartResetRequested;
         }
 
         _viewModel = viewModel;
         if (_viewModel is not null)
         {
             _viewModel.HistoryQueryCompleted += OnHistoryQueryCompleted;
+            _viewModel.HistoryChartResetRequested += OnHistoryChartResetRequested;
         }
     }
 
@@ -118,6 +178,9 @@ public sealed partial class MainWindow : Window
             DrawHistoryChart(viewModel);
         }
     }
+
+    private void OnHistoryChartResetRequested(object? sender, EventArgs e) =>
+        _historyChart.ShowMessage("历史数据", "查询后在此显示图表");
 
     private void DrawHistoryChart(MainWindowViewModel viewModel)
     {

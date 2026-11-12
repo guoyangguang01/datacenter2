@@ -72,6 +72,75 @@ public sealed class ClientConfigurationTests
     }
 
     [Fact]
+    public void RejectsLocalInputReferenceThatDoesNotPointToOutput()
+    {
+        var configuration = new ClientConfiguration
+        {
+            ClientCode = "CLIENT-01",
+            Points =
+            [
+                new PointDefinition
+                {
+                    PointId = "IN-1",
+                    PointName = "First input",
+                    Address = "A",
+                    Direction = PointDirection.Input,
+                    SourceOutputPointId = "IN-2"
+                },
+                new PointDefinition
+                {
+                    PointId = "IN-2",
+                    PointName = "Second input",
+                    Address = "B",
+                    Direction = PointDirection.Input,
+                    SourceOutputPointId = "OUT"
+                },
+                new PointDefinition
+                {
+                    PointId = "OUT",
+                    PointName = "Output",
+                    Address = "C",
+                    Direction = PointDirection.Output
+                }
+            ]
+        };
+
+        var errors = ClientConfigurationValidator.Validate(configuration);
+
+        Assert.Contains(
+            errors,
+            error => error.Contains("IN-1", StringComparison.Ordinal) &&
+                     error.Contains("不能引用", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void RejectsMissingLocalOutputReference()
+    {
+        var configuration = new ClientConfiguration
+        {
+            ClientCode = "CLIENT-01",
+            Points =
+            [
+                new PointDefinition
+                {
+                    PointId = "IN",
+                    PointName = "Input",
+                    Address = "A",
+                    Direction = PointDirection.Input,
+                    SourceOutputPointId = "MISSING"
+                }
+            ]
+        };
+
+        var errors = ClientConfigurationValidator.Validate(configuration);
+
+        Assert.Contains(
+            errors,
+            error => error.Contains("MISSING", StringComparison.Ordinal) &&
+                     error.Contains("不存在", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void RequiresPinnedCertificateWhenAutomaticTrustIsDisabled()
     {
         var configuration = new ClientConfiguration

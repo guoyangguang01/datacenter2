@@ -114,6 +114,8 @@ Linux/macOS 对应脚本为 `start-server.sh`、`start-headless.sh` 和 `start-c
 
 - 客户端读取 OUTPUT 点，200ms 为一个采集周期，并通过死区过滤有效变化。
 - 服务端把 OUTPUT 点变化路由到引用它的 INPUT 点，并下发写入命令。
+- INPUT 必须引用存在且同数据类型的 OUTPUT；悬空引用、INPUT 引用 INPUT 会在保存点表时被拒绝。
+- 客户端会回传设备通讯状态；管理界面显示实际通讯状态，而不是仅显示期望运行状态。
 - 服务端同时记录 OUTPUT 和 INPUT 的意图值、质量和源时间戳。
 - 客户端代码是唯一身份依据，不使用用户名、密码或客户端证书。该模型只适合可信内网。
 - 服务端默认启用 TLS，并在首次启动时生成 `data/certs/server.pfx` 与 `server.cer`。
@@ -142,6 +144,7 @@ OPC UA 使用 open62541，原生构建说明见 `native/open62541-bridge/README.
 - Linux 单元模板：`deploy/sdncustom-server.service`。
 - 健康检查：`GET http://127.0.0.1:7444/health`。
 - 状态接口：`GET http://127.0.0.1:7444/api/status`。
+- 系统设置接口：`GET http://127.0.0.1:7444/api/system/settings`。
 
 ## 开源组件
 

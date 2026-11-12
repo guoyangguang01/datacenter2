@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Options;
+using SdnCustom.Server.Configuration;
 using SdnCustom.Server.History;
 using SdnCustom.Server.Persistence;
 using SdnCustom.Server.Runtime;
@@ -18,6 +20,7 @@ public sealed record AdminClientView(
     string ClientName,
     bool Online,
     bool DesiredRunning,
+    ClientConnectionState CommunicationState,
     ClientProtocol Protocol,
     string Endpoint,
     string AppVersion,
@@ -27,9 +30,19 @@ public sealed record AdminClientView(
 
 public sealed record AdminSnapshot(IReadOnlyList<AdminClientView> Clients, int OnlineClients, int TotalPoints);
 
+public sealed record AdminSystemSettingsView(
+    string DataDirectory,
+    int GrpcPort,
+    int HttpPort,
+    bool UseTls,
+    string InfluxUrl,
+    string InfluxOrg,
+    string InfluxBucket);
+
 public interface IAdminFacade
 {
     Task<AdminSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default);
+    Task<AdminSystemSettingsView> GetSystemSettingsAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ServerLogEntry>> GetLogsAsync(int count = 500, CancellationToken cancellationToken = default);
     Task CreateClientAsync(string clientCode, string clientName, CancellationToken cancellationToken = default);
     Task RenameClientAsync(string clientCode, string clientName, CancellationToken cancellationToken = default);
@@ -54,22 +67,28 @@ public sealed class AdminFacade : IAdminFacade
 {
     private readonly IClientSystemStore _clients;
     private readonly IAgentRegistry _agents;
+    private readonly IClientCommunicationStateStore _communicationStates;
     private readonly ILatestValueStore _latestValues;
     private readonly IServerControlService _control;
     private readonly IServerLogStore _logs;
+    private readonly IOptions<ServerSettings> _settings;
 
     public AdminFacade(
         IClientSystemStore clients,
         IAgentRegistry agents,
+        IClientCommunicationStateStore communicationStates,
         ILatestValueStore latestValues,
         IServerControlService control,
-        IServerLogStore logs)
+        IServerLogStore logs,
+        IOptions<ServerSettings> settings)
     {
         _clients = clients;
         _agents = agents;
+        _communicationStates = communicationStates;
         _latestValues = latestValues;
         _control = control;
         _logs = logs;
+        _settings = settings;
     }
 
     public async Task<AdminSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default)
@@ -98,6 +117,7 @@ public sealed class AdminFacade : IAdminFacade
                 client.ClientName,
                 onlineCodes.Contains(client.ClientCode),
                 client.DesiredRunning,
+                _communicationStates.Get(client.ClientCode)?.State ?? ClientConnectionState.Disconnected,
                 client.Protocol,
                 client.EndpointDisplay,
                 client.AppVersion,
@@ -107,6 +127,20 @@ public sealed class AdminFacade : IAdminFacade
         }).ToArray();
 
         return new AdminSnapshot(result, result.Count(client => client.Online), result.Sum(client => client.Points.Count));
+    }
+
+    public Task<AdminSystemSettingsView> GetSystemSettingsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var settings = _settings.Value;
+        return Task.FromResult(new AdminSystemSettingsView(
+            Path.GetFullPath(settings.DataDirectory, AppContext.BaseDirectory),
+            settings.GrpcPort,
+            settings.HttpPort,
+            settings.UseTls,
+            settings.Influx.Url,
+            settings.Influx.Org,
+            settings.Influx.Bucket));
     }
 
     public Task<IReadOnlyList<ServerLogEntry>> GetLogsAsync(

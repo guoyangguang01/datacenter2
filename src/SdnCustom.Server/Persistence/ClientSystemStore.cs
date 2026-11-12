@@ -157,7 +157,10 @@ public sealed class ClientSystemStore(IDbContextFactory<ServerDbContext> context
             throw new UnauthorizedAccessException($"客户端代码未授权：{registration.ClientCode}");
         }
 
-        entity.ClientName = registration.ClientName;
+        if (string.IsNullOrWhiteSpace(entity.ClientName))
+        {
+            entity.ClientName = registration.ClientName;
+        }
         entity.Protocol = registration.Protocol.ToString();
         entity.EndpointDisplay = registration.EndpointDisplay;
         entity.AppVersion = registration.AppVersion;

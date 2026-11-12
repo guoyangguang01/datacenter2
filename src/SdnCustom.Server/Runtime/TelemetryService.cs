@@ -35,6 +35,7 @@ public interface ITelemetryService
 
 public sealed class TelemetryService : ITelemetryService
 {
+    private static readonly TimeSpan ManualWriteTimeout = TimeSpan.FromSeconds(30);
     private readonly ILatestValueStore _latestValues;
     private readonly IHistoryStore _history;
     private readonly IPointRouter _router;
@@ -107,12 +108,23 @@ public sealed class TelemetryService : ITelemetryService
         WriteResult result,
         CancellationToken cancellationToken = default)
     {
-        if (!_pendingWrites.TryRemove(result.CommandId, out var pending))
+        if (!_pendingWrites.TryGetValue(result.CommandId, out var pending))
         {
             _logs.Add("WARN", "传播", $"收到未知写入回执 {result.CommandId}（客户端 {clientCode}）。");
             return;
         }
 
+        if (!string.Equals(pending.TargetClientCode, clientCode, StringComparison.Ordinal))
+        {
+            _logs.Add(
+                "WARN",
+                "传播",
+                $"写入回执客户端不匹配：期望 {pending.TargetClientCode}，实际 {clientCode}。");
+            return;
+        }
+
+        _pendingWrites.TryRemove(result.CommandId, out _);
+        pending.Completion?.TrySetResult(result);
         var intent = new SharedPointSample(
             pending.TargetClientCode,
             pending.TargetPoint.PointId,
@@ -147,7 +159,9 @@ public sealed class TelemetryService : ITelemetryService
                 SharedPointQuality.Good,
                 timestamp));
         var commandId = Guid.NewGuid().ToString("N");
-        _pendingWrites[commandId] = new PendingWrite(clientCode, point, source);
+        var completion = new TaskCompletionSource<WriteResult>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        _pendingWrites[commandId] = new PendingWrite(clientCode, point, source, completion);
         var sent = await _agents.SendAsync(clientCode, new ServerMessage
         {
             WritePoint = new WritePoint
@@ -166,6 +180,25 @@ public sealed class TelemetryService : ITelemetryService
             _pendingWrites.TryRemove(commandId, out _);
             throw new InvalidOperationException($"客户端 {clientCode} 当前不在线。");
         }
+
+        try
+        {
+            var result = await completion.Task
+                .WaitAsync(ManualWriteTimeout, cancellationToken)
+                .ConfigureAwait(false);
+            if (!result.Success)
+            {
+                throw new InvalidOperationException(
+                    string.IsNullOrWhiteSpace(result.ErrorMessage)
+                        ? $"设备写入失败：{point.PointId}"
+                        : $"设备写入失败：{result.ErrorMessage}");
+            }
+        }
+        catch
+        {
+            _pendingWrites.TryRemove(commandId, out _);
+            throw;
+        }
     }
 
     public async Task MarkClientOfflineAsync(
@@ -173,6 +206,18 @@ public sealed class TelemetryService : ITelemetryService
         IReadOnlyList<SharedPointDefinition> points,
         CancellationToken cancellationToken = default)
     {
+        foreach (var (commandId, pending) in _pendingWrites)
+        {
+            if (!string.Equals(pending.TargetClientCode, clientCode, StringComparison.Ordinal) ||
+                !_pendingWrites.TryRemove(commandId, out var removed))
+            {
+                continue;
+            }
+
+            removed.Completion?.TrySetException(
+                new IOException($"客户端 {clientCode} 已离线，写入结果不可用。"));
+        }
+
         await _latestValues.MarkOutputsCommLostAsync(clientCode, points, cancellationToken).ConfigureAwait(false);
         _router.RemoveClient(clientCode);
         _logs.Add("WARN", "连接", $"客户端离线：{clientCode}");
@@ -181,5 +226,6 @@ public sealed class TelemetryService : ITelemetryService
     private sealed record PendingWrite(
         string TargetClientCode,
         SharedPointDefinition TargetPoint,
-        SharedPointSample Source);
+        SharedPointSample Source,
+        TaskCompletionSource<WriteResult>? Completion = null);
 }

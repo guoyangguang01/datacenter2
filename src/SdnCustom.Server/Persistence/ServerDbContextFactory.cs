@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 
@@ -10,7 +11,11 @@ public sealed class ServerDbContextFactory : IDesignTimeDbContextFactory<ServerD
         var databasePath = Environment.GetEnvironmentVariable("SDNCUSTOM_DB_PATH")
                            ?? Path.Combine("data", "sdncustom.db");
         var options = new DbContextOptionsBuilder<ServerDbContext>()
-            .UseSqlite($"Data Source={databasePath}")
+            .UseSqlite(new SqliteConnectionStringBuilder
+            {
+                DataSource = databasePath,
+                DefaultTimeout = 30
+            }.ToString())
             .Options;
         return new ServerDbContext(options);
     }

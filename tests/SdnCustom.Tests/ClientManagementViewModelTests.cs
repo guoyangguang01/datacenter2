@@ -1,3 +1,4 @@
+using System.Text;
 using SdnCustom.Server.Admin;
 using SdnCustom.Server.App.ViewModels;
 using SdnCustom.Server.History;
@@ -33,6 +34,7 @@ public sealed class ClientManagementViewModelTests
                     "Client one",
                     true,
                     false,
+                    ClientConnectionState.Connected,
                     ClientProtocol.CustomTcp,
                     "127.0.0.1:9002",
                     "1.0",
@@ -51,6 +53,7 @@ public sealed class ClientManagementViewModelTests
         Assert.Equal(2, viewModel.PointFilters[0].Count);
         Assert.Equal(1, viewModel.PointFilters[1].Count);
         Assert.Equal(1, viewModel.PointFilters[2].Count);
+        Assert.False(viewModel.CanEditPoints);
 
         viewModel.SelectedPointFilter = viewModel.PointFilters[1];
         Assert.Single(viewModel.FilteredPoints);
@@ -62,10 +65,100 @@ public sealed class ClientManagementViewModelTests
         Assert.Equal(2, viewModel.Points.Count);
     }
 
+    [Fact]
+    public async Task InvalidCsvDoesNotReplaceCurrentPointCatalog()
+    {
+        var output = new PointDefinition
+        {
+            PointId = "OUT",
+            PointName = "Output",
+            Address = "1",
+            Direction = PointDirection.Output
+        };
+        var snapshot = new AdminSnapshot(
+            [
+                new AdminClientView(
+                    "CLIENT-1",
+                    "Client one",
+                    true,
+                    false,
+                    ClientConnectionState.Disconnected,
+                    ClientProtocol.CustomTcp,
+                    "127.0.0.1:9002",
+                    "1.0",
+                    DateTimeOffset.UtcNow,
+                    [output],
+                    [])
+            ],
+            1,
+            1);
+        var viewModel = new ClientManagementViewModel(new StubAdminFacade(snapshot));
+        await viewModel.InitializeAsync();
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(
+            "pointId,pointName,dataType,direction,address\n" +
+            "BAD,Bad point,NotAType,Output,1\n"));
+
+        await viewModel.ImportCsvAsync(stream);
+
+        var remaining = Assert.Single(viewModel.Points);
+        Assert.Equal("OUT", remaining.PointId);
+        Assert.Contains("数据类型无效", viewModel.StatusText);
+    }
+
+    [Fact]
+    public async Task ImportAndExportPreserveQuotedMultilineFields()
+    {
+        var snapshot = new AdminSnapshot(
+            [
+                new AdminClientView(
+                    "CLIENT-1",
+                    "Client one",
+                    true,
+                    false,
+                    ClientConnectionState.Disconnected,
+                    ClientProtocol.CustomTcp,
+                    "127.0.0.1:9002",
+                    "1.0",
+                    DateTimeOffset.UtcNow,
+                    [],
+                    [])
+            ],
+            1,
+            0);
+        var viewModel = new ClientManagementViewModel(new StubAdminFacade(snapshot));
+        await viewModel.InitializeAsync();
+        await using var import = new MemoryStream(Encoding.UTF8.GetBytes(
+            "pointId,pointName,dataType,unit,direction,address,referencePointId,deadband,group\n" +
+            "P1,\"Name\nline\",Float64,/,Output,1,,0,Default\n"));
+
+        await viewModel.ImportCsvAsync(import);
+
+        var point = Assert.Single(viewModel.Points);
+        Assert.Equal("Name\nline", point.PointName);
+
+        await using var export = new MemoryStream();
+        await viewModel.ExportCsvAsync(export, outputOnly: false);
+        export.Position = 0;
+        using var reader = new StreamReader(export, Encoding.UTF8, true, leaveOpen: true);
+        var csv = await reader.ReadToEndAsync();
+        Assert.Contains("\"Name\nline\"", csv);
+    }
+
     private sealed class StubAdminFacade(AdminSnapshot snapshot) : IAdminFacade
     {
         public Task<AdminSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(snapshot);
+
+        public Task<AdminSystemSettingsView> GetSystemSettingsAsync(
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new AdminSystemSettingsView(
+                "/data",
+                7443,
+                7444,
+                true,
+                "http://127.0.0.1:8086",
+                "sdncustom",
+                "sdncustom"));
 
         public Task<IReadOnlyList<ServerLogEntry>> GetLogsAsync(
             int count = 500,

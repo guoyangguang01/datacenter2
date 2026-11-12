@@ -26,6 +26,7 @@ public sealed class AgentSupervisor : IAsyncDisposable
     private readonly IDeviceConnectionFactory _deviceFactory;
     private readonly ConcurrentDictionary<string, SharedPointSample> _latestValues = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _sendGate = new(1, 1);
+    private readonly object _statusGate = new();
     private CancellationTokenSource? _cancellation;
     private Task? _supervisorTask;
     private ClientConfiguration? _configuration;
@@ -35,6 +36,8 @@ public sealed class AgentSupervisor : IAsyncDisposable
     private ulong _sequence;
     private volatile bool _serverConnected;
     private volatile bool _deviceRunning;
+    private SharedClientConnectionState? _lastReportedState;
+    private string? _lastReportedMessage;
 
     public AgentSupervisor(
         IClientConfigStore configStore,
@@ -185,20 +188,20 @@ public sealed class AgentSupervisor : IAsyncDisposable
         Log("INFO", $"已连接服务端，客户端代码 {configuration.ClientCode}。");
         RaiseState(SharedClientConnectionState.Disconnected, "已连接服务端，等待启动通讯。");
 
-        await ApplyConfiguredPointsAsync(
-            first.Welcome.ConfiguredPoints.Select(ContractMapper.FromContract),
-            "已应用服务端下发的点表。",
-            cancellationToken).ConfigureAwait(false);
-
-        if (first.Welcome.DesiredRunning || configuration.AutoStart)
-        {
-            await StartDeviceAsync(cancellationToken).ConfigureAwait(false);
-        }
-
         using var heartbeatCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var heartbeatTask = SendHeartbeatsAsync(heartbeatCancellation.Token);
         try
         {
+            await ApplyConfiguredPointsAsync(
+                first.Welcome.ConfiguredPoints.Select(ContractMapper.FromContract),
+                "已应用服务端下发的点表。",
+                cancellationToken).ConfigureAwait(false);
+
+            if (first.Welcome.DesiredRunning || configuration.AutoStart)
+            {
+                await TryStartDeviceAsync(cancellationToken).ConfigureAwait(false);
+            }
+
             while (await call.ResponseStream.MoveNext(cancellationToken).ConfigureAwait(false))
             {
                 await HandleServerMessageAsync(call.ResponseStream.Current, cancellationToken).ConfigureAwait(false);
@@ -239,7 +242,7 @@ public sealed class AgentSupervisor : IAsyncDisposable
         switch (message.PayloadCase)
         {
             case ServerMessage.PayloadOneofCase.StartCommunication:
-                await StartDeviceAsync(cancellationToken).ConfigureAwait(false);
+                await TryStartDeviceAsync(cancellationToken).ConfigureAwait(false);
                 break;
             case ServerMessage.PayloadOneofCase.StopCommunication:
                 await StopDeviceAsync("服务端停止通讯。").ConfigureAwait(false);
@@ -285,13 +288,40 @@ public sealed class AgentSupervisor : IAsyncDisposable
         }
 
         _configuration.Points = points.ToList();
-        await _configStore.SaveAsync(_configuration, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await _configStore.SaveAsync(_configuration, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            Log("ERROR", $"点表已应用，但本地保存失败：{exception.Message}");
+            RaiseState(
+                SharedClientConnectionState.Error,
+                $"点表已应用，但本地保存失败：{exception.Message}");
+        }
         ConfigurationChanged?.Invoke(this, _configuration);
         Log("INFO", $"{message} 共 {_configuration.Points.Count} 个测点。");
 
         if (wasRunning)
         {
+            await TryStartDeviceAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task<bool> TryStartDeviceAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
             await StartDeviceAsync(cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return false;
         }
     }
 
@@ -312,27 +342,89 @@ public sealed class AgentSupervisor : IAsyncDisposable
             TimeoutMilliseconds = configuration.Device.TimeoutMilliseconds
         };
 
-        _device = _deviceFactory.Create(options);
-        RaiseState(SharedClientConnectionState.Connecting, $"正在连接 {configuration.Device.Protocol} 设备。");
-        await _device.ConnectAsync(options, cancellationToken).ConfigureAwait(false);
-        _acquisitionLoop = new AcquisitionLoop(
-            _device,
-            TimeSpan.FromMilliseconds(configuration.UserToCenterFrequencyMilliseconds));
-        _acquisitionLoop.Faulted += OnAcquisitionFaultedAsync;
-        await _acquisitionLoop.StartAsync(
-            configuration.ClientCode,
-            configuration.Points,
-            SendBatchAsync,
-            cancellationToken).ConfigureAwait(false);
-        _deviceRunning = true;
-        Log("INFO", $"设备通讯已启动：{configuration.Device.Protocol}。");
-        RaiseState(SharedClientConnectionState.Connected, "设备通讯正常。");
+        try
+        {
+            _device = _deviceFactory.Create(options);
+            RaiseState(SharedClientConnectionState.Connecting, $"正在连接 {configuration.Device.Protocol} 设备。");
+            await _device.ConnectAsync(options, cancellationToken).ConfigureAwait(false);
+            _acquisitionLoop = new AcquisitionLoop(
+                _device,
+                TimeSpan.FromMilliseconds(configuration.UserToCenterFrequencyMilliseconds));
+            _acquisitionLoop.Faulted += OnAcquisitionFaultedAsync;
+            await _acquisitionLoop.StartAsync(
+                configuration.ClientCode,
+                configuration.Points,
+                SendBatchAsync,
+                cancellationToken).ConfigureAwait(false);
+            _deviceRunning = true;
+            Log("INFO", $"设备通讯已启动：{configuration.Device.Protocol}。");
+            RaiseState(SharedClientConnectionState.Connected, "设备通讯正常。");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            await CleanupDeviceAfterStartFailureAsync().ConfigureAwait(false);
+            throw;
+        }
+        catch (Exception exception)
+        {
+            await CleanupDeviceAfterStartFailureAsync().ConfigureAwait(false);
+            Log("ERROR", $"设备启动失败：{exception.Message}");
+            RaiseState(
+                SharedClientConnectionState.Error,
+                $"设备启动失败：{exception.Message}");
+            throw;
+        }
     }
 
-    private async Task StopDeviceAsync(string reason)
+    private async Task CleanupDeviceAfterStartFailureAsync()
+    {
+        _deviceRunning = false;
+        if (_acquisitionLoop is not null)
+        {
+            _acquisitionLoop.Faulted -= OnAcquisitionFaultedAsync;
+            try
+            {
+                await _acquisitionLoop.StopAsync().ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                Log("WARN", $"停止未完成的采集循环时发生异常：{exception.Message}");
+            }
+
+            try
+            {
+                await _acquisitionLoop.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                Log("WARN", $"释放未完成的设备连接时发生异常：{exception.Message}");
+            }
+        }
+        else if (_device is not null)
+        {
+            try
+            {
+                await _device.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                Log("WARN", $"释放未完成的设备连接时发生异常：{exception.Message}");
+            }
+        }
+
+        _acquisitionLoop = null;
+        _device = null;
+        _latestValues.Clear();
+    }
+
+    private async Task StopDeviceAsync(
+        string reason,
+        SharedClientConnectionState finalState = SharedClientConnectionState.Disconnected)
     {
         if (!_deviceRunning && _device is null)
         {
+            Log("INFO", reason);
+            RaiseState(finalState, reason);
             return;
         }
 
@@ -340,19 +432,41 @@ public sealed class AgentSupervisor : IAsyncDisposable
         if (_acquisitionLoop is not null)
         {
             _acquisitionLoop.Faulted -= OnAcquisitionFaultedAsync;
-            await _acquisitionLoop.StopAsync().ConfigureAwait(false);
-            await _acquisitionLoop.DisposeAsync().ConfigureAwait(false);
+            try
+            {
+                await _acquisitionLoop.StopAsync().ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                Log("WARN", $"停止采集循环时发生异常：{exception.Message}");
+            }
+
+            try
+            {
+                await _acquisitionLoop.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                Log("WARN", $"释放设备连接时发生异常：{exception.Message}");
+            }
             _acquisitionLoop = null;
         }
         else if (_device is not null)
         {
-            await _device.DisposeAsync().ConfigureAwait(false);
+            try
+            {
+                await _device.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                Log("WARN", $"释放设备连接时发生异常：{exception.Message}");
+            }
         }
 
         _device = null;
         _latestValues.Clear();
         Log("INFO", reason);
-        RaiseState(SharedClientConnectionState.Disconnected, reason);
+        RaiseState(finalState, reason);
     }
 
     private Task OnAcquisitionFaultedAsync(Exception exception)
@@ -366,7 +480,9 @@ public sealed class AgentSupervisor : IAsyncDisposable
     private async Task StopDeviceAfterAcquisitionFaultAsync()
     {
         await Task.Yield();
-        await StopDeviceAsync("设备采集失败，通讯已停止。").ConfigureAwait(false);
+        await StopDeviceAsync(
+            "设备采集失败，通讯已停止。",
+            SharedClientConnectionState.Error).ConfigureAwait(false);
     }
 
     private async Task SendBatchAsync(IReadOnlyList<SharedPointSample> samples, CancellationToken cancellationToken)
@@ -529,6 +645,49 @@ public sealed class AgentSupervisor : IAsyncDisposable
         IReadOnlyList<SharedPointSample>? samples = null)
     {
         RuntimeEvent?.Invoke(this, new ClientRuntimeEvent(state, message, samples));
+        lock (_statusGate)
+        {
+            if (_lastReportedState == state &&
+                string.Equals(_lastReportedMessage, message, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _lastReportedState = state;
+            _lastReportedMessage = message;
+        }
+
+        _ = SendStatusChangedAsync(state, message);
+    }
+
+    private async Task SendStatusChangedAsync(
+        SharedClientConnectionState state,
+        string message)
+    {
+        var cancellationToken = _cancellation?.Token ?? CancellationToken.None;
+        if (cancellationToken.IsCancellationRequested || _activeCall is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await SendAsync(new AgentMessage
+            {
+                ClientCode = _configuration?.ClientCode ?? string.Empty,
+                Sequence = NextSequence(),
+                SentUnixNs = UnixTime.NowNanoseconds(),
+                StatusChanged = new ClientStatusChanged
+                {
+                    State = ContractMapper.ToContract(state),
+                    Message = message
+                }
+            }, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // The connection itself is responsible for reporting transport failures.
+        }
     }
 
     private void Log(string level, string message)

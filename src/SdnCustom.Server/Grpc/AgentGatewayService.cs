@@ -16,6 +16,7 @@ public sealed class AgentGatewayService : AgentGateway.AgentGatewayBase
 {
     private readonly IClientSystemStore _clients;
     private readonly IAgentRegistry _agents;
+    private readonly IClientCommunicationStateStore _communicationStates;
     private readonly IPointRouter _router;
     private readonly ITelemetryService _telemetry;
     private readonly IServerLogStore _logs;
@@ -23,12 +24,14 @@ public sealed class AgentGatewayService : AgentGateway.AgentGatewayBase
     public AgentGatewayService(
         IClientSystemStore clients,
         IAgentRegistry agents,
+        IClientCommunicationStateStore communicationStates,
         IPointRouter router,
         ITelemetryService telemetry,
         IServerLogStore logs)
     {
         _clients = clients;
         _agents = agents;
+        _communicationStates = communicationStates;
         _router = router;
         _telemetry = telemetry;
         _logs = logs;
@@ -119,6 +122,10 @@ public sealed class AgentGatewayService : AgentGateway.AgentGatewayBase
                 SentUnixNs = UnixTime.NowNanoseconds()
             }, context.CancellationToken).ConfigureAwait(false);
             _logs.Add("INFO", "连接", $"客户端上线：{clientCode}（{registration.Protocol}）。");
+            _communicationStates.Set(
+                clientCode,
+                SharedClientConnectionState.Disconnected,
+                "已连接服务端，等待启动通讯。");
 
             using var streamCancellation =
                 CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken);
@@ -162,10 +169,17 @@ public sealed class AgentGatewayService : AgentGateway.AgentGatewayBase
         {
             if (clientCode is not null && instanceId is not null)
             {
-                _agents.Unregister(clientCode, instanceId);
-                if (registeredPoints.Count > 0)
+                var wasRegistered = _agents.Unregister(clientCode, instanceId);
+                if (wasRegistered)
                 {
-                    await _telemetry.MarkClientOfflineAsync(clientCode, registeredPoints).ConfigureAwait(false);
+                    _communicationStates.Set(
+                        clientCode,
+                        SharedClientConnectionState.Disconnected,
+                        "客户端连接已关闭。");
+                    if (registeredPoints.Count > 0)
+                    {
+                        await _telemetry.MarkClientOfflineAsync(clientCode, registeredPoints).ConfigureAwait(false);
+                    }
                 }
             }
 
@@ -206,6 +220,10 @@ public sealed class AgentGatewayService : AgentGateway.AgentGatewayBase
                     cancellationToken).ConfigureAwait(false);
                 break;
             case AgentMessage.PayloadOneofCase.StatusChanged:
+                _communicationStates.Set(
+                    clientCode,
+                    ContractMapper.FromContract(message.StatusChanged.State),
+                    message.StatusChanged.Message);
                 _logs.Add(
                     message.StatusChanged.State == SdnCustom.Contracts.Agent.V1.ClientConnectionState.Error ? "ERROR" : "INFO",
                     "客户端状态",

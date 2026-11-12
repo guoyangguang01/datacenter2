@@ -21,7 +21,7 @@ public sealed class PersistenceTests
             var clients = new ClientSystemStore(factory);
             await clients.InitializeAsync();
             await clients.CreateAuthorizedAsync("CLIENT-1", "Client one");
-            var registration = await clients.RegisterAsync(new ClientRegistration(
+            var declaredRegistration = new ClientRegistration(
                 "CLIENT-1",
                 "Client one",
                 ClientProtocol.OpcUa,
@@ -36,7 +36,8 @@ public sealed class PersistenceTests
                         Address = "ns=2;s=P1",
                         DataType = PointDataType.Float64
                     }
-                ]));
+                ]);
+            var registration = await clients.RegisterAsync(declaredRegistration);
             await clients.SetDesiredRunningAsync("CLIENT-1", true);
             await clients.SavePointsAsync("CLIENT-1",
             [
@@ -74,6 +75,14 @@ public sealed class PersistenceTests
                     "P1",
                     new PointValue(15.25, PointQuality.Good, 123))
             ]);
+            var reloadedLatest = new LatestValueStore(factory);
+            await reloadedLatest.InitializeAsync();
+            var reloadedValue = Assert.Single(
+                reloadedLatest.GetClient("CLIENT-1"),
+                value => value.PointId == "P1").Value.Value;
+            Assert.IsType<double>(reloadedValue);
+            Assert.Equal(15.25, reloadedValue);
+
             await latest.MarkOutputsCommLostAsync("CLIENT-1", stored.Points);
             var current = latest.GetClient("CLIENT-1");
             Assert.Contains(current, value => value.PointId == "P1");
@@ -84,6 +93,8 @@ public sealed class PersistenceTests
 
             var renamed = await clients.RenameAsync("CLIENT-1", "Renamed client");
             Assert.Equal("Renamed client", renamed.ClientName);
+            Assert.Equal("Renamed client", (await clients.GetAsync("CLIENT-1"))!.ClientName);
+            await clients.RegisterAsync(declaredRegistration);
             Assert.Equal("Renamed client", (await clients.GetAsync("CLIENT-1"))!.ClientName);
 
             await clients.DeleteAsync("CLIENT-1");

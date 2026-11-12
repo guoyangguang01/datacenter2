@@ -18,14 +18,28 @@ public sealed partial class ClientManagementWindow : Window
         {
             if (DataContext is ClientManagementViewModel viewModel)
             {
-                await viewModel.InitializeAsync();
+                try
+                {
+                    await viewModel.InitializeAsync();
+                }
+                catch (Exception exception)
+                {
+                    viewModel.StatusText = $"加载失败：{exception.Message}";
+                }
             }
         };
         _lockRefreshTimer.Tick += async (_, _) =>
         {
             if (DataContext is ClientManagementViewModel viewModel)
             {
-                await viewModel.RefreshRunStateAsync();
+                try
+                {
+                    await viewModel.RefreshRunStateAsync();
+                }
+                catch (Exception exception)
+                {
+                    viewModel.StatusText = $"状态刷新失败：{exception.Message}";
+                }
             }
         };
         Opened += (_, _) => _lockRefreshTimer.Start();
@@ -55,19 +69,26 @@ public sealed partial class ClientManagementWindow : Window
         bool outputOnly,
         string suggestedName)
     {
-        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        try
         {
-            Title = outputOnly ? "导出所有输出测点" : "导出数据源总表",
-            SuggestedFileName = suggestedName,
-            FileTypeChoices = [new FilePickerFileType("CSV") { Patterns = ["*.csv"] }]
-        });
-        if (file is null)
-        {
-            return;
-        }
+            var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                Title = outputOnly ? "导出所有输出测点" : "导出数据源总表",
+                SuggestedFileName = suggestedName,
+                FileTypeChoices = [new FilePickerFileType("CSV") { Patterns = ["*.csv"] }]
+            });
+            if (file is null)
+            {
+                return;
+            }
 
-        await using var stream = await file.OpenWriteAsync();
-        await viewModel.ExportCsvAsync(stream, outputOnly);
+            await using var stream = await file.OpenWriteAsync();
+            await viewModel.ExportCsvAsync(stream, outputOnly);
+        }
+        catch (Exception exception)
+        {
+            viewModel.StatusText = $"导出失败：{exception.Message}";
+        }
     }
 
     private async void Import_OnClick(object? sender, RoutedEventArgs e)
@@ -77,19 +98,26 @@ public sealed partial class ClientManagementWindow : Window
             return;
         }
 
-        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        try
         {
-            Title = "导入数据源总表",
-            AllowMultiple = false,
-            FileTypeFilter = [new FilePickerFileType("CSV") { Patterns = ["*.csv"] }]
-        });
-        if (files.Count == 0)
-        {
-            return;
-        }
+            var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                Title = "导入数据源总表",
+                AllowMultiple = false,
+                FileTypeFilter = [new FilePickerFileType("CSV") { Patterns = ["*.csv"] }]
+            });
+            if (files.Count == 0)
+            {
+                return;
+            }
 
-        await using var stream = await files[0].OpenReadAsync();
-        await viewModel.ImportCsvAsync(stream);
+            await using var stream = await files[0].OpenReadAsync();
+            await viewModel.ImportCsvAsync(stream);
+        }
+        catch (Exception exception)
+        {
+            viewModel.StatusText = $"导入失败：{exception.Message}";
+        }
     }
 
     private async void DeleteClient_OnClick(object? sender, RoutedEventArgs e)
@@ -99,13 +127,20 @@ public sealed partial class ClientManagementWindow : Window
             return;
         }
 
-        var confirmation = new ConfirmationWindow(
-            $"确定删除客户端“{viewModel.SelectedClient.ClientName} ({viewModel.SelectedClient.ClientCode})”吗？\n" +
-            "该客户端的最新值和点表配置会同时删除，此操作不可撤销。",
-            "删除");
-        if (await confirmation.ShowDialog<bool>(this))
+        try
         {
-            await viewModel.DeleteSelectedClientAsync();
+            var confirmation = new ConfirmationWindow(
+                $"确定删除客户端“{viewModel.SelectedClient.ClientName} ({viewModel.SelectedClient.ClientCode})”吗？\n" +
+                "该客户端的最新值和点表配置会同时删除，此操作不可撤销。",
+                "删除");
+            if (await confirmation.ShowDialog<bool>(this))
+            {
+                await viewModel.DeleteSelectedClientAsync();
+            }
+        }
+        catch (Exception exception)
+        {
+            viewModel.StatusText = $"删除失败：{exception.Message}";
         }
     }
 }

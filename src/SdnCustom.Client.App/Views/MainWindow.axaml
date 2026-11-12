@@ -51,15 +51,18 @@
               ColumnSpacing="6">
           <TextBlock Grid.ColumnSpan="5" Text="数据中心设置" Classes="h2" />
           <TextBlock Grid.Row="1" Text="IP" Classes="muted" VerticalAlignment="Center" />
-          <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ServerHost}" />
+          <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ServerHost}"
+                   IsEnabled="{Binding IsConnectionConfigurationEnabled}" />
           <TextBlock Grid.Row="1" Grid.Column="2" Text="端口" Classes="muted"
                      VerticalAlignment="Center" />
-          <TextBox Grid.Row="1" Grid.Column="3" Text="{Binding ServerPort}" />
+          <TextBox Grid.Row="1" Grid.Column="3" Text="{Binding ServerPort}"
+                   IsEnabled="{Binding IsConnectionConfigurationEnabled}" />
           <Button Grid.Row="1" Grid.Column="4" Classes="primary"
                   Content="{Binding ServerConnectionButtonText}" Command="{Binding ToggleServerCommand}" />
           <TextBlock Grid.Row="2" Text="TLS" Classes="muted" VerticalAlignment="Center" />
           <CheckBox Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Content="安全连接"
-                    IsChecked="{Binding UseTls}" />
+                    IsChecked="{Binding UseTls}"
+                    IsEnabled="{Binding IsConnectionConfigurationEnabled}" />
           <Button Grid.Row="2" Grid.Column="3" Content="保存" Command="{Binding SaveCommand}" />
           <Button Grid.Row="2" Grid.Column="4" Content="重载" Command="{Binding ReloadCommand}" />
         </Grid>
@@ -69,10 +72,12 @@
         <Grid ColumnDefinitions="96,*" RowDefinitions="28,34,34" ColumnSpacing="8">
           <TextBlock Grid.ColumnSpan="2" Text="数据用户设置" Classes="h2" />
           <TextBlock Grid.Row="1" Text="客户端名称" Classes="muted" VerticalAlignment="Center" />
-          <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ClientName}" />
+          <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ClientName}"
+                   IsEnabled="{Binding IsConnectionConfigurationEnabled}" />
           <TextBlock Grid.Row="2" Text="通讯协议" Classes="muted" VerticalAlignment="Center" />
           <Grid Grid.Row="2" Grid.Column="1" ColumnDefinitions="*,92" ColumnSpacing="8">
-            <ComboBox ItemsSource="{Binding ProtocolOptions}" SelectedItem="{Binding Protocol}" />
+            <ComboBox ItemsSource="{Binding ProtocolOptions}" SelectedItem="{Binding Protocol}"
+                      IsEnabled="{Binding IsConnectionConfigurationEnabled}" />
             <Button Grid.Column="1" Classes="primary" Content="连接"
                     Command="{Binding ConnectServerCommand}" />
           </Grid>
@@ -84,15 +89,18 @@
               ColumnSpacing="6">
           <TextBlock Grid.ColumnSpan="6" Text="实时通讯设置" Classes="h2" />
           <TextBlock Grid.Row="1" Text="设备 IP" Classes="muted" VerticalAlignment="Center" />
-          <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding DeviceHost}" />
+          <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding DeviceHost}"
+                   IsEnabled="{Binding IsConnectionConfigurationEnabled}" />
           <TextBlock Grid.Row="1" Grid.Column="2" Text="端口" Classes="muted"
                      VerticalAlignment="Center" />
-          <TextBox Grid.Row="1" Grid.Column="3" Text="{Binding DevicePort}" />
+          <TextBox Grid.Row="1" Grid.Column="3" Text="{Binding DevicePort}"
+                   IsEnabled="{Binding IsConnectionConfigurationEnabled}" />
           <Button Grid.Row="1" Grid.Column="4" Content="详细设置" Click="OpenDetails_OnClick" />
           <Button Grid.Row="1" Grid.Column="5" Classes="success" Content="启动"
                   Command="{Binding StartCommunicationCommand}" />
           <TextBlock Grid.Row="2" Text="代码" Classes="muted" VerticalAlignment="Center" />
-          <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding ClientCode}" />
+          <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding ClientCode}"
+                   IsEnabled="{Binding IsConnectionConfigurationEnabled}" />
           <Button Grid.Row="2" Grid.Column="5" Classes="danger" Content="停止"
                   Command="{Binding StopCommunicationCommand}" />
         </Grid>
@@ -109,9 +117,6 @@
                 <TextBlock Text="接收" />
                 <TextBlock Text="{Binding OutputPointCount, StringFormat='{}{0} 个'}"
                            Foreground="{DynamicResource BrandPrimaryBrush}" FontWeight="Bold" />
-                <TextBlock Text="上传" />
-                <TextBlock Text="{Binding UploadLatencyText}"
-                           Foreground="{DynamicResource SuccessBrush}" FontWeight="Bold" />
               </StackPanel>
             </DockPanel>
           </Border>
@@ -152,9 +157,6 @@
                 <TextBlock Text="接收" />
                 <TextBlock Text="{Binding InputPointCount, StringFormat='{}{0} 个'}"
                            Foreground="{DynamicResource BrandPrimaryBrush}" FontWeight="Bold" />
-                <TextBlock Text="下发" />
-                <TextBlock Text="{Binding DownloadLatencyText}"
-                           Foreground="{DynamicResource SuccessBrush}" FontWeight="Bold" />
               </StackPanel>
             </DockPanel>
           </Border>

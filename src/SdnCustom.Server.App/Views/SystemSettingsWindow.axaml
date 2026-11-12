@@ -1,7 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="SdnCustom.Server.App.Views.SystemSettingsWindow"
-        Width="460" Height="540" CanResize="False"
+        Width="460" Height="620" CanResize="False"
         Background="{DynamicResource AppBackgroundBrush}"
         Title="系统设置">
   <Grid RowDefinitions="52,*">
@@ -17,11 +17,13 @@
             <TextBlock Text="IP" Classes="muted" VerticalAlignment="Center" />
             <TextBlock Grid.Column="1" Text="0.0.0.0" VerticalAlignment="Center" />
             <TextBlock Grid.Column="2" Text="端口" Classes="muted" VerticalAlignment="Center" />
-            <TextBlock Grid.Column="3" Text="7443（gRPC）" VerticalAlignment="Center" />
+            <TextBlock x:Name="GrpcPortText" Grid.Column="3" Text="读取中..."
+                       VerticalAlignment="Center" />
             <TextBlock Grid.Row="1" Text="管理接口" Classes="muted" VerticalAlignment="Center" />
-            <TextBlock Grid.Row="1" Grid.Column="1" Text="127.0.0.1:7444" VerticalAlignment="Center" />
+            <TextBlock x:Name="HttpPortText" Grid.Row="1" Grid.Column="1" Text="读取中..."
+                       VerticalAlignment="Center" />
             <TextBlock Grid.Row="1" Grid.Column="2" Text="TLS" Classes="muted" VerticalAlignment="Center" />
-            <TextBlock Grid.Row="1" Grid.Column="3" Text="已启用"
+            <TextBlock x:Name="TlsText" Grid.Row="1" Grid.Column="3" Text="读取中..."
                        Foreground="{DynamicResource SuccessBrush}" VerticalAlignment="Center" />
           </Grid>
         </StackPanel>
@@ -29,21 +31,26 @@
       <Border Classes="card" Margin="0,0,0,12">
         <StackPanel Spacing="8">
           <TextBlock Text="时序数据库" Classes="h2" />
-          <Grid ColumnDefinitions="90,*" RowDefinitions="34,34" ColumnSpacing="8">
+          <Grid ColumnDefinitions="90,*" RowDefinitions="34,34,34,34" ColumnSpacing="8">
             <TextBlock Text="类型" Classes="muted" VerticalAlignment="Center" />
             <TextBlock Grid.Column="1" Text="InfluxDB 2.7" VerticalAlignment="Center" />
             <TextBlock Grid.Row="1" Text="地址" Classes="muted" VerticalAlignment="Center" />
-            <TextBlock Grid.Row="1" Grid.Column="1" Text="http://127.0.0.1:8086" VerticalAlignment="Center" />
+            <TextBlock x:Name="InfluxUrlText" Grid.Row="1" Grid.Column="1" Text="读取中..."
+                       VerticalAlignment="Center" />
+            <TextBlock Grid.Row="2" Text="组织 / Bucket" Classes="muted" VerticalAlignment="Center" />
+            <TextBlock x:Name="InfluxScopeText" Grid.Row="2" Grid.Column="1" Text="读取中..."
+                       VerticalAlignment="Center" />
+            <TextBlock Grid.Row="3" Text="数据目录" Classes="muted" VerticalAlignment="Center" />
+            <TextBlock x:Name="DataDirectoryText" Grid.Row="3" Grid.Column="1" Text="读取中..."
+                       TextWrapping="Wrap" VerticalAlignment="Center" />
           </Grid>
         </StackPanel>
       </Border>
       <Border Classes="card" Margin="0,0,0,12">
         <StackPanel Spacing="8">
           <TextBlock Text="系统管理" Classes="h2" />
-          <Grid ColumnDefinitions="90,*" RowSpacing="8">
-            <TextBlock Text="数据目录" Classes="muted" VerticalAlignment="Center" />
-            <TextBlock Grid.Column="1" Text="data/sdncustom.db" VerticalAlignment="Center" />
-          </Grid>
+          <TextBlock Text="配置文件由服务端统一管理；桌面模式连接本机服务，无界面模式使用同一配置。"
+                     Classes="muted" TextWrapping="Wrap" />
         </StackPanel>
       </Border>
       <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="18" Margin="0,8">

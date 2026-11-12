@@ -10,12 +10,7 @@ public sealed class ClientConfiguration
     public ServerConnectionOptions Server { get; set; } = new();
     public DeviceOptions Device { get; set; } = new();
     public bool AutoStart { get; set; }
-    public int CenterToUserFrequencyMilliseconds { get; set; } = 200;
     public int UserToCenterFrequencyMilliseconds { get; set; } = 200;
-    public bool AllowCenterToUserMissingItems { get; set; } = true;
-    public bool AllowUserToCenterMissingItems { get; set; } = true;
-    public bool SendCenterToUserOnChange { get; set; }
-    public bool SendUserToCenterOnChange { get; set; }
     public List<PointDefinition> Points { get; set; } = [];
 }
 

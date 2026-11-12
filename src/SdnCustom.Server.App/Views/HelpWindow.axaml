@@ -27,7 +27,7 @@
 
         <TextBlock Text="历史数据" Classes="h2" />
         <TextBlock TextWrapping="Wrap"
-                   Text="选择客户端、测点和时间范围后查询。查询成功后自动绘制图表，也可手动点击“绘制图表”；清除条件会恢复当前实时数据图表。" />
+                   Text="选择客户端、测点和时间范围后查询。查询成功后自动绘制图表，也可手动点击“绘制图表”；清除条件会清空图表并恢复默认时间范围。" />
 
         <TextBlock Text="安全与故障排查" Classes="h2" />
         <TextBlock TextWrapping="Wrap"

@@ -14,7 +14,8 @@
     </Border>
 
     <ScrollViewer Grid.Row="1">
-      <StackPanel Margin="20,12" Spacing="12">
+      <StackPanel Margin="20,12" Spacing="12"
+                  IsEnabled="{Binding IsConnectionConfigurationEnabled}">
         <Border Classes="card">
           <StackPanel Spacing="8">
             <TextBlock Text="服务端 TLS 设置" FontSize="16" FontWeight="SemiBold" />
@@ -64,40 +65,18 @@
 
         <Border Classes="card">
           <StackPanel Spacing="8">
-            <TextBlock Text="发送策略" FontSize="16" FontWeight="SemiBold" />
-            <Grid ColumnDefinitions="170,150,150" RowDefinitions="34,34,34,34"
-                  ColumnSpacing="10" RowSpacing="4">
-              <TextBlock Grid.Column="1" Text="中心发往用户" HorizontalAlignment="Center" />
-              <TextBlock Grid.Column="2" Text="用户发往中心" HorizontalAlignment="Center" />
-
-              <TextBlock Grid.Row="1" Text="发送频率：" VerticalAlignment="Center"
+            <TextBlock Text="采集发送策略" FontSize="16" FontWeight="SemiBold" />
+            <Grid ColumnDefinitions="170,180" RowDefinitions="34,34" ColumnSpacing="10">
+              <TextBlock Text="采集发送周期：" VerticalAlignment="Center"
                          HorizontalAlignment="Right" />
-              <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal"
-                          HorizontalAlignment="Center" Spacing="5">
-                <NumericUpDown Value="{Binding CenterToUserFrequencyMilliseconds}"
-                               Minimum="20" Maximum="60000" Increment="50" Width="100" />
-                <TextBlock Text="ms" VerticalAlignment="Center" />
-              </StackPanel>
-              <StackPanel Grid.Row="1" Grid.Column="2" Orientation="Horizontal"
-                          HorizontalAlignment="Center" Spacing="5">
+              <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="5">
                 <NumericUpDown Value="{Binding UserToCenterFrequencyMilliseconds}"
                                Minimum="20" Maximum="60000" Increment="50" Width="100" />
                 <TextBlock Text="ms" VerticalAlignment="Center" />
               </StackPanel>
-
-              <TextBlock Grid.Row="2" Text="允许缺项：" VerticalAlignment="Center"
-                         HorizontalAlignment="Right" />
-              <CheckBox Grid.Row="2" Grid.Column="1" IsChecked="{Binding AllowCenterToUserMissingItems}"
-                        HorizontalAlignment="Center" />
-              <CheckBox Grid.Row="2" Grid.Column="2" IsChecked="{Binding AllowUserToCenterMissingItems}"
-                        HorizontalAlignment="Center" />
-
-              <TextBlock Grid.Row="3" Text="变化时发送：" VerticalAlignment="Center"
-                         HorizontalAlignment="Right" />
-              <CheckBox Grid.Row="3" Grid.Column="1" IsChecked="{Binding SendCenterToUserOnChange}"
-                        HorizontalAlignment="Center" />
-              <CheckBox Grid.Row="3" Grid.Column="2" IsChecked="{Binding SendUserToCenterOnChange}"
-                        HorizontalAlignment="Center" />
+              <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Foreground="#6A7786"
+                         TextWrapping="Wrap"
+                         Text="系统按该周期读取 OUTPUT 测点，并仅上报经过死区过滤后的有效变化；服务端下行写入则按命令即时处理。" />
             </Grid>
           </StackPanel>
         </Border>
@@ -115,7 +94,8 @@
 
     <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center"
                 VerticalAlignment="Center" Spacing="24">
-      <Button Classes="primary" Content="保存并关闭" Width="116" Click="SaveAndClose_OnClick" />
+      <Button Classes="primary" Content="保存并关闭" Width="116" Click="SaveAndClose_OnClick"
+              IsEnabled="{Binding IsConnectionConfigurationEnabled}" />
       <Button Classes="subtle" Content="取消" Width="100" Click="Cancel_OnClick" />
     </StackPanel>
   </Grid>

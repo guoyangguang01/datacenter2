@@ -26,6 +26,7 @@ public interface ILatestValueStore
 public sealed class LatestValueStore(IDbContextFactory<ServerDbContext> contextFactory) : ILatestValueStore
 {
     private readonly ConcurrentDictionary<PointKey, PointSample> _values = new();
+    private readonly SemaphoreSlim _persistenceGate = new(1, 1);
 
     public event EventHandler<IReadOnlyList<PointSample>>? ValuesChanged;
 
@@ -35,9 +36,7 @@ public sealed class LatestValueStore(IDbContextFactory<ServerDbContext> contextF
         var entities = await context.LatestValues.AsNoTracking().ToListAsync(cancellationToken).ConfigureAwait(false);
         foreach (var entity in entities)
         {
-            var value = string.IsNullOrWhiteSpace(entity.ValueJson)
-                ? null
-                : JsonSerializer.Deserialize<object>(entity.ValueJson);
+            var value = DeserializeValue(entity.ValueJson);
             _values[PointKey.Create(entity.ClientCode, entity.PointId)] = new PointSample(
                 entity.ClientCode,
                 entity.PointId,
@@ -61,37 +60,46 @@ public sealed class LatestValueStore(IDbContextFactory<ServerDbContext> contextF
             return;
         }
 
-        foreach (var sample in samples)
+        await _persistenceGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            _values[PointKey.Create(sample.ClientCode, sample.PointId)] = sample;
-        }
-
-        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
-        foreach (var sample in samples)
-        {
-            var entity = await context.LatestValues.FindAsync(
-                [sample.ClientCode, sample.PointId],
-                cancellationToken).ConfigureAwait(false);
-            if (entity is null)
+            foreach (var sample in samples)
             {
-                entity = new LatestValueEntity
-                {
-                    ClientCode = sample.ClientCode,
-                    PointId = sample.PointId
-                };
-                context.LatestValues.Add(entity);
+                _values[PointKey.Create(sample.ClientCode, sample.PointId)] = sample;
             }
 
-            entity.ValueJson = sample.Value.Value is null
-                ? null
-                : JsonSerializer.Serialize(sample.Value.Value);
-            entity.Quality = sample.Value.Quality.ToString();
-            entity.TimestampUnixNanoseconds = sample.Value.TimestampUnixNanoseconds;
-            entity.SourceClientCode = sample.SourceClientCode ?? string.Empty;
-            entity.SourcePointId = sample.SourcePointId ?? string.Empty;
+            await using var context = await contextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+            foreach (var sample in samples)
+            {
+                var entity = await context.LatestValues.FindAsync(
+                    [sample.ClientCode, sample.PointId],
+                    cancellationToken).ConfigureAwait(false);
+                if (entity is null)
+                {
+                    entity = new LatestValueEntity
+                    {
+                        ClientCode = sample.ClientCode,
+                        PointId = sample.PointId
+                    };
+                    context.LatestValues.Add(entity);
+                }
+
+                entity.ValueJson = sample.Value.Value is null
+                    ? null
+                    : JsonSerializer.Serialize(sample.Value.Value);
+                entity.Quality = sample.Value.Quality.ToString();
+                entity.TimestampUnixNanoseconds = sample.Value.TimestampUnixNanoseconds;
+                entity.SourceClientCode = sample.SourceClientCode ?? string.Empty;
+                entity.SourcePointId = sample.SourcePointId ?? string.Empty;
+            }
+
+            await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _persistenceGate.Release();
         }
 
-        await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         ValuesChanged?.Invoke(this, samples);
     }
 
@@ -121,22 +129,58 @@ public sealed class LatestValueStore(IDbContextFactory<ServerDbContext> contextF
             return;
         }
 
-        foreach (var pointId in pointIds)
+        await _persistenceGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            _values.TryRemove(PointKey.Create(clientCode, pointId), out _);
-        }
+            foreach (var pointId in pointIds)
+            {
+                _values.TryRemove(PointKey.Create(clientCode, pointId), out _);
+            }
 
-        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
-        var entities = await context.LatestValues
-            .Where(entity => entity.ClientCode == clientCode && pointIds.Contains(entity.PointId))
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
-        context.LatestValues.RemoveRange(entities);
-        await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            await using var context = await contextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+            var entities = await context.LatestValues
+                .Where(entity => entity.ClientCode == clientCode && pointIds.Contains(entity.PointId))
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+            context.LatestValues.RemoveRange(entities);
+            await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _persistenceGate.Release();
+        }
     }
 
     public IReadOnlyList<PointSample> GetAll() => _values.Values.ToArray();
 
     public IReadOnlyList<PointSample> GetClient(string clientCode) =>
         _values.Values.Where(value => value.ClientCode == clientCode).ToArray();
+
+    private static object? DeserializeValue(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+            return root.ValueKind switch
+            {
+                JsonValueKind.Null or JsonValueKind.Undefined => null,
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                JsonValueKind.String => root.GetString(),
+                JsonValueKind.Number when root.TryGetInt64(out var integer) => integer,
+                JsonValueKind.Number when root.TryGetDouble(out var number) => number,
+                _ => root.GetRawText()
+            };
+        }
+        catch (JsonException)
+        {
+            return json;
+        }
+    }
 }
