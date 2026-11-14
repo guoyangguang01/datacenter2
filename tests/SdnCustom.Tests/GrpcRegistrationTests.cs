@@ -40,6 +40,14 @@ public sealed class GrpcRegistrationTests
 
             using var channel = GrpcChannel.ForAddress($"http://127.0.0.1:{grpcPort}");
             var client = new AgentGateway.AgentGatewayClient(channel);
+            using var directoryHttp = new HttpClient
+            {
+                BaseAddress = new Uri($"http://127.0.0.1:{httpPort}/")
+            };
+            using (var rejectedDirectory = await directoryHttp.GetAsync("api/clients"))
+            {
+                Assert.Equal(HttpStatusCode.Conflict, rejectedDirectory.StatusCode);
+            }
             using (var rejected = client.Connect())
             {
                 await rejected.RequestStream.WriteAsync(Hello("CLIENT-01"));
@@ -50,6 +58,10 @@ public sealed class GrpcRegistrationTests
             }
 
             await admin.StartCommunicationAsync();
+            using (var acceptedDirectory = await directoryHttp.GetAsync("api/clients"))
+            {
+                Assert.Equal(HttpStatusCode.OK, acceptedDirectory.StatusCode);
+            }
             using var call = client.Connect();
             await call.RequestStream.WriteAsync(Hello("CLIENT-01"));
             Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));

@@ -1,8 +1,9 @@
-using System.Buffers.Binary;
 using System.Net;
 using System.Net.Sockets;
+using System.Text.Json;
 using SdnCustom.Client.Core.Configuration;
 using SdnCustom.Client.Core.Runtime;
+using SdnCustom.Protocols.Tcp;
 using SdnCustom.Server.Admin;
 using SdnCustom.Server.Hosting;
 using SdnCustom.Shared.Model;
@@ -20,7 +21,9 @@ public sealed class EndToEndSingleClientTests
         var configPath = Path.Combine(Path.GetTempPath(), "sdncustom-tests", Guid.NewGuid().ToString("N"), "client.json");
         var grpcPort = GetFreePort();
         var httpPort = GetFreePort();
-        var unavailableDevicePort = GetFreePort();
+        using var occupiedDevicePort = new TcpListener(IPAddress.Loopback, 0);
+        occupiedDevicePort.Start();
+        var unavailableDevicePort = ((IPEndPoint)occupiedDevicePort.LocalEndpoint).Port;
         var app = ServerHost.Build([], settings =>
         {
             settings.DataDirectory = dataDirectory;
@@ -64,7 +67,7 @@ public sealed class EndToEndSingleClientTests
                 async () => (await admin.GetSnapshotAsync(timeout.Token)).OnlineClients == 1,
                 timeout.Token);
 
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            await Assert.ThrowsAnyAsync<Exception>(
                 () => supervisor.StartCommunicationAsync(timeout.Token));
             await WaitUntilAsync(
                 async () => (await admin.GetSnapshotAsync(timeout.Token))
@@ -103,8 +106,7 @@ public sealed class EndToEndSingleClientTests
         var configPath = Path.Combine(Path.GetTempPath(), "sdncustom-tests", Guid.NewGuid().ToString("N"), "client.json");
         var grpcPort = GetFreePort();
         var httpPort = GetFreePort();
-        await using var deviceServer = new SingleValueTcpServer(21.5);
-        await deviceServer.StartAsync(timeout.Token);
+        var deviceServerPort = GetFreePort();
         var app = ServerHost.Build([], settings =>
         {
             settings.DataDirectory = dataDirectory;
@@ -137,7 +139,7 @@ public sealed class EndToEndSingleClientTests
                 {
                     Protocol = ClientProtocol.CustomTcp,
                     Host = "127.0.0.1",
-                    Port = deviceServer.Port,
+                    Port = deviceServerPort,
                     TimeoutMilliseconds = 2000
                 },
                 Points =
@@ -228,6 +230,25 @@ public sealed class EndToEndSingleClientTests
             Assert.Equal(PointDirection.Input, normalized!.Points[0].Direction);
 
             await supervisor.StartCommunicationAsync(timeout.Token);
+            using var externalTcp = new TcpClient();
+            await externalTcp.ConnectAsync(IPAddress.Loopback, deviceServerPort, timeout.Token);
+            var externalTcpStream = externalTcp.GetStream();
+            var inputBody = JsonSerializer.Serialize(new
+            {
+                values = new[]
+                {
+                    new
+                    {
+                        pointId = "TEMP",
+                        value = 21.5,
+                        quality = "Good",
+                        timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                    }
+                }
+            });
+            await externalTcpStream.WriteAsync(
+                new TcpFrame(TcpCommand.ValuePush, inputBody).Encode(),
+                timeout.Token);
             await WaitUntilAsync(
                 async () =>
                 {
@@ -325,84 +346,4 @@ public sealed class EndToEndSingleClientTests
         }
     }
 
-    private sealed class SingleValueTcpServer(double value) : IAsyncDisposable
-    {
-        private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
-        private readonly CancellationTokenSource _cancellation = new();
-        private Task? _acceptTask;
-
-        public int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
-
-        public Task StartAsync(CancellationToken cancellationToken)
-        {
-            _listener.Start();
-            var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _cancellation.Token);
-            _acceptTask = RunAsync(linked.Token);
-            return Task.CompletedTask;
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            await _cancellation.CancelAsync();
-            _listener.Stop();
-            if (_acceptTask is not null)
-            {
-                try
-                {
-                    await _acceptTask;
-                }
-                catch (OperationCanceledException)
-                {
-                }
-                catch (SocketException)
-                {
-                }
-                catch (EndOfStreamException)
-                {
-                }
-                catch (IOException)
-                {
-                }
-            }
-            _cancellation.Dispose();
-        }
-
-        private async Task RunAsync(CancellationToken cancellationToken)
-        {
-            using var client = await _listener.AcceptTcpClientAsync(cancellationToken);
-            await using var stream = client.GetStream();
-            var lengthBytes = new byte[4];
-            while (!cancellationToken.IsCancellationRequested)
-            {
-                await stream.ReadExactlyAsync(lengthBytes, cancellationToken);
-                var length = BinaryPrimitives.ReadInt32BigEndian(lengthBytes);
-                var payload = new byte[length];
-                await stream.ReadExactlyAsync(payload, cancellationToken);
-                if (payload[0] != 0x01)
-                {
-                    continue;
-                }
-
-                var body = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new
-                {
-                    values = new[]
-                    {
-                        new
-                        {
-                            pointId = "TEMP",
-                            value,
-                            quality = "GOOD",
-                            timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
-                        }
-                    }
-                });
-                var response = new byte[4 + 1 + body.Length];
-                BinaryPrimitives.WriteInt32BigEndian(response.AsSpan(0, 4), body.Length + 1);
-                response[4] = 0x02;
-                body.CopyTo(response.AsSpan(5));
-                await stream.WriteAsync(response, cancellationToken);
-                await stream.FlushAsync(cancellationToken);
-            }
-        }
-    }
 }

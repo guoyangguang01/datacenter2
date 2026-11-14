@@ -133,32 +133,34 @@ Linux/macOS 对应脚本为 `start-server.sh`、`start-headless.sh` 和 `start-c
 
 ## 自定义 TCP
 
-当前占位实现保持原有帧格式：
+TCP 协议采用内置服务端和主动推送模型：
 
 ```text
 [Length:4B big-endian][Command:1B][JSON Body]
 ```
 
-命令码为 `0x01/0x02/0x03/0x04/0x05/0x10/0x11`。codec 位于
-`SdnCustom.Protocols/Tcp/TcpFrame.cs`，取得参考程序协议文档后只替换该层。
+- 外部程序主动连接当前客户端配置的 TCP 监听 IP/端口。
+- INPUT：外部程序发送 `0x05` 推送帧，客户端接收后上报平台。
+- OUTPUT：平台产生输出后，客户端通过 `0x05` 主动广播给所有已连接外部程序。
+- `0x10/0x11` 用于心跳请求和响应。
 
-TCP 使用批量 JSON 语义：
+输入和输出均使用批量 JSON：
 
 ```json
-// 0x01 读请求
-{"pointIds":["P1","P2"]}
-
-// 0x02 读响应
-{"values":[{"pointId":"P1","value":1.5,"quality":"GOOD","timestamp":1700000000000}]}
-
-// 0x03 写请求
-{"values":[{"pointId":"P1","value":1.5,"timestamp":1700000000000}]}
-
-// 0x04 写响应
-{"results":[{"pointId":"P1","success":true}]}
+// 0x05 批量值推送，INPUT/OUTPUT 使用相同结构
+{
+  "values": [
+    {
+      "pointId": "P1",
+      "value": 1.5,
+      "quality": "Good",
+      "timestamp": 1700000000000
+    }
+  ]
+}
 ```
 
-TCP 不使用逐节点地址；地址参数仅用于 OPC UA。
+TCP 不使用逐节点地址，也不由客户端轮询外部服务。外部程序负责持续监听 OUTPUT 推送。
 
 ## OPC UA
 

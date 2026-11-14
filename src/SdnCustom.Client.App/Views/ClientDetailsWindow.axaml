@@ -50,7 +50,7 @@
               <NumericUpDown Grid.Column="3" Value="{Binding TimeoutMilliseconds}"
                              Minimum="100" Maximum="120000" Increment="500" />
 
-              <TextBlock Grid.Row="1" Text="TCP 设备 IP：" VerticalAlignment="Center" />
+              <TextBlock Grid.Row="1" Text="TCP 服务监听 IP：" VerticalAlignment="Center" />
               <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding DeviceHost}" />
               <TextBlock Grid.Row="1" Grid.Column="2" Text="端口：" VerticalAlignment="Center" />
               <TextBox Grid.Row="1" Grid.Column="3" Text="{Binding DevicePort}" />
@@ -60,7 +60,7 @@
                        Text="{Binding OpcUaEndpoint}"
                        Watermark="opc.tcp://127.0.0.1:4840" />
               <TextBlock Grid.Row="3" Grid.ColumnSpan="4" Foreground="#6A7786"
-                         Text="{Binding OpcUaModeDescription}" TextWrapping="Wrap" />
+                         Text="{Binding ExternalModeDescription}" TextWrapping="Wrap" />
             </Grid>
           </StackPanel>
         </Border>
@@ -96,9 +96,7 @@
 
     <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center"
                 VerticalAlignment="Center" Spacing="24">
-      <Button Classes="primary" Content="保存并关闭" Width="116" Click="SaveAndClose_OnClick"
-              IsEnabled="{Binding IsExternalServiceConfigurationEnabled}" />
-      <Button Classes="subtle" Content="取消" Width="100" Click="Cancel_OnClick" />
+      <Button Classes="primary" Content="关闭" Width="100" Click="Close_OnClick" />
     </StackPanel>
   </Grid>
 </Window>

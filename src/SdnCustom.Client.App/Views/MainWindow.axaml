@@ -64,9 +64,6 @@
           <CheckBox Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Content="安全连接"
                     IsChecked="{Binding UseTls}"
                     IsEnabled="{Binding IsServerConfigurationEnabled}" />
-          <Button Grid.Row="2" Grid.Column="3" Content="保存" Command="{Binding SaveCommand}" />
-          <Button Grid.Row="2" Grid.Column="4" Content="重载" Command="{Binding ReloadCommand}"
-                  IsEnabled="{Binding IsServerConfigurationEnabled}" />
         </Grid>
       </Border>
 
@@ -98,10 +95,10 @@
           <ComboBox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="5"
                     ItemsSource="{Binding ProtocolOptions}" SelectedItem="{Binding SelectedProtocolOption}"
                     IsEnabled="{Binding IsExternalServiceConfigurationEnabled}" />
-          <TextBlock Grid.Row="2" Text="设备 IP" Classes="muted" VerticalAlignment="Center" />
+          <TextBlock Grid.Row="2" Text="{Binding ExternalHostLabel}" Classes="muted" VerticalAlignment="Center" />
           <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding DeviceHost}"
                    IsEnabled="{Binding IsExternalServiceConfigurationEnabled}" />
-          <TextBlock Grid.Row="2" Grid.Column="2" Text="端口" Classes="muted"
+          <TextBlock Grid.Row="2" Grid.Column="2" Text="{Binding ExternalPortLabel}" Classes="muted"
                      VerticalAlignment="Center" />
           <TextBox Grid.Row="2" Grid.Column="3" Text="{Binding DevicePort}"
                    IsEnabled="{Binding IsExternalServiceConfigurationEnabled}" />

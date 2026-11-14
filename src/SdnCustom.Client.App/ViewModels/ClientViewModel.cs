@@ -52,12 +52,28 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
     public bool IsClientSelectionEnabled => IsManagementServerConnected && !IsSupervisorRunning;
     public bool IsExternalServiceConfigurationEnabled => !IsDeviceRunning;
     public bool IsOpcUaServerProtocol => Protocol == ClientProtocol.OpcUaServer;
-    public string OpcUaEndpointLabel => IsOpcUaServerProtocol
-        ? "OPC UA 监听 Endpoint"
-        : "OPC UA 服务器 Endpoint";
-    public string OpcUaModeDescription => IsOpcUaServerProtocol
-        ? "OPC UA 服务端模式：启动内置服务器，并按当前客户端点表创建输入/输出节点。"
-        : "OPC UA 客户端模式：连接外部 OPC UA 服务器并读写配置的节点。";
+    public string OpcUaEndpointLabel => Protocol switch
+    {
+        ClientProtocol.OpcUaServer => "OPC UA 监听 Endpoint",
+        ClientProtocol.OpcUaClient => "OPC UA 服务器 Endpoint",
+        _ => "OPC UA Endpoint（当前协议不使用）"
+    };
+    public string ExternalModeDescription => Protocol switch
+    {
+        ClientProtocol.CustomTcp =>
+            "TCP 服务端模式：外部程序连接监听地址并主动推送 INPUT；OUTPUT 由本客户端主动广播，外部程序持续监听。",
+        ClientProtocol.OpcUaClient =>
+            "OPC UA 客户端模式：连接外部 OPC UA 服务器并读写配置的节点。",
+        ClientProtocol.OpcUaServer =>
+            "OPC UA 服务端模式：启动内置服务器，并按当前客户端点表创建输入/输出节点。",
+        _ => string.Empty
+    };
+    public string ExternalHostLabel => Protocol == ClientProtocol.CustomTcp
+        ? "监听 IP"
+        : "外部服务 IP";
+    public string ExternalPortLabel => Protocol == ClientProtocol.CustomTcp
+        ? "监听端口"
+        : "端口";
 
     public ObservableCollection<LatestValueRow> LatestValues { get; } = [];
     public ObservableCollection<ClientPointRow> OutputPoints { get; } = [];
@@ -66,7 +82,7 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
     public ObservableCollection<ClientLogEntry> Logs { get; } = [];
     public IReadOnlyList<ProtocolDisplayOption> ProtocolOptions { get; } =
     [
-        new(ClientProtocol.CustomTcp, "TCP"),
+        new(ClientProtocol.CustomTcp, "TCP 服务端"),
         new(ClientProtocol.OpcUaClient, "OPC UA 客户端"),
         new(ClientProtocol.OpcUaServer, "OPC UA 服务端")
     ];
@@ -78,9 +94,9 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
     public ClientViewModel(IClientDirectoryClient clientDirectory)
     {
         _clientDirectory = clientDirectory;
-        SelectedProtocolOption = ProtocolOptions[0];
         _configStore = new ClientConfigStore();
         _supervisor = new AgentSupervisor(_configStore);
+        SelectedProtocolOption = ProtocolOptions[0];
         ConfigPath = _configStore.ConfigPath;
         _supervisor.RuntimeEvent += OnRuntimeEvent;
         _supervisor.LogReceived += OnLogReceived;
@@ -104,16 +120,11 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
-    [RelayCommand(CanExecute = nameof(CanSaveConfiguration))]
-    private Task SaveAsync() => SaveConfigurationAsync();
-
-    private bool CanSaveConfiguration() => !IsSupervisorRunning;
-
     public async Task<bool> SaveConfigurationAsync()
     {
-        if (_supervisor.IsRunning)
+        if (_supervisor.IsDeviceRunning)
         {
-            OperationMessage = "配置正在使用中。请先断开服务端，再保存配置。";
+            OperationMessage = "配置正在使用中。请先停止外部服务通讯，再保存配置。";
             return false;
         }
 
@@ -130,32 +141,14 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
-    [RelayCommand]
-    private Task ReloadAsync() => ReloadConfigurationAsync();
-
-    public async Task ReloadConfigurationAsync()
-    {
-        try
-        {
-            ApplyConfiguration(await _configStore.LoadAsync());
-            OperationMessage = "已重新载入最近保存的配置。";
-        }
-        catch (Exception exception)
-        {
-            OperationMessage = $"载入配置失败：{exception.Message}";
-        }
-    }
-
     [RelayCommand(CanExecute = nameof(CanConnectClient))]
     private async Task ConnectClientAsync()
     {
         try
         {
-            var configuration = BuildConfiguration();
-            var persisted = await _configStore.LoadAsync();
-            if (!ConfigurationsEqual(configuration, persisted))
+            if (!await SaveConfigurationAsync())
             {
-                await _configStore.SaveAsync(configuration);
+                return;
             }
             await _supervisor.StartAsync();
             StatusText = $"正在连接客户端 {ClientCode}...";
@@ -219,6 +212,12 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
             return;
         }
 
+        if (!await SaveConfigurationAsync())
+        {
+            StatusText = "连接失败";
+            return;
+        }
+
         var connected = await LoadRegisteredClientsAsync(reportErrors: true);
         IsManagementServerConnected = connected;
         StatusText = connected ? "服务器已连接，请选择客户端" : "连接失败";
@@ -230,6 +229,10 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
     {
         try
         {
+            if (!await SaveConfigurationAsync())
+            {
+                return;
+            }
             await _supervisor.StartCommunicationAsync();
         }
         catch (Exception exception)
@@ -307,30 +310,6 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
         },
         Points = _configuredPoints
     };
-
-    private static bool ConfigurationsEqual(
-        ClientConfiguration left,
-        ClientConfiguration right) =>
-        left.SchemaVersion == right.SchemaVersion &&
-        string.Equals(left.ClientCode, right.ClientCode, StringComparison.Ordinal) &&
-        string.Equals(left.ClientName, right.ClientName, StringComparison.Ordinal) &&
-        left.AutoStart == right.AutoStart &&
-        left.UserToCenterFrequencyMilliseconds == right.UserToCenterFrequencyMilliseconds &&
-        string.Equals(left.Server.Host, right.Server.Host, StringComparison.Ordinal) &&
-        left.Server.Port == right.Server.Port &&
-        left.Server.ManagementPort == right.Server.ManagementPort &&
-        left.Server.UseTls == right.Server.UseTls &&
-        string.Equals(
-            left.Server.ServerCertificateThumbprint,
-            right.Server.ServerCertificateThumbprint,
-            StringComparison.Ordinal) &&
-        left.Server.AllowUntrustedServerCertificate == right.Server.AllowUntrustedServerCertificate &&
-        left.Device.Protocol == right.Device.Protocol &&
-        string.Equals(left.Device.Host, right.Device.Host, StringComparison.Ordinal) &&
-        left.Device.Port == right.Device.Port &&
-        string.Equals(left.Device.OpcUaEndpoint, right.Device.OpcUaEndpoint, StringComparison.Ordinal) &&
-        left.Device.TimeoutMilliseconds == right.Device.TimeoutMilliseconds &&
-        left.Points.SequenceEqual(right.Points);
 
     private void ApplyConfiguration(ClientConfiguration configuration)
     {
@@ -475,7 +454,6 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
                 : "连接客户端";
         ToggleClientCommand.NotifyCanExecuteChanged();
         DisconnectClientCommand.NotifyCanExecuteChanged();
-        SaveCommand.NotifyCanExecuteChanged();
         StartCommunicationCommand.NotifyCanExecuteChanged();
         StopCommunicationCommand.NotifyCanExecuteChanged();
     }
@@ -501,7 +479,9 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
         SelectedProtocolOption = ProtocolOptions.FirstOrDefault(option => option.Value == value);
         OnPropertyChanged(nameof(IsOpcUaServerProtocol));
         OnPropertyChanged(nameof(OpcUaEndpointLabel));
-        OnPropertyChanged(nameof(OpcUaModeDescription));
+        OnPropertyChanged(nameof(ExternalModeDescription));
+        OnPropertyChanged(nameof(ExternalHostLabel));
+        OnPropertyChanged(nameof(ExternalPortLabel));
     }
 
     partial void OnSelectedProtocolOptionChanged(ProtocolDisplayOption? value)
@@ -515,7 +495,6 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
     private void RefreshSupervisorConfigurationState()
     {
         OnPropertyChanged(nameof(IsClientSelectionEnabled));
-        SaveCommand.NotifyCanExecuteChanged();
         ToggleClientCommand.NotifyCanExecuteChanged();
     }
 

@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Text.Json;
 using SdnCustom.Client.Core.Configuration;
 
 namespace SdnCustom.Client.Core.Discovery;
@@ -44,9 +45,30 @@ public sealed class AdminClientDirectoryClient : IClientDirectoryClient, IDispos
             server.Host,
             server.ManagementPort,
             "/api/clients").Uri;
-        var clients = await _httpClient.GetFromJsonAsync<List<RegisteredClient>>(
-            uri,
-            cancellationToken).ConfigureAwait(false);
+        using var response = await _httpClient.GetAsync(uri, cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var message = string.Empty;
+            try
+            {
+                using var document = JsonDocument.Parse(body);
+                message = document.RootElement.TryGetProperty("message", out var messageElement)
+                    ? messageElement.GetString() ?? string.Empty
+                    : string.Empty;
+            }
+            catch (JsonException)
+            {
+            }
+
+            throw new InvalidOperationException(
+                string.IsNullOrWhiteSpace(message)
+                    ? $"服务器拒绝客户端列表请求：HTTP {(int)response.StatusCode}"
+                    : message);
+        }
+
+        var clients = await response.Content.ReadFromJsonAsync<List<RegisteredClient>>(
+            cancellationToken: cancellationToken).ConfigureAwait(false);
         return clients ?? [];
     }
 

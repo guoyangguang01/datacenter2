@@ -110,8 +110,17 @@ public static class ServerHost
             Results.Ok(await admin.GetSystemSettingsAsync(cancellationToken)));
         app.MapGet("/api/clients", async (
             IAdminFacade admin,
+            IServerCommunicationGate communicationGate,
             CancellationToken cancellationToken) =>
         {
+            if (!communicationGate.IsRunning)
+            {
+                return Results.Conflict(new
+                {
+                    message = "服务端通讯未启动，禁止客户端连接。"
+                });
+            }
+
             var snapshot = await admin.GetSnapshotAsync(cancellationToken);
             return Results.Ok(snapshot.Clients
                 .Select(client => new ClientDirectoryItem(
