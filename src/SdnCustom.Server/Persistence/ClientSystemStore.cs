@@ -16,6 +16,7 @@ public sealed record ClientRegistration(
 public sealed record ClientSystemRecord(
     string ClientCode,
     string ClientName,
+    string SystemCode,
     bool Authorized,
     bool DesiredRunning,
     bool PointsConfigured,
@@ -35,7 +36,8 @@ public interface IClientSystemStore
     Task<ClientSystemRecord> CreateAuthorizedAsync(
         string clientCode,
         string clientName,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        string systemCode = "DEFAULT");
     Task<ClientSystemRecord> RenameAsync(
         string clientCode,
         string clientName,
@@ -85,7 +87,8 @@ public sealed class ClientSystemStore(IDbContextFactory<ServerDbContext> context
     public async Task<ClientSystemRecord> CreateAuthorizedAsync(
         string clientCode,
         string clientName,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string systemCode = "DEFAULT")
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(clientCode);
         ArgumentException.ThrowIfNullOrWhiteSpace(clientName);
@@ -97,10 +100,27 @@ public sealed class ClientSystemStore(IDbContextFactory<ServerDbContext> context
         }
 
         var now = DateTimeOffset.UtcNow;
+        var normalizedSystemCode = string.IsNullOrWhiteSpace(systemCode)
+            ? "DEFAULT"
+            : systemCode.Trim();
+        if (!await context.BusinessSystems.AnyAsync(
+                item => item.SystemCode == normalizedSystemCode,
+                cancellationToken).ConfigureAwait(false))
+        {
+            context.BusinessSystems.Add(new BusinessSystemEntity
+            {
+                SystemCode = normalizedSystemCode,
+                SystemName = normalizedSystemCode == "DEFAULT" ? "默认系统" : normalizedSystemCode,
+                Description = "自动创建的客户端分组。",
+                CreatedAt = now
+            });
+        }
+
         var entity = new ClientSystemEntity
         {
             ClientCode = code,
             ClientName = clientName.Trim(),
+            SystemCode = normalizedSystemCode,
             Authorized = true,
             PointsConfigured = true,
             FirstSeen = now,
@@ -198,11 +218,12 @@ public sealed class ClientSystemStore(IDbContextFactory<ServerDbContext> context
             ?? throw new KeyNotFoundException($"客户端代码未登记：{clientCode}");
 
         var duplicate = points
-            .GroupBy(point => point.PointId, StringComparer.Ordinal)
+            .GroupBy(point => (point.PointId, point.Direction))
             .FirstOrDefault(group => group.Count() > 1);
         if (duplicate is not null)
         {
-            throw new InvalidOperationException($"测点 ID 重复：{duplicate.Key}");
+            throw new InvalidOperationException(
+                $"测点 ID 与方向重复：{duplicate.Key.PointId}/{duplicate.Key.Direction}");
         }
         if (points.Any(point => string.IsNullOrWhiteSpace(point.PointId) ||
                                 string.IsNullOrWhiteSpace(point.PointName) ||
@@ -210,20 +231,21 @@ public sealed class ClientSystemStore(IDbContextFactory<ServerDbContext> context
         {
             throw new InvalidOperationException("测点 ID、名称和地址不能为空。");
         }
-        if (points.Any(point => point.Direction == PointDirection.Output &&
-                                string.IsNullOrWhiteSpace(point.SourceInputPointId)))
+        if (points.Any(point => !string.IsNullOrWhiteSpace(point.SourceInputPointId)))
         {
-            throw new InvalidOperationException("OUTPUT 测点必须引用一个 INPUT 测点。");
-        }
-        if (points.Any(point => point.Direction == PointDirection.Input &&
-                                !string.IsNullOrWhiteSpace(point.SourceInputPointId)))
-        {
-            throw new InvalidOperationException("INPUT 测点是数据来源，不能设置 SourceInputPointId。");
+            throw new InvalidOperationException(
+                "客户端端点不能保存来源引用；INPUT→OUTPUT 关系必须写入 PointLink。");
         }
 
-        var incomingIds = points.Select(point => point.PointId).ToHashSet(StringComparer.Ordinal);
+        var incomingIds = points
+            .Select(point => (point.PointId, point.Direction))
+            .ToHashSet();
         var removed = entity.Points
-            .Where(point => !incomingIds.Contains(point.PointId))
+            .Where(point => !incomingIds.Contains((
+                point.PointId,
+                Enum.TryParse<PointDirection>(point.Direction, true, out var direction)
+                    ? direction
+                    : PointDirection.Input)))
             .ToArray();
         context.PointCatalog.RemoveRange(removed);
         foreach (var point in removed)
@@ -231,10 +253,15 @@ public sealed class ClientSystemStore(IDbContextFactory<ServerDbContext> context
             entity.Points.Remove(point);
         }
 
-        var existingById = entity.Points.ToDictionary(point => point.PointId, StringComparer.Ordinal);
+        var existingById = entity.Points.ToDictionary(
+            point => (
+                point.PointId,
+                Enum.TryParse<PointDirection>(point.Direction, true, out var direction)
+                    ? direction
+                    : PointDirection.Input));
         foreach (var point in points)
         {
-            if (existingById.TryGetValue(point.PointId, out var entityPoint))
+            if (existingById.TryGetValue((point.PointId, point.Direction), out var entityPoint))
             {
                 CopyToEntity(point, entityPoint);
             }
@@ -258,6 +285,7 @@ public sealed class ClientSystemStore(IDbContextFactory<ServerDbContext> context
         return new ClientSystemRecord(
             entity.ClientCode,
             entity.ClientName,
+            entity.SystemCode,
             entity.Authorized,
             entity.DesiredRunning,
             entity.PointsConfigured,
@@ -279,9 +307,7 @@ public sealed class ClientSystemStore(IDbContextFactory<ServerDbContext> context
                 Direction = Enum.TryParse<PointDirection>(point.Direction, true, out var direction)
                     ? direction
                     : PointDirection.Input,
-                SourceInputPointId = string.IsNullOrWhiteSpace(point.SourceInputPointId)
-                    ? null
-                    : point.SourceInputPointId,
+                SourceInputPointId = null,
                 Deadband = point.Deadband,
                 Group = point.Group
             }).ToArray());
@@ -301,7 +327,6 @@ public sealed class ClientSystemStore(IDbContextFactory<ServerDbContext> context
         DataType = point.DataType.ToString(),
         Unit = point.Unit,
         Direction = point.Direction.ToString(),
-        SourceInputPointId = point.SourceInputPointId ?? string.Empty,
         Deadband = point.Deadband,
         Group = point.Group
     };
@@ -313,7 +338,6 @@ public sealed class ClientSystemStore(IDbContextFactory<ServerDbContext> context
         entity.DataType = point.DataType.ToString();
         entity.Unit = point.Unit;
         entity.Direction = point.Direction.ToString();
-        entity.SourceInputPointId = point.SourceInputPointId ?? string.Empty;
         entity.Deadband = point.Deadband;
         entity.Group = point.Group;
     }
@@ -324,7 +348,7 @@ public sealed class ClientSystemStore(IDbContextFactory<ServerDbContext> context
             "|",
             points.OrderBy(point => point.PointId, StringComparer.Ordinal)
                 .Select(point =>
-                    $"{point.PointId}:{point.PointName}:{point.Address}:{point.DataType}:{point.Direction}:{point.SourceInputPointId}:{point.Deadband}"));
+                    $"{point.PointId}:{point.PointName}:{point.Address}:{point.DataType}:{point.Direction}:{point.Deadband}"));
         return Convert.ToHexString(
             System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(value)));
     }

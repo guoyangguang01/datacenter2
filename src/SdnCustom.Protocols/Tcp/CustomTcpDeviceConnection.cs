@@ -49,8 +49,7 @@ public sealed class CustomTcpDeviceConnection : IDeviceConnection
 
         var document = JsonSerializer.SerializeToUtf8Bytes(new
         {
-            pointIds = points.Select(point => point.PointId).ToArray(),
-            addresses = points.Select(point => point.Address).ToArray()
+            pointIds = points.Select(point => point.PointId).ToArray()
         });
 
         await _ioGate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -67,16 +66,26 @@ public sealed class CustomTcpDeviceConnection : IDeviceConnection
         }
     }
 
-    public async Task WriteAsync(
+    public async Task<IReadOnlyList<DeviceWriteResult>> WriteBatchAsync(
         string clientCode,
-        PointDefinition point,
-        object? value,
+        IReadOnlyList<DeviceWriteItem> items,
         CancellationToken cancellationToken = default)
     {
+        if (items.Count == 0)
+        {
+            return [];
+        }
+
         var body = JsonSerializer.Serialize(new
         {
-            pointId = point.PointId,
-            value
+            values = items.Select(item => new
+            {
+                pointId = item.Point.PointId,
+                value = item.Value,
+                timestamp = item.TimestampUnixNanoseconds / 1_000_000L,
+                sourceClientCode = item.SourceClientCode,
+                sourcePointId = item.SourcePointId
+            }).ToArray()
         });
 
         await _ioGate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -84,17 +93,7 @@ public sealed class CustomTcpDeviceConnection : IDeviceConnection
         {
             await SendAsync(new TcpFrame(TcpCommand.WriteRequest, body), cancellationToken).ConfigureAwait(false);
             var response = await ReceiveExpectedAsync(TcpCommand.WriteResponse, cancellationToken).ConfigureAwait(false);
-            if (!string.IsNullOrWhiteSpace(response.Body))
-            {
-                using var document = JsonDocument.Parse(response.Body);
-                if (document.RootElement.TryGetProperty("success", out var success) && !success.GetBoolean())
-                {
-                    var message = document.RootElement.TryGetProperty("message", out var error)
-                        ? error.GetString()
-                        : "Device rejected write.";
-                    throw new IOException(message);
-                }
-            }
+            return ParseWriteResults(items, response.Body);
         }
         finally
         {
@@ -246,6 +245,48 @@ public sealed class CustomTcpDeviceConnection : IDeviceConnection
         }
 
         return result;
+    }
+
+    private static IReadOnlyList<DeviceWriteResult> ParseWriteResults(
+        IReadOnlyList<DeviceWriteItem> items,
+        string body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return items
+                .Select(item => new DeviceWriteResult(item.Point.PointId, true))
+                .ToArray();
+        }
+
+        using var document = JsonDocument.Parse(body);
+        if (document.RootElement.TryGetProperty("results", out var results) &&
+            results.ValueKind == JsonValueKind.Array)
+        {
+            return results.EnumerateArray().Select(result =>
+            {
+                var pointId = result.TryGetProperty("pointId", out var pointIdElement)
+                    ? pointIdElement.GetString() ?? string.Empty
+                    : string.Empty;
+                var success = result.TryGetProperty("success", out var successElement) &&
+                              successElement.GetBoolean();
+                var message = result.TryGetProperty("message", out var messageElement)
+                    ? messageElement.GetString() ?? string.Empty
+                    : string.Empty;
+                return new DeviceWriteResult(pointId, success, message);
+            }).ToArray();
+        }
+
+        var batchSuccess = !document.RootElement.TryGetProperty("success", out var successValue) ||
+                           successValue.GetBoolean();
+        var batchMessage = document.RootElement.TryGetProperty("message", out var error)
+            ? error.GetString() ?? string.Empty
+            : string.Empty;
+        return items
+            .Select(item => new DeviceWriteResult(
+                item.Point.PointId,
+                batchSuccess,
+                batchSuccess ? string.Empty : batchMessage))
+            .ToArray();
     }
 
     private static object? ReadJsonValue(JsonElement value) => value.ValueKind switch

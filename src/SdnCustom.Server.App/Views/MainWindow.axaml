@@ -76,13 +76,13 @@
               <TextBlock Text="运行日志" FontSize="12" HorizontalAlignment="Center" />
             </StackPanel>
           </Button>
-          <Button Classes="ribbon" Command="{Binding StartClientCommand}">
+          <Button Classes="ribbon" Command="{Binding StartCommunicationCommand}">
             <StackPanel>
               <TextBlock Text="●" FontSize="29" Foreground="#B9F3D8" HorizontalAlignment="Center" />
               <TextBlock Text="启动通讯" FontSize="12" HorizontalAlignment="Center" />
             </StackPanel>
           </Button>
-          <Button Classes="ribbon" Command="{Binding StopClientCommand}">
+          <Button Classes="ribbon" Command="{Binding StopCommunicationCommand}">
             <StackPanel>
               <TextBlock Text="⏻" FontSize="29" Foreground="#FFD4D4" HorizontalAlignment="Center" />
               <TextBlock Text="停止通讯" FontSize="12" HorizontalAlignment="Center" />
@@ -116,9 +116,7 @@
           </StackPanel>
         </Border>
         <TreeView Grid.Row="1" BorderThickness="0" Background="Transparent" Padding="6">
-          <TreeViewItem Header="仿真系统" IsExpanded="True">
-            <TreeViewItem Header="虚拟操作" />
-            <TreeViewItem Header="自定义视图" />
+          <TreeViewItem Header="{Binding SystemSummary}" IsExpanded="True">
             <TreeViewItem Header="客户端系统" IsExpanded="True">
               <ListBox ItemsSource="{Binding Clients}" SelectedItem="{Binding SelectedClient}"
                        Background="Transparent" BorderThickness="0">

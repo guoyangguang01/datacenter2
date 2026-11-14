@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:SdnCustom.Client.App.ViewModels"
+        xmlns:discovery="using:SdnCustom.Client.Core.Discovery"
         x:Class="SdnCustom.Client.App.Views.MainWindow"
         x:DataType="vm:ClientViewModel"
         Width="1360" Height="800" MinWidth="1180" MinHeight="680"
@@ -49,59 +50,67 @@
       <Border Classes="card" Margin="0,0,5,0" Padding="14">
         <Grid ColumnDefinitions="58,*,34,68,92" RowDefinitions="28,34,34"
               ColumnSpacing="6">
-          <TextBlock Grid.ColumnSpan="5" Text="数据中心设置" Classes="h2" />
+          <TextBlock Grid.ColumnSpan="5" Text="连接服务器" Classes="h2" />
           <TextBlock Grid.Row="1" Text="IP" Classes="muted" VerticalAlignment="Center" />
           <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ServerHost}"
-                   IsEnabled="{Binding IsConnectionConfigurationEnabled}" />
+                   IsEnabled="{Binding IsServerConfigurationEnabled}" />
           <TextBlock Grid.Row="1" Grid.Column="2" Text="端口" Classes="muted"
                      VerticalAlignment="Center" />
           <TextBox Grid.Row="1" Grid.Column="3" Text="{Binding ServerPort}"
-                   IsEnabled="{Binding IsConnectionConfigurationEnabled}" />
+                   IsEnabled="{Binding IsServerConfigurationEnabled}" />
           <Button Grid.Row="1" Grid.Column="4" Classes="primary"
                   Content="{Binding ServerConnectionButtonText}" Command="{Binding ToggleServerCommand}" />
           <TextBlock Grid.Row="2" Text="TLS" Classes="muted" VerticalAlignment="Center" />
           <CheckBox Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Content="安全连接"
                     IsChecked="{Binding UseTls}"
-                    IsEnabled="{Binding IsConnectionConfigurationEnabled}" />
+                    IsEnabled="{Binding IsServerConfigurationEnabled}" />
           <Button Grid.Row="2" Grid.Column="3" Content="保存" Command="{Binding SaveCommand}" />
-          <Button Grid.Row="2" Grid.Column="4" Content="重载" Command="{Binding ReloadCommand}" />
+          <Button Grid.Row="2" Grid.Column="4" Content="重载" Command="{Binding ReloadCommand}"
+                  IsEnabled="{Binding IsServerConfigurationEnabled}" />
         </Grid>
       </Border>
 
       <Border Grid.Column="1" Classes="card" Margin="5,0" Padding="14">
-        <Grid ColumnDefinitions="96,*" RowDefinitions="28,34,34" ColumnSpacing="8">
-          <TextBlock Grid.ColumnSpan="2" Text="数据用户设置" Classes="h2" />
-          <TextBlock Grid.Row="1" Text="客户端名称" Classes="muted" VerticalAlignment="Center" />
-          <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ClientName}"
-                   IsEnabled="{Binding IsConnectionConfigurationEnabled}" />
-          <TextBlock Grid.Row="2" Text="通讯协议" Classes="muted" VerticalAlignment="Center" />
-          <Grid Grid.Row="2" Grid.Column="1" ColumnDefinitions="*,92" ColumnSpacing="8">
-            <ComboBox ItemsSource="{Binding ProtocolOptions}" SelectedItem="{Binding Protocol}"
-                      IsEnabled="{Binding IsConnectionConfigurationEnabled}" />
-            <Button Grid.Column="1" Classes="primary" Content="连接"
-                    Command="{Binding ConnectServerCommand}" />
-          </Grid>
+        <Grid ColumnDefinitions="96,*,92" RowDefinitions="28,34" ColumnSpacing="8">
+          <TextBlock Grid.ColumnSpan="3" Text="选择客户端" Classes="h2" />
+          <TextBlock Grid.Row="1" Text="客户端" Classes="muted" VerticalAlignment="Center" />
+          <ComboBox Grid.Row="1" Grid.Column="1"
+                    ItemsSource="{Binding RegisteredClients}"
+                    SelectedItem="{Binding SelectedRegisteredClient}"
+                    IsEnabled="{Binding IsClientSelectionEnabled}">
+            <ComboBox.ItemTemplate>
+              <DataTemplate x:DataType="discovery:RegisteredClient">
+                <TextBlock Text="{Binding DisplayName}" />
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+          <Button Grid.Row="1" Grid.Column="2" Classes="primary"
+                  Content="{Binding ClientConnectionButtonText}"
+                  Command="{Binding ToggleClientCommand}" />
         </Grid>
       </Border>
 
       <Border Grid.Column="2" Classes="card" Margin="5,0,0,0" Padding="14">
-        <Grid ColumnDefinitions="44,*,32,56,76,76" RowDefinitions="28,34,34"
+        <Grid ColumnDefinitions="44,*,32,56,76,76" RowDefinitions="28,34,34,34"
               ColumnSpacing="6">
-          <TextBlock Grid.ColumnSpan="6" Text="实时通讯设置" Classes="h2" />
-          <TextBlock Grid.Row="1" Text="设备 IP" Classes="muted" VerticalAlignment="Center" />
-          <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding DeviceHost}"
-                   IsEnabled="{Binding IsConnectionConfigurationEnabled}" />
-          <TextBlock Grid.Row="1" Grid.Column="2" Text="端口" Classes="muted"
+          <TextBlock Grid.ColumnSpan="6" Text="外部服务配置" Classes="h2" />
+          <TextBlock Grid.Row="1" Text="协议" Classes="muted" VerticalAlignment="Center" />
+          <ComboBox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="5"
+                    ItemsSource="{Binding ProtocolOptions}" SelectedItem="{Binding SelectedProtocolOption}"
+                    IsEnabled="{Binding IsExternalServiceConfigurationEnabled}" />
+          <TextBlock Grid.Row="2" Text="设备 IP" Classes="muted" VerticalAlignment="Center" />
+          <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding DeviceHost}"
+                   IsEnabled="{Binding IsExternalServiceConfigurationEnabled}" />
+          <TextBlock Grid.Row="2" Grid.Column="2" Text="端口" Classes="muted"
                      VerticalAlignment="Center" />
-          <TextBox Grid.Row="1" Grid.Column="3" Text="{Binding DevicePort}"
-                   IsEnabled="{Binding IsConnectionConfigurationEnabled}" />
-          <Button Grid.Row="1" Grid.Column="4" Content="详细设置" Click="OpenDetails_OnClick" />
-          <Button Grid.Row="1" Grid.Column="5" Classes="success" Content="启动"
+          <TextBox Grid.Row="2" Grid.Column="3" Text="{Binding DevicePort}"
+                   IsEnabled="{Binding IsExternalServiceConfigurationEnabled}" />
+          <Button Grid.Row="2" Grid.Column="4" Grid.ColumnSpan="2" Content="详细设置" Click="OpenDetails_OnClick" />
+          <TextBlock Grid.Row="3" Grid.ColumnSpan="4" Text="通讯控制" Classes="muted"
+                     VerticalAlignment="Center" />
+          <Button Grid.Row="3" Grid.Column="4" Classes="success" Content="启动"
                   Command="{Binding StartCommunicationCommand}" />
-          <TextBlock Grid.Row="2" Text="代码" Classes="muted" VerticalAlignment="Center" />
-          <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding ClientCode}"
-                   IsEnabled="{Binding IsConnectionConfigurationEnabled}" />
-          <Button Grid.Row="2" Grid.Column="5" Classes="danger" Content="停止"
+          <Button Grid.Row="3" Grid.Column="5" Classes="danger" Content="停止"
                   Command="{Binding StopCommunicationCommand}" />
         </Grid>
       </Border>

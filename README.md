@@ -7,6 +7,7 @@ SDNCustom 是面向测点数据的集中分发平台。当前版本采用 .NET 1
 - 客户端通过双向流式 gRPC 接入服务端。
 - SQLite 保存客户端目录、权威点表配置和最新值，InfluxDB 保存历史。
 - 自定义 TCP 和 OPC UA 由客户端本地执行；服务端不直接访问设备。
+- OPC UA 分为客户端模式和服务端模式：客户端连接外部 OPC UA Server；服务端模式在客户端进程内启动 OPC UA Server。
 
 ## 项目结构
 
@@ -103,9 +104,14 @@ Linux/macOS 对应脚本为 `start-server.sh`、`start-headless.sh` 和 `start-c
 
 ## 首次使用
 
+服务端默认开启内置样例种子。空数据库首次启动时，会自动创建“燃油系统”样例，
+包含总表中的 5 个客户端、200 个 INPUT 端点、192 个 OUTPUT 端点和 366 条 OUTPUT 路由。客户端连接参数
+仍需在各客户端本地配置。可通过 `SdnCustom__SeedFuelSystemSample=false` 关闭。
+
 1. 在服务端右侧“系统监视器”登记客户端代码和名称。
 2. 在客户端填写相同的客户端代码、服务端地址和设备连接参数。
-3. 在服务端“用户管理”中配置点表，可导入/导出 CSV；保存后配置会下发给在线客户端。
+3. 在服务端“用户管理”中选择系统和客户端，可导入/导出内部点表 CSV，也可按系统
+   导入/导出原始燃气总表。燃气总表涉及的所有客户端必须提前创建并配置连接参数。
 4. 客户端应用服务端下发的点表并展示实时数据，不显示点表配置，也不提供 CSV/JSON 导入导出。
 5. 客户端连接服务端，在线后由服务端发送“启动通讯”。
 6. 服务端离线时客户端立即停止设备通讯，不产生本地补传数据。
@@ -120,7 +126,7 @@ Linux/macOS 对应脚本为 `start-server.sh`、`start-headless.sh` 和 `start-c
 - 客户端会回传设备通讯状态；管理界面显示实际通讯状态，而不是仅显示期望运行状态。
 - 服务端同时记录 INPUT 源值和 OUTPUT 意图值、质量和源时间戳。
 - 客户端代码是唯一身份依据，不使用用户名、密码或客户端证书。该模型只适合可信内网。
-- 服务端默认启用 TLS，并在首次启动时生成 `data/certs/server.pfx` 与 `server.cer`。
+- 服务端和客户端默认按可信内网部署，使用非 TLS 连接。需要加密链路时可在两端配置中启用 TLS 并指定证书。
 
 > 当前方向语义不兼容旧版本。升级时必须同时更新服务端与客户端，并重新生成点表和
 > `client.json`；服务端旧 SQLite 数据库需删除后重建。
@@ -136,10 +142,31 @@ Linux/macOS 对应脚本为 `start-server.sh`、`start-headless.sh` 和 `start-c
 命令码为 `0x01/0x02/0x03/0x04/0x05/0x10/0x11`。codec 位于
 `SdnCustom.Protocols/Tcp/TcpFrame.cs`，取得参考程序协议文档后只替换该层。
 
+TCP 使用批量 JSON 语义：
+
+```json
+// 0x01 读请求
+{"pointIds":["P1","P2"]}
+
+// 0x02 读响应
+{"values":[{"pointId":"P1","value":1.5,"quality":"GOOD","timestamp":1700000000000}]}
+
+// 0x03 写请求
+{"values":[{"pointId":"P1","value":1.5,"timestamp":1700000000000}]}
+
+// 0x04 写响应
+{"results":[{"pointId":"P1","success":true}]}
+```
+
+TCP 不使用逐节点地址；地址参数仅用于 OPC UA。
+
 ## OPC UA
 
-OPC UA 使用 open62541，原生构建说明见 `native/open62541-bridge/README.md`。
-缺少原生库时客户端会明确报告所需 DLL/SO，不会静默降级。
+- `OPC UA 客户端`：使用 open62541 连接外部 OPC UA Server。原生构建说明见
+  `native/open62541-bridge/README.md`；缺少原生库时会明确报告所需 DLL/SO。
+- `OPC UA 服务端`：使用 OPC UA Foundation .NET Standard `2.0.2` 在客户端进程内启动内置服务器。
+  Endpoint 是监听地址，当前客户端点表会映射为 `ns=1` 节点：INPUT 节点允许外部客户端写入，
+  OUTPUT 节点由软件更新供外部客户端读取。
 
 ## 服务模式
 

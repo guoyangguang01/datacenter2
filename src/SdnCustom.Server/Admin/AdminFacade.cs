@@ -26,9 +26,24 @@ public sealed record AdminClientView(
     string AppVersion,
     DateTimeOffset LastSeen,
     IReadOnlyList<PointDefinition> Points,
-    IReadOnlyList<AdminPointValue> LatestValues);
+    IReadOnlyList<AdminPointValue> LatestValues,
+    string SystemCode = "DEFAULT",
+    string SystemName = "默认系统");
 
-public sealed record AdminSnapshot(IReadOnlyList<AdminClientView> Clients, int OnlineClients, int TotalPoints);
+public sealed record AdminSystemView(
+    string SystemCode,
+    string SystemName,
+    string Description,
+    int ClientCount,
+    int PointCount,
+    int RouteCount);
+
+public sealed record AdminSnapshot(
+    IReadOnlyList<AdminClientView> Clients,
+    int OnlineClients,
+    int TotalPoints,
+    IReadOnlyList<AdminSystemView>? Systems = null,
+    bool CommunicationRunning = false);
 
 public sealed record AdminSystemSettingsView(
     string DataDirectory,
@@ -44,19 +59,32 @@ public interface IAdminFacade
     Task<AdminSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default);
     Task<AdminSystemSettingsView> GetSystemSettingsAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ServerLogEntry>> GetLogsAsync(int count = 500, CancellationToken cancellationToken = default);
-    Task CreateClientAsync(string clientCode, string clientName, CancellationToken cancellationToken = default);
+    Task CreateClientAsync(
+        string clientCode,
+        string clientName,
+        CancellationToken cancellationToken = default,
+        string? systemCode = null);
     Task RenameClientAsync(string clientCode, string clientName, CancellationToken cancellationToken = default);
     Task DeleteClientAsync(string clientCode, CancellationToken cancellationToken = default);
-    Task StartClientAsync(string clientCode, CancellationToken cancellationToken = default);
-    Task StopClientAsync(string clientCode, CancellationToken cancellationToken = default);
+    Task StartCommunicationAsync(CancellationToken cancellationToken = default);
+    Task StopCommunicationAsync(CancellationToken cancellationToken = default);
     Task SaveClientPointsAsync(
         string clientCode,
         IReadOnlyList<PointDefinition> points,
         CancellationToken cancellationToken = default);
     Task WritePointAsync(string clientCode, string pointId, object? value, CancellationToken cancellationToken = default);
+    Task<GasMasterImportResult> ImportGasMasterAsync(
+        string systemCode,
+        string systemName,
+        string csv,
+        CancellationToken cancellationToken = default);
+    Task<string> ExportGasMasterAsync(
+        string systemCode,
+        CancellationToken cancellationToken = default);
     Task<IReadOnlyList<HistoryPoint>> QueryHistoryAsync(
         string clientCode,
         string pointId,
+        PointDirection direction,
         DateTimeOffset from,
         DateTimeOffset to,
         int limit,
@@ -66,50 +94,74 @@ public interface IAdminFacade
 public sealed class AdminFacade : IAdminFacade
 {
     private readonly IClientSystemStore _clients;
+    private readonly IBusinessSystemStore _systems;
     private readonly IAgentRegistry _agents;
+    private readonly IServerCommunicationGate _communicationGate;
     private readonly IClientCommunicationStateStore _communicationStates;
     private readonly ILatestValueStore _latestValues;
     private readonly IServerControlService _control;
     private readonly IServerLogStore _logs;
     private readonly IOptions<ServerSettings> _settings;
+    private readonly IGasMasterTableService _gasMasterTable;
 
     public AdminFacade(
         IClientSystemStore clients,
+        IBusinessSystemStore systems,
         IAgentRegistry agents,
+        IServerCommunicationGate communicationGate,
         IClientCommunicationStateStore communicationStates,
         ILatestValueStore latestValues,
         IServerControlService control,
         IServerLogStore logs,
-        IOptions<ServerSettings> settings)
+        IOptions<ServerSettings> settings,
+        IGasMasterTableService gasMasterTable)
     {
         _clients = clients;
+        _systems = systems;
         _agents = agents;
+        _communicationGate = communicationGate;
         _communicationStates = communicationStates;
         _latestValues = latestValues;
         _control = control;
         _logs = logs;
         _settings = settings;
+        _gasMasterTable = gasMasterTable;
     }
 
     public async Task<AdminSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default)
     {
         var clients = await _clients.ListAsync(cancellationToken).ConfigureAwait(false);
+        var systems = await _systems.ListAsync(cancellationToken).ConfigureAwait(false);
+        var systemNames = systems.ToDictionary(
+            system => system.SystemCode,
+            system => system.SystemName,
+            StringComparer.Ordinal);
         var onlineCodes = _agents.List().Select(session => session.ClientCode).ToHashSet(StringComparer.Ordinal);
         var allValues = _latestValues.GetAll()
-            .ToDictionary(value => PointKey.Create(value.ClientCode, value.PointId));
+            .ToDictionary(value => (
+                value.ClientCode,
+                value.PointId,
+                string.IsNullOrWhiteSpace(value.SourcePointId)
+                    ? PointDirection.Input
+                    : PointDirection.Output));
 
         var result = clients.Select(client =>
         {
             var latest = client.Points
-                .Select(point => allValues.GetValueOrDefault(PointKey.Create(client.ClientCode, point.PointId)))
-                .Where(value => value is not null)
-                .Select(value => new AdminPointValue(
-                    value!.PointId,
-                    client.Points.First(point => point.PointId == value.PointId).PointName,
-                    client.Points.First(point => point.PointId == value.PointId).Direction,
-                    value.Value.Value,
-                    value.Value.Quality,
-                    value.Value.TimestampUnixNanoseconds))
+                .Select(point => (
+                    Point: point,
+                    Value: allValues.GetValueOrDefault((
+                        client.ClientCode,
+                        point.PointId,
+                        point.Direction))))
+                .Where(item => item.Value is not null)
+                .Select(item => new AdminPointValue(
+                    item.Point.PointId,
+                    item.Point.PointName,
+                    item.Point.Direction,
+                    item.Value!.Value.Value,
+                    item.Value.Value.Quality,
+                    item.Value.Value.TimestampUnixNanoseconds))
                 .ToArray();
 
             return new AdminClientView(
@@ -123,10 +175,24 @@ public sealed class AdminFacade : IAdminFacade
                 client.AppVersion,
                 client.LastSeen,
                 client.Points,
-                latest);
+                latest,
+                client.SystemCode,
+                systemNames.GetValueOrDefault(client.SystemCode, "未分组"));
         }).ToArray();
 
-        return new AdminSnapshot(result, result.Count(client => client.Online), result.Sum(client => client.Points.Count));
+        var systemViews = systems.Select(system => new AdminSystemView(
+            system.SystemCode,
+            system.SystemName,
+            system.Description,
+            system.ClientCount,
+            system.PointCount,
+            system.RouteCount)).ToArray();
+        return new AdminSnapshot(
+            result,
+            result.Count(client => client.Online),
+            result.Sum(client => client.Points.Count),
+            systemViews,
+            _communicationGate.IsRunning);
     }
 
     public Task<AdminSystemSettingsView> GetSystemSettingsAsync(
@@ -148,8 +214,12 @@ public sealed class AdminFacade : IAdminFacade
         CancellationToken cancellationToken = default) =>
         Task.FromResult(_logs.GetRecent(count));
 
-    public Task CreateClientAsync(string clientCode, string clientName, CancellationToken cancellationToken = default) =>
-        _control.CreateClientAsync(clientCode, clientName, cancellationToken);
+    public Task CreateClientAsync(
+        string clientCode,
+        string clientName,
+        CancellationToken cancellationToken = default,
+        string? systemCode = null) =>
+        _control.CreateClientAsync(clientCode, clientName, cancellationToken, systemCode);
 
     public Task RenameClientAsync(string clientCode, string clientName, CancellationToken cancellationToken = default) =>
         _control.RenameClientAsync(clientCode, clientName, cancellationToken);
@@ -157,11 +227,11 @@ public sealed class AdminFacade : IAdminFacade
     public Task DeleteClientAsync(string clientCode, CancellationToken cancellationToken = default) =>
         _control.DeleteClientAsync(clientCode, cancellationToken);
 
-    public Task StartClientAsync(string clientCode, CancellationToken cancellationToken = default) =>
-        _control.StartClientAsync(clientCode, cancellationToken);
+    public Task StartCommunicationAsync(CancellationToken cancellationToken = default) =>
+        _control.StartCommunicationAsync(cancellationToken);
 
-    public Task StopClientAsync(string clientCode, CancellationToken cancellationToken = default) =>
-        _control.StopClientAsync(clientCode, cancellationToken);
+    public Task StopCommunicationAsync(CancellationToken cancellationToken = default) =>
+        _control.StopCommunicationAsync(cancellationToken);
 
     public Task SaveClientPointsAsync(
         string clientCode,
@@ -176,12 +246,25 @@ public sealed class AdminFacade : IAdminFacade
         CancellationToken cancellationToken = default) =>
         _control.WritePointAsync(clientCode, pointId, value, cancellationToken);
 
+    public Task<GasMasterImportResult> ImportGasMasterAsync(
+        string systemCode,
+        string systemName,
+        string csv,
+        CancellationToken cancellationToken = default) =>
+        _gasMasterTable.ImportAsync(systemCode, systemName, csv, cancellationToken);
+
+    public Task<string> ExportGasMasterAsync(
+        string systemCode,
+        CancellationToken cancellationToken = default) =>
+        _gasMasterTable.ExportAsync(systemCode, cancellationToken);
+
     public Task<IReadOnlyList<HistoryPoint>> QueryHistoryAsync(
         string clientCode,
         string pointId,
+        PointDirection direction,
         DateTimeOffset from,
         DateTimeOffset to,
         int limit,
         CancellationToken cancellationToken = default) =>
-        _control.QueryHistoryAsync(clientCode, pointId, from, to, limit, cancellationToken);
+        _control.QueryHistoryAsync(clientCode, pointId, direction, from, to, limit, cancellationToken);
 }

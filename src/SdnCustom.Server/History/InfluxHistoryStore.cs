@@ -56,6 +56,7 @@ public sealed class InfluxHistoryStore : BackgroundService, IHistoryStore
     public async Task<IReadOnlyList<HistoryPoint>> QueryAsync(
         string clientCode,
         string pointId,
+        PointDirection direction,
         DateTimeOffset from,
         DateTimeOffset to,
         int limit,
@@ -64,7 +65,7 @@ public sealed class InfluxHistoryStore : BackgroundService, IHistoryStore
         var flux = $"""
             from(bucket: "{EscapeFlux(_settings.Bucket)}")
               |> range(start: {from.UtcDateTime:O}, stop: {to.UtcDateTime:O})
-              |> filter(fn: (r) => r._measurement == "point_value" and r.client_code == "{EscapeFlux(clientCode)}" and r.point_id == "{EscapeFlux(pointId)}")
+              |> filter(fn: (r) => r._measurement == "point_value" and r.client_code == "{EscapeFlux(clientCode)}" and r.point_id == "{EscapeFlux(pointId)}" and r.direction == "{direction.ToString().ToUpperInvariant()}")
               |> sort(columns: ["_time"])
               |> limit(n: {Math.Clamp(limit, 1, 10000)})
             """;

@@ -21,14 +21,16 @@ public static class ContractMapper
     public static DeviceProtocol ToContract(SharedClientProtocol protocol) => protocol switch
     {
         SharedClientProtocol.CustomTcp => DeviceProtocol.CustomTcp,
-        SharedClientProtocol.OpcUa => DeviceProtocol.OpcUa,
+        SharedClientProtocol.OpcUaClient => DeviceProtocol.OpcUaClient,
+        SharedClientProtocol.OpcUaServer => DeviceProtocol.OpcUaServer,
         _ => DeviceProtocol.Unspecified
     };
 
     public static SharedClientProtocol FromContract(DeviceProtocol protocol) => protocol switch
     {
         DeviceProtocol.CustomTcp => SharedClientProtocol.CustomTcp,
-        DeviceProtocol.OpcUa => SharedClientProtocol.OpcUa,
+        DeviceProtocol.OpcUaClient => SharedClientProtocol.OpcUaClient,
+        DeviceProtocol.OpcUaServer => SharedClientProtocol.OpcUaServer,
         _ => SharedClientProtocol.CustomTcp
     };
 

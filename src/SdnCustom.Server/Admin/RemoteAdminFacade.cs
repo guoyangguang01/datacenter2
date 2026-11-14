@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using SdnCustom.Server.History;
+using SdnCustom.Server.Persistence;
 using SdnCustom.Server.Runtime;
 using SdnCustom.Shared.Model;
 
@@ -84,11 +85,15 @@ public sealed class RemoteAdminFacade : IAdminFacade
                ?? [];
     }
 
-    public async Task CreateClientAsync(string clientCode, string clientName, CancellationToken cancellationToken = default)
+    public async Task CreateClientAsync(
+        string clientCode,
+        string clientName,
+        CancellationToken cancellationToken = default,
+        string? systemCode = null)
     {
         using var response = await _httpClient.PostAsJsonAsync(
             "api/clients",
-            new CreateClientRequest(clientCode, clientName),
+            new CreateClientRequest(clientCode, clientName, systemCode),
             cancellationToken).ConfigureAwait(false);
         await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
     }
@@ -113,19 +118,19 @@ public sealed class RemoteAdminFacade : IAdminFacade
         await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task StartClientAsync(string clientCode, CancellationToken cancellationToken = default)
+    public async Task StartCommunicationAsync(CancellationToken cancellationToken = default)
     {
         using var response = await _httpClient.PostAsync(
-            $"api/clients/{Uri.EscapeDataString(clientCode)}/start",
+            "api/communication/start",
             null,
             cancellationToken).ConfigureAwait(false);
         await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task StopClientAsync(string clientCode, CancellationToken cancellationToken = default)
+    public async Task StopCommunicationAsync(CancellationToken cancellationToken = default)
     {
         using var response = await _httpClient.PostAsync(
-            $"api/clients/{Uri.EscapeDataString(clientCode)}/stop",
+            "api/communication/stop",
             null,
             cancellationToken).ConfigureAwait(false);
         await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
@@ -156,9 +161,37 @@ public sealed class RemoteAdminFacade : IAdminFacade
         await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<GasMasterImportResult> ImportGasMasterAsync(
+        string systemCode,
+        string systemName,
+        string csv,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _httpClient.PostAsJsonAsync(
+            "api/systems/import-gas",
+            new ImportGasMasterRequest(systemCode, systemName, csv),
+            cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+        return await response.Content.ReadFromJsonAsync<GasMasterImportResult>(
+                   JsonOptions,
+                   cancellationToken).ConfigureAwait(false)
+               ?? throw new InvalidOperationException("燃气总表导入返回空响应。");
+    }
+
+    public async Task<string> ExportGasMasterAsync(
+        string systemCode,
+        CancellationToken cancellationToken = default)
+    {
+        var url = $"api/systems/{Uri.EscapeDataString(systemCode)}/export-gas";
+        using var response = await _httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+        return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<IReadOnlyList<HistoryPoint>> QueryHistoryAsync(
         string clientCode,
         string pointId,
+        PointDirection direction,
         DateTimeOffset from,
         DateTimeOffset to,
         int limit,
@@ -167,6 +200,7 @@ public sealed class RemoteAdminFacade : IAdminFacade
         var url =
             $"api/history?clientCode={Uri.EscapeDataString(clientCode)}" +
             $"&pointId={Uri.EscapeDataString(pointId)}" +
+            $"&direction={Uri.EscapeDataString(direction.ToString())}" +
             $"&from={Uri.EscapeDataString(from.ToString("O", CultureInfo.InvariantCulture))}" +
             $"&to={Uri.EscapeDataString(to.ToString("O", CultureInfo.InvariantCulture))}" +
             $"&limit={limit}";

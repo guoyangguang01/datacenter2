@@ -40,6 +40,16 @@ public sealed class GrpcRegistrationTests
 
             using var channel = GrpcChannel.ForAddress($"http://127.0.0.1:{grpcPort}");
             var client = new AgentGateway.AgentGatewayClient(channel);
+            using (var rejected = client.Connect())
+            {
+                await rejected.RequestStream.WriteAsync(Hello("CLIENT-01"));
+                Assert.True(await rejected.ResponseStream.MoveNext(CancellationToken.None));
+                Assert.False(rejected.ResponseStream.Current.Welcome.Accepted);
+                Assert.Contains("未启动", rejected.ResponseStream.Current.Welcome.Message);
+                await rejected.RequestStream.CompleteAsync();
+            }
+
+            await admin.StartCommunicationAsync();
             using var call = client.Connect();
             await call.RequestStream.WriteAsync(Hello("CLIENT-01"));
             Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));

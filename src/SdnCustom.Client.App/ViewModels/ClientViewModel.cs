@@ -3,6 +3,7 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SdnCustom.Client.Core.Configuration;
+using SdnCustom.Client.Core.Discovery;
 using SdnCustom.Client.Core.Runtime;
 using SdnCustom.Shared.Model;
 
@@ -12,15 +13,17 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
 {
     private readonly IClientConfigStore _configStore;
     private readonly AgentSupervisor _supervisor;
+    private readonly IClientDirectoryClient _clientDirectory;
     private readonly Dictionary<string, PointDefinition> _pointLookup = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, PointValue> _latestByPointId = new(StringComparer.Ordinal);
+    private readonly Dictionary<(string PointId, PointDirection Direction), PointValue> _latestByPointId = new();
     private List<PointDefinition> _configuredPoints = [];
 
     [ObservableProperty] private string _clientCode = "CLIENT-001";
     [ObservableProperty] private string _clientName = "单连接客户端";
     [ObservableProperty] private string _serverHost = "127.0.0.1";
     [ObservableProperty] private int _serverPort = 7443;
-    [ObservableProperty] private bool _useTls = true;
+    [ObservableProperty] private int _managementPort = 7444;
+    [ObservableProperty] private bool _useTls;
     [ObservableProperty] private bool _allowUntrustedServerCertificate = true;
     [ObservableProperty] private string _serverCertificateThumbprint = string.Empty;
     [ObservableProperty] private ClientProtocol _protocol = ClientProtocol.CustomTcp;
@@ -31,25 +34,51 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private bool _autoStart;
     [ObservableProperty] private int _userToCenterFrequencyMilliseconds = 200;
     [ObservableProperty] private string _statusText = "未连接服务端";
-    [ObservableProperty] private string _serverConnectionButtonText = "连接服务端";
+    [ObservableProperty] private string _serverConnectionButtonText = "连接服务器";
+    [ObservableProperty] private string _clientConnectionButtonText = "连接客户端";
     [ObservableProperty] private int _outputPointCount;
     [ObservableProperty] private int _inputPointCount;
     [ObservableProperty] private string _operationMessage = string.Empty;
     [ObservableProperty] private string _configPath = string.Empty;
     [ObservableProperty] private bool _isServerConnected;
+    [ObservableProperty] private bool _isManagementServerConnected;
     [ObservableProperty] private bool _isDeviceRunning;
     [ObservableProperty] private bool _isSupervisorRunning;
+    [ObservableProperty] private bool _isLoadingRegisteredClients;
+    [ObservableProperty] private RegisteredClient? _selectedRegisteredClient;
+    [ObservableProperty] private ProtocolDisplayOption? _selectedProtocolOption;
     public bool IsServerDisconnected => !IsServerConnected;
-    public bool IsConnectionConfigurationEnabled => !IsSupervisorRunning;
+    public bool IsServerConfigurationEnabled => !IsManagementServerConnected;
+    public bool IsClientSelectionEnabled => IsManagementServerConnected && !IsSupervisorRunning;
+    public bool IsExternalServiceConfigurationEnabled => !IsDeviceRunning;
+    public bool IsOpcUaServerProtocol => Protocol == ClientProtocol.OpcUaServer;
+    public string OpcUaEndpointLabel => IsOpcUaServerProtocol
+        ? "OPC UA 监听 Endpoint"
+        : "OPC UA 服务器 Endpoint";
+    public string OpcUaModeDescription => IsOpcUaServerProtocol
+        ? "OPC UA 服务端模式：启动内置服务器，并按当前客户端点表创建输入/输出节点。"
+        : "OPC UA 客户端模式：连接外部 OPC UA 服务器并读写配置的节点。";
 
     public ObservableCollection<LatestValueRow> LatestValues { get; } = [];
     public ObservableCollection<ClientPointRow> OutputPoints { get; } = [];
     public ObservableCollection<ClientPointRow> InputPoints { get; } = [];
+    public ObservableCollection<RegisteredClient> RegisteredClients { get; } = [];
     public ObservableCollection<ClientLogEntry> Logs { get; } = [];
-    public IReadOnlyList<ClientProtocol> ProtocolOptions { get; } = Enum.GetValues<ClientProtocol>();
+    public IReadOnlyList<ProtocolDisplayOption> ProtocolOptions { get; } =
+    [
+        new(ClientProtocol.CustomTcp, "TCP"),
+        new(ClientProtocol.OpcUaClient, "OPC UA 客户端"),
+        new(ClientProtocol.OpcUaServer, "OPC UA 服务端")
+    ];
 
-    public ClientViewModel()
+    public ClientViewModel() : this(new AdminClientDirectoryClient())
     {
+    }
+
+    public ClientViewModel(IClientDirectoryClient clientDirectory)
+    {
+        _clientDirectory = clientDirectory;
+        SelectedProtocolOption = ProtocolOptions[0];
         _configStore = new ClientConfigStore();
         _supervisor = new AgentSupervisor(_configStore);
         ConfigPath = _configStore.ConfigPath;
@@ -64,7 +93,9 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
         {
             var configuration = await _configStore.LoadAsync();
             ApplyConfiguration(configuration);
-            OperationMessage = File.Exists(ConfigPath) ? "配置已加载。" : "尚未保存配置，请完成通讯设置并保存。";
+            OperationMessage = File.Exists(ConfigPath)
+                ? "配置已加载，请先连接服务器。"
+                : "尚未保存配置，请先连接服务器。";
             RefreshSupervisorState();
         }
         catch (Exception exception)
@@ -115,15 +146,20 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
-    [RelayCommand(CanExecute = nameof(CanConnectServer))]
-    private async Task ConnectServerAsync()
+    [RelayCommand(CanExecute = nameof(CanConnectClient))]
+    private async Task ConnectClientAsync()
     {
         try
         {
-            await _configStore.SaveAsync(BuildConfiguration());
+            var configuration = BuildConfiguration();
+            var persisted = await _configStore.LoadAsync();
+            if (!ConfigurationsEqual(configuration, persisted))
+            {
+                await _configStore.SaveAsync(configuration);
+            }
             await _supervisor.StartAsync();
-            StatusText = "正在连接服务端...";
-            OperationMessage = "客户端监督器已启动。";
+            StatusText = $"正在连接客户端 {ClientCode}...";
+            OperationMessage = $"正在连接客户端 {ClientCode}。";
             RefreshSupervisorState();
         }
         catch (Exception exception)
@@ -133,29 +169,60 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
-    private bool CanConnectServer() => !IsSupervisorRunning;
+    private bool CanConnectClient() =>
+        IsManagementServerConnected &&
+        SelectedRegisteredClient is not null &&
+        !IsSupervisorRunning;
 
-    [RelayCommand(CanExecute = nameof(CanDisconnectServer))]
-    private async Task DisconnectServerAsync()
+    [RelayCommand(CanExecute = nameof(CanDisconnectClient))]
+    private async Task DisconnectClientAsync()
     {
         await _supervisor.StopAsync();
-        StatusText = "已断开服务端";
+        StatusText = "已断开客户端";
+        OperationMessage = "客户端连接已断开。";
         RefreshSupervisorState();
     }
 
-    private bool CanDisconnectServer() => IsSupervisorRunning;
+    private bool CanDisconnectClient() => IsSupervisorRunning;
+
+    [RelayCommand(CanExecute = nameof(CanToggleClient))]
+    private async Task ToggleClientAsync()
+    {
+        if (_supervisor.IsRunning)
+        {
+            await DisconnectClientAsync();
+        }
+        else
+        {
+            await ConnectClientAsync();
+        }
+    }
+
+    private bool CanToggleClient() => IsSupervisorRunning || CanConnectClient();
 
     [RelayCommand]
     private async Task ToggleServerAsync()
     {
-        if (_supervisor.IsRunning)
+        if (IsManagementServerConnected)
         {
-            await DisconnectServerAsync();
+            if (_supervisor.IsRunning)
+            {
+                await _supervisor.StopAsync();
+            }
+
+            IsManagementServerConnected = false;
+            RegisteredClients.Clear();
+            SelectedRegisteredClient = null;
+            StatusText = "已断开服务器";
+            OperationMessage = "服务器连接已断开。";
+            RefreshSupervisorState();
+            return;
         }
-        else
-        {
-            await ConnectServerAsync();
-        }
+
+        var connected = await LoadRegisteredClientsAsync(reportErrors: true);
+        IsManagementServerConnected = connected;
+        StatusText = connected ? "服务器已连接，请选择客户端" : "连接失败";
+        RefreshSupervisorState();
     }
 
     [RelayCommand(CanExecute = nameof(CanStartCommunication))]
@@ -209,6 +276,10 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
         _supervisor.LogReceived -= OnLogReceived;
         _supervisor.ConfigurationChanged -= OnConfigurationChanged;
         await _supervisor.DisposeAsync();
+        if (_clientDirectory is IDisposable disposable)
+        {
+            disposable.Dispose();
+        }
     }
 
     private ClientConfiguration BuildConfiguration() => new()
@@ -221,6 +292,7 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
         {
             Host = ServerHost.Trim(),
             Port = ServerPort,
+            ManagementPort = ManagementPort,
             UseTls = UseTls,
             AllowUntrustedServerCertificate = AllowUntrustedServerCertificate,
             ServerCertificateThumbprint = ServerCertificateThumbprint.Trim()
@@ -236,12 +308,37 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
         Points = _configuredPoints
     };
 
+    private static bool ConfigurationsEqual(
+        ClientConfiguration left,
+        ClientConfiguration right) =>
+        left.SchemaVersion == right.SchemaVersion &&
+        string.Equals(left.ClientCode, right.ClientCode, StringComparison.Ordinal) &&
+        string.Equals(left.ClientName, right.ClientName, StringComparison.Ordinal) &&
+        left.AutoStart == right.AutoStart &&
+        left.UserToCenterFrequencyMilliseconds == right.UserToCenterFrequencyMilliseconds &&
+        string.Equals(left.Server.Host, right.Server.Host, StringComparison.Ordinal) &&
+        left.Server.Port == right.Server.Port &&
+        left.Server.ManagementPort == right.Server.ManagementPort &&
+        left.Server.UseTls == right.Server.UseTls &&
+        string.Equals(
+            left.Server.ServerCertificateThumbprint,
+            right.Server.ServerCertificateThumbprint,
+            StringComparison.Ordinal) &&
+        left.Server.AllowUntrustedServerCertificate == right.Server.AllowUntrustedServerCertificate &&
+        left.Device.Protocol == right.Device.Protocol &&
+        string.Equals(left.Device.Host, right.Device.Host, StringComparison.Ordinal) &&
+        left.Device.Port == right.Device.Port &&
+        string.Equals(left.Device.OpcUaEndpoint, right.Device.OpcUaEndpoint, StringComparison.Ordinal) &&
+        left.Device.TimeoutMilliseconds == right.Device.TimeoutMilliseconds &&
+        left.Points.SequenceEqual(right.Points);
+
     private void ApplyConfiguration(ClientConfiguration configuration)
     {
         ClientCode = configuration.ClientCode;
         ClientName = configuration.ClientName;
         ServerHost = configuration.Server.Host;
         ServerPort = configuration.Server.Port;
+        ManagementPort = configuration.Server.ManagementPort;
         UseTls = configuration.Server.UseTls;
         AllowUntrustedServerCertificate = configuration.Server.AllowUntrustedServerCertificate;
         ServerCertificateThumbprint = configuration.Server.ServerCertificateThumbprint;
@@ -259,6 +356,66 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
             _pointLookup[point.PointId] = point;
         }
         RebuildPointRows();
+    }
+
+    partial void OnSelectedRegisteredClientChanged(RegisteredClient? value)
+    {
+        ToggleClientCommand.NotifyCanExecuteChanged();
+        if (value is null)
+        {
+            return;
+        }
+
+        ClientCode = value.ClientCode;
+        ClientName = value.ClientName;
+    }
+
+    private async Task<bool> LoadRegisteredClientsAsync(bool reportErrors = false)
+    {
+        if (IsSupervisorRunning || IsLoadingRegisteredClients)
+        {
+            return false;
+        }
+
+        IsLoadingRegisteredClients = true;
+        try
+        {
+            var clients = await _clientDirectory.ListAsync(new ServerConnectionOptions
+            {
+                Host = ServerHost.Trim(),
+                Port = ServerPort,
+                ManagementPort = ManagementPort,
+                UseTls = UseTls,
+                AllowUntrustedServerCertificate = AllowUntrustedServerCertificate,
+                ServerCertificateThumbprint = ServerCertificateThumbprint.Trim()
+            });
+
+            RegisteredClients.Clear();
+            foreach (var client in clients.OrderBy(client => client.ClientCode, StringComparer.Ordinal))
+            {
+                RegisteredClients.Add(client);
+            }
+
+            SelectedRegisteredClient = RegisteredClients.FirstOrDefault(client =>
+                string.Equals(client.ClientCode, ClientCode, StringComparison.Ordinal));
+            if (reportErrors)
+            {
+                OperationMessage = $"已加载 {RegisteredClients.Count} 个已登记客户端。";
+            }
+            return true;
+        }
+        catch (Exception exception)
+        {
+            if (reportErrors)
+            {
+                OperationMessage = $"加载客户端列表失败：{exception.Message}";
+            }
+            return false;
+        }
+        finally
+        {
+            IsLoadingRegisteredClients = false;
+        }
     }
 
     private void OnRuntimeEvent(object? sender, ClientRuntimeEvent runtimeEvent)
@@ -279,8 +436,13 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
 
             foreach (var sample in runtimeEvent.LatestValues)
             {
-                _latestByPointId[sample.PointId] = sample.Value;
-                var existing = LatestValues.FirstOrDefault(row => row.PointId == sample.PointId);
+                var direction = string.IsNullOrWhiteSpace(sample.SourcePointId)
+                    ? PointDirection.Input
+                    : PointDirection.Output;
+                _latestByPointId[(sample.PointId, direction)] = sample.Value;
+                var existing = LatestValues.FirstOrDefault(row =>
+                    row.PointId == sample.PointId &&
+                    row.Direction == direction);
                 if (existing is not null)
                 {
                     LatestValues.Remove(existing);
@@ -288,6 +450,7 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
                 LatestValues.Insert(0, new LatestValueRow(
                     sample.PointId,
                     _pointLookup.GetValueOrDefault(sample.PointId)?.PointName ?? sample.PointId,
+                    direction,
                     sample.Value.Value?.ToString() ?? "--",
                     sample.Value.Quality.ToString(),
                     UnixTime.FromNanoseconds(sample.Value.TimestampUnixNanoseconds).ToLocalTime()));
@@ -302,13 +465,16 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
         IsServerConnected = _supervisor.IsServerConnected;
         IsDeviceRunning = _supervisor.IsDeviceRunning;
         IsSupervisorRunning = _supervisor.IsRunning;
-        ServerConnectionButtonText = IsServerConnected
-            ? "断开"
+        ServerConnectionButtonText = IsManagementServerConnected
+            ? "断开服务器"
+            : "连接服务器";
+        ClientConnectionButtonText = IsServerConnected
+            ? "断开客户端"
             : IsSupervisorRunning
                 ? "取消连接"
-                : "连接服务端";
-        ConnectServerCommand.NotifyCanExecuteChanged();
-        DisconnectServerCommand.NotifyCanExecuteChanged();
+                : "连接客户端";
+        ToggleClientCommand.NotifyCanExecuteChanged();
+        DisconnectClientCommand.NotifyCanExecuteChanged();
         SaveCommand.NotifyCanExecuteChanged();
         StartCommunicationCommand.NotifyCanExecuteChanged();
         StopCommunicationCommand.NotifyCanExecuteChanged();
@@ -323,14 +489,39 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
     partial void OnIsSupervisorRunningChanged(bool value) =>
         RefreshSupervisorConfigurationState();
 
+    partial void OnIsManagementServerConnectedChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsServerConfigurationEnabled));
+        OnPropertyChanged(nameof(IsClientSelectionEnabled));
+        ToggleClientCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnProtocolChanged(ClientProtocol value)
+    {
+        SelectedProtocolOption = ProtocolOptions.FirstOrDefault(option => option.Value == value);
+        OnPropertyChanged(nameof(IsOpcUaServerProtocol));
+        OnPropertyChanged(nameof(OpcUaEndpointLabel));
+        OnPropertyChanged(nameof(OpcUaModeDescription));
+    }
+
+    partial void OnSelectedProtocolOptionChanged(ProtocolDisplayOption? value)
+    {
+        if (value is not null)
+        {
+            Protocol = value.Value;
+        }
+    }
+
     private void RefreshSupervisorConfigurationState()
     {
-        OnPropertyChanged(nameof(IsConnectionConfigurationEnabled));
+        OnPropertyChanged(nameof(IsClientSelectionEnabled));
         SaveCommand.NotifyCanExecuteChanged();
+        ToggleClientCommand.NotifyCanExecuteChanged();
     }
 
     private void RefreshCommandStates()
     {
+        OnPropertyChanged(nameof(IsExternalServiceConfigurationEnabled));
         StartCommunicationCommand.NotifyCanExecuteChanged();
         StopCommunicationCommand.NotifyCanExecuteChanged();
     }
@@ -362,7 +553,7 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
         InputPoints.Clear();
         foreach (var point in _configuredPoints)
         {
-            var value = _latestByPointId.GetValueOrDefault(point.PointId);
+            var value = _latestByPointId.GetValueOrDefault((point.PointId, point.Direction));
             var row = new ClientPointRow(
                 point.PointId,
                 point.PointName,
@@ -386,9 +577,15 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
     }
 }
 
+public sealed record ProtocolDisplayOption(ClientProtocol Value, string DisplayName)
+{
+    public override string ToString() => DisplayName;
+}
+
 public sealed record LatestValueRow(
     string PointId,
     string PointName,
+    PointDirection Direction,
     string Value,
     string Quality,
     DateTimeOffset Timestamp);

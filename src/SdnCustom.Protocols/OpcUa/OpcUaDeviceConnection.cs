@@ -16,7 +16,7 @@ public sealed class OpcUaDeviceConnection : IDeviceConnection
         _bridge = bridge;
     }
 
-    public ClientProtocol Protocol => ClientProtocol.OpcUa;
+    public ClientProtocol Protocol => ClientProtocol.OpcUaClient;
     public bool IsConnected => _handle != nint.Zero;
 
     public async Task ConnectAsync(
@@ -104,11 +104,10 @@ public sealed class OpcUaDeviceConnection : IDeviceConnection
         }
     }
 
-    public async Task WriteAsync(
-        string clientCode,
+    private async Task WriteCoreAsync(
         PointDefinition point,
         object? value,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken)
     {
         await _ioGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -131,6 +130,34 @@ public sealed class OpcUaDeviceConnection : IDeviceConnection
         {
             _ioGate.Release();
         }
+    }
+
+    public async Task<IReadOnlyList<DeviceWriteResult>> WriteBatchAsync(
+        string clientCode,
+        IReadOnlyList<DeviceWriteItem> items,
+        CancellationToken cancellationToken = default)
+    {
+        var results = new List<DeviceWriteResult>(items.Count);
+        foreach (var item in items)
+        {
+            try
+            {
+                await WriteCoreAsync(
+                    item.Point,
+                    item.Value,
+                    cancellationToken).ConfigureAwait(false);
+                results.Add(new DeviceWriteResult(item.Point.PointId, true));
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                results.Add(new DeviceWriteResult(
+                    item.Point.PointId,
+                    false,
+                    exception.Message));
+            }
+        }
+
+        return results;
     }
 
     public async Task DisconnectAsync(CancellationToken cancellationToken = default)

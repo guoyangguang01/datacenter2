@@ -11,7 +11,8 @@ service AgentGateway {
 enum DeviceProtocol {
   DEVICE_PROTOCOL_UNSPECIFIED = 0;
   CUSTOM_TCP = 1;
-  OPC_UA = 2;
+  OPC_UA_CLIENT = 2;
+  OPC_UA_SERVER = 3;
 }
 
 enum PointDirection {
@@ -55,9 +56,9 @@ message AgentMessage {
     ClientStatusChanged status_changed = 11;
     PointBatch value_batch = 12;
     PointSnapshot snapshot = 13;
-    WriteResult write_result = 14;
     LogEvent log_event = 15;
     Ping ping = 16;
+    WriteResults write_results = 17;
   }
 }
 
@@ -68,10 +69,10 @@ message ServerMessage {
     Welcome welcome = 10;
     StartCommunication start_communication = 11;
     StopCommunication stop_communication = 12;
-    WritePoint write_point = 13;
     SnapshotRequest request_snapshot = 14;
     Ping ping = 15;
     ConfigurePoints configure_points = 16;
+    WritePoints write_points = 17;
   }
 }
 
@@ -148,13 +149,17 @@ message StopCommunication {
   string command_id = 1;
 }
 
-message WritePoint {
+message WritePointItem {
+  string point_id = 1;
+  TypedValue value = 5;
+  int64 timestamp_unix_ns = 6;
+  string source_client_code = 7;
+  string source_point_id = 8;
+}
+
+message WritePoints {
   string command_id = 1;
-  string point_id = 2;
-  TypedValue value = 3;
-  int64 timestamp_unix_ns = 4;
-  string source_client_code = 5;
-  string source_point_id = 6;
+  repeated WritePointItem points = 2;
 }
 
 message SnapshotRequest {
@@ -167,11 +172,16 @@ message ConfigurePoints {
   string message = 3;
 }
 
-message WriteResult {
-  string command_id = 1;
+message WritePointResult {
+  string point_id = 1;
   bool success = 2;
   string error_message = 3;
-  int64 completed_unix_ns = 4;
+}
+
+message WriteResults {
+  string command_id = 1;
+  repeated WritePointResult results = 2;
+  int64 completed_unix_ns = 3;
 }
 
 message LogEvent {

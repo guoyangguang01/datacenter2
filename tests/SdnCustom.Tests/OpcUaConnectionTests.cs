@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
 using SdnCustom.Protocols;
 using SdnCustom.Protocols.OpcUa;
 using SdnCustom.Shared.Model;
@@ -21,7 +23,7 @@ public sealed class OpcUaConnectionTests
         var stopwatch = Stopwatch.StartNew();
         var connectTask = connection.ConnectAsync(new DeviceConnectionOptions
         {
-            Protocol = ClientProtocol.OpcUa,
+            Protocol = ClientProtocol.OpcUaClient,
             OpcUaEndpoint = "opc.tcp://127.0.0.1:4840"
         });
         stopwatch.Stop();
@@ -34,6 +36,61 @@ public sealed class OpcUaConnectionTests
         await connectTask;
         Assert.True(connection.IsConnected);
         Assert.Equal(0, bridge.DestroyCount);
+    }
+
+    [Fact]
+    public async Task EmbeddedServerStartsAndMapsConfiguredPoints()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+
+        var input = new PointDefinition
+        {
+            PointId = "SERVER-INPUT",
+            PointName = "Server input",
+            Address = "ns=1;s=server-input",
+            DataType = PointDataType.Bool,
+            Direction = PointDirection.Input
+        };
+        var output = new PointDefinition
+        {
+            PointId = "SERVER-OUTPUT",
+            PointName = "Server output",
+            Address = "ns=1;s=server-output",
+            DataType = PointDataType.Float64,
+            Direction = PointDirection.Output
+        };
+        await using var connection = new OpcUaServerDeviceConnection();
+        await connection.ConnectAsync(new DeviceConnectionOptions
+        {
+            ClientCode = $"TEST-{Guid.NewGuid():N}",
+            Protocol = ClientProtocol.OpcUaServer,
+            OpcUaEndpoint = $"opc.tcp://127.0.0.1:{port}",
+            Points = [input, output]
+        }).WaitAsync(TimeSpan.FromSeconds(30));
+
+        Assert.True(connection.IsConnected);
+        var nodeManager = connection.GetType()
+            .GetField("_nodeManager", System.Reflection.BindingFlags.Instance |
+                                      System.Reflection.BindingFlags.NonPublic)
+            ?.GetValue(connection);
+        Assert.NotNull(nodeManager);
+        var namespaceIndex = (ushort)(nodeManager!.GetType()
+            .GetProperty("NamespaceIndex")
+            ?.GetValue(nodeManager) ?? throw new InvalidOperationException());
+        Assert.Equal(1, namespaceIndex);
+        var read = Assert.Single(await connection.ReadAsync("TEST", [input]));
+        Assert.Equal(PointQuality.Good, read.Value.Quality);
+        Assert.Equal(false, read.Value.Value);
+
+        var write = Assert.Single(await connection.WriteBatchAsync(
+            "TEST",
+            [new DeviceWriteItem(output, 12.5, 123)]));
+        Assert.True(write.Success);
+        await connection.DisconnectAsync();
+        Assert.False(connection.IsConnected);
     }
 
     private sealed class BlockingBridge : IOpen62541NativeBridge, IDisposable

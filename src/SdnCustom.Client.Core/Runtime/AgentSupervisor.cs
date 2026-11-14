@@ -11,6 +11,8 @@ using SdnCustom.Protocols;
 using SdnCustom.Shared.Model;
 using SharedClientConnectionState = SdnCustom.Shared.Model.ClientConnectionState;
 using SharedPointDefinition = SdnCustom.Shared.Model.PointDefinition;
+using SharedPointDirection = SdnCustom.Shared.Model.PointDirection;
+using SharedPointQuality = SdnCustom.Shared.Model.PointQuality;
 using SharedPointSample = SdnCustom.Shared.Model.PointSample;
 using SharedPointValue = SdnCustom.Shared.Model.PointValue;
 
@@ -247,8 +249,8 @@ public sealed class AgentSupervisor : IAsyncDisposable
             case ServerMessage.PayloadOneofCase.StopCommunication:
                 await StopDeviceAsync("服务端停止通讯。").ConfigureAwait(false);
                 break;
-            case ServerMessage.PayloadOneofCase.WritePoint:
-                await HandleWritePointAsync(message.WritePoint, cancellationToken).ConfigureAwait(false);
+            case ServerMessage.PayloadOneofCase.WritePoints:
+                await HandleWritePointsAsync(message.WritePoints, cancellationToken).ConfigureAwait(false);
                 break;
             case ServerMessage.PayloadOneofCase.RequestSnapshot:
                 await SendSnapshotAsync(cancellationToken).ConfigureAwait(false);
@@ -335,11 +337,13 @@ public sealed class AgentSupervisor : IAsyncDisposable
         var configuration = _configuration;
         var options = new DeviceConnectionOptions
         {
+            ClientCode = configuration.ClientCode,
             Protocol = configuration.Device.Protocol,
             Host = configuration.Device.Host,
             Port = configuration.Device.Port,
             OpcUaEndpoint = configuration.Device.OpcUaEndpoint,
-            TimeoutMilliseconds = configuration.Device.TimeoutMilliseconds
+            TimeoutMilliseconds = configuration.Device.TimeoutMilliseconds,
+            Points = configuration.Points
         };
 
         try
@@ -517,47 +521,117 @@ public sealed class AgentSupervisor : IAsyncDisposable
         }, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task HandleWritePointAsync(WritePoint command, CancellationToken cancellationToken)
+    private async Task HandleWritePointsAsync(
+        WritePoints command,
+        CancellationToken cancellationToken)
     {
-        var result = new WriteResult
+        var configuredPoints = (_configuration?.Points ?? [])
+            .ToDictionary(point => point.PointId, StringComparer.Ordinal);
+        var items = new List<DeviceWriteItem>(command.Points.Count);
+        var preparationErrors = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var point in command.Points)
+        {
+            if (!configuredPoints.TryGetValue(point.PointId, out var configuredPoint))
+            {
+                preparationErrors[point.PointId] =
+                    $"客户端点表中未配置 OUTPUT 端点 {point.PointId}。";
+                continue;
+            }
+
+            if (configuredPoint.Direction != SharedPointDirection.Output)
+            {
+                preparationErrors[point.PointId] =
+                    $"测点 {point.PointId} 不是客户端 OUTPUT 端点。";
+                continue;
+            }
+
+            items.Add(new DeviceWriteItem(
+                configuredPoint,
+                ContractMapper.FromContractValue(
+                    point.Value,
+                    configuredPoint.DataType),
+                point.TimestampUnixNs,
+                string.IsNullOrWhiteSpace(point.SourceClientCode) ? null : point.SourceClientCode,
+                string.IsNullOrWhiteSpace(point.SourcePointId) ? null : point.SourcePointId));
+        }
+
+        IReadOnlyList<DeviceWriteResult> deviceResults;
+        try
+        {
+            var device = _device ?? throw new InvalidOperationException("设备尚未连接。");
+            deviceResults = await device.WriteBatchAsync(
+                _configuration?.ClientCode ?? string.Empty,
+                items,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            deviceResults = items
+                .Select(item => new DeviceWriteResult(
+                    item.Point.PointId,
+                    false,
+                    exception.Message))
+                .ToArray();
+        }
+
+        var resultByPoint = deviceResults
+            .GroupBy(result => result.PointId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+        var response = new WriteResults
         {
             CommandId = command.CommandId,
             CompletedUnixNs = UnixTime.NowNanoseconds()
         };
-
-        try
+        var writtenValues = new List<SharedPointSample>();
+        foreach (var commandPoint in command.Points)
         {
-            var point = _configuration?.Points.FirstOrDefault(candidate => candidate.PointId == command.PointId)
-                        ?? throw new InvalidOperationException($"未找到测点 {command.PointId}。");
-            if (point.Direction != PointDirection.Output)
+            var item = items.FirstOrDefault(candidate =>
+                candidate.Point.PointId == commandPoint.PointId);
+            var result = preparationErrors.TryGetValue(commandPoint.PointId, out var preparationError)
+                ? new DeviceWriteResult(commandPoint.PointId, false, preparationError)
+                : resultByPoint.GetValueOrDefault(commandPoint.PointId) ??
+                  new DeviceWriteResult(
+                      commandPoint.PointId,
+                      false,
+                      "设备未返回该点写入结果。");
+            response.Results.Add(new WritePointResult
             {
-                throw new InvalidOperationException($"测点 {command.PointId} 不是 OUTPUT 测点。");
+                PointId = commandPoint.PointId,
+                Success = result.Success,
+                ErrorMessage = result.ErrorMessage
+            });
+            if (!result.Success)
+            {
+                Log("ERROR", $"批量写入失败 {commandPoint.PointId}：{result.ErrorMessage}");
+                continue;
             }
 
-            var device = _device ?? throw new InvalidOperationException("设备尚未连接。");
-            var value = ContractMapper.FromContractValue(command.Value, point.DataType);
-            await device.WriteAsync(_configuration!.ClientCode, point, value, cancellationToken).ConfigureAwait(false);
-            result.Success = true;
-            var written = new SharedPointSample(
-                _configuration.ClientCode,
-                point.PointId,
+            if (item is null)
+            {
+                continue;
+            }
+
+            var sample = new SharedPointSample(
+                _configuration?.ClientCode ?? string.Empty,
+                item.Point.PointId,
                 new SharedPointValue(
-                    value,
-                    PointQuality.Good,
-                    command.TimestampUnixNs == 0 ? UnixTime.NowNanoseconds() : command.TimestampUnixNs),
-                string.IsNullOrWhiteSpace(command.SourceClientCode) ? null : command.SourceClientCode,
-                string.IsNullOrWhiteSpace(command.SourcePointId) ? null : command.SourcePointId);
-            _latestValues[point.PointId] = written;
-            RuntimeEvent?.Invoke(this, new ClientRuntimeEvent(
-                ClientConnectionState.Connected,
-                "输出数据已写出。",
-                [written]));
+                    item.Value,
+                    SharedPointQuality.Good,
+                    item.TimestampUnixNanoseconds == 0
+                        ? UnixTime.NowNanoseconds()
+                        : item.TimestampUnixNanoseconds),
+                item.SourceClientCode,
+                item.SourcePointId);
+            _latestValues[item.Point.PointId] = sample;
+            writtenValues.Add(sample);
         }
-        catch (Exception exception)
+
+        if (writtenValues.Count > 0)
         {
-            result.Success = false;
-            result.ErrorMessage = exception.Message;
-            Log("ERROR", $"写入失败：{exception.Message}");
+            RuntimeEvent?.Invoke(this, new ClientRuntimeEvent(
+                SharedClientConnectionState.Connected,
+                $"批量写出 {writtenValues.Count} 个输出点。",
+                writtenValues));
         }
 
         await SendAsync(new AgentMessage
@@ -565,7 +639,7 @@ public sealed class AgentSupervisor : IAsyncDisposable
             ClientCode = _configuration?.ClientCode ?? string.Empty,
             Sequence = NextSequence(),
             SentUnixNs = UnixTime.NowNanoseconds(),
-            WriteResult = result
+            WriteResults = response
         }, cancellationToken).ConfigureAwait(false);
     }
 

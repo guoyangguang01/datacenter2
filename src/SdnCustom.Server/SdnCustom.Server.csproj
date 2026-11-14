@@ -14,4 +14,9 @@
     <PackageReference Include="Microsoft.Extensions.Hosting.Systemd" />
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" />
   </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\fuel-csv-utf8.csv"
+                      Link="SeedData\fuel-system.csv"
+                      LogicalName="SdnCustom.Server.SeedData.fuel-system.csv" />
+  </ItemGroup>
 </Project>

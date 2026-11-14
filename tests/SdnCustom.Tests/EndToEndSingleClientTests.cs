@@ -36,6 +36,7 @@ public sealed class EndToEndSingleClientTests
             var admin = app.Services.GetRequiredService<IAdminFacade>();
             await admin.CreateClientAsync("FAILED-DEVICE", "Failed device", timeout.Token);
             await app.StartAsync(timeout.Token);
+            await admin.StartCommunicationAsync(timeout.Token);
 
             var store = new ClientConfigStore(configPath);
             await store.SaveAsync(new ClientConfiguration
@@ -63,7 +64,8 @@ public sealed class EndToEndSingleClientTests
                 async () => (await admin.GetSnapshotAsync(timeout.Token)).OnlineClients == 1,
                 timeout.Token);
 
-            await admin.StartClientAsync("FAILED-DEVICE", timeout.Token);
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => supervisor.StartCommunicationAsync(timeout.Token));
             await WaitUntilAsync(
                 async () => (await admin.GetSnapshotAsync(timeout.Token))
                     .Clients.Single().CommunicationState == ClientConnectionState.Error,
@@ -71,10 +73,10 @@ public sealed class EndToEndSingleClientTests
 
             var failed = (await admin.GetSnapshotAsync(timeout.Token)).Clients.Single();
             Assert.True(failed.Online);
-            Assert.True(failed.DesiredRunning);
+            Assert.False(failed.DesiredRunning);
             Assert.Equal(ClientConnectionState.Error, failed.CommunicationState);
 
-            await admin.StopClientAsync("FAILED-DEVICE", timeout.Token);
+            await admin.StopCommunicationAsync(timeout.Token);
             await WaitUntilAsync(
                 async () => (await admin.GetSnapshotAsync(timeout.Token))
                     .Clients.Single().CommunicationState == ClientConnectionState.Disconnected,
@@ -118,6 +120,7 @@ public sealed class EndToEndSingleClientTests
             var admin = app.Services.GetRequiredService<IAdminFacade>();
             await admin.CreateClientAsync("E2E-CLIENT", "End-to-end client", timeout.Token);
             await app.StartAsync(timeout.Token);
+            await admin.StartCommunicationAsync(timeout.Token);
 
             var store = new ClientConfigStore(configPath);
             await store.SaveAsync(new ClientConfiguration
@@ -176,7 +179,7 @@ public sealed class EndToEndSingleClientTests
                            updated.Points[0].PointName == "Temperature from server";
                 },
                 timeout.Token);
-            var invalidReference = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            var invalidOutput = await Assert.ThrowsAsync<InvalidOperationException>(() =>
                 admin.SaveClientPointsAsync(
                     "E2E-CLIENT",
                     [
@@ -195,20 +198,11 @@ public sealed class EndToEndSingleClientTests
                             Address = "40002",
                             DataType = PointDataType.Float64,
                             Direction = PointDirection.Output,
-                            SourceInputPointId = "IN-2"
-                        },
-                        new PointDefinition
-                        {
-                            PointId = "IN-2",
-                            PointName = "Second output",
-                            Address = "40003",
-                            DataType = PointDataType.Float64,
-                            Direction = PointDirection.Output,
                             SourceInputPointId = "TEMP"
                         }
                     ],
                     timeout.Token));
-            Assert.Contains("必须引用 INPUT", invalidReference.Message);
+            Assert.Contains("PointLink", invalidOutput.Message);
             await admin.SaveClientPointsAsync(
                 "E2E-CLIENT",
                 [
@@ -219,15 +213,6 @@ public sealed class EndToEndSingleClientTests
                         Address = " 40001 ",
                         DataType = PointDataType.Float64,
                         Direction = PointDirection.Input
-                    },
-                    new PointDefinition
-                    {
-                        PointId = " IN ",
-                        PointName = " Output ",
-                        Address = " 40002 ",
-                        DataType = PointDataType.Float64,
-                        Direction = PointDirection.Output,
-                        SourceInputPointId = " E2E-CLIENT: TEMP "
                     }
                 ],
                 timeout.Token);
@@ -236,14 +221,13 @@ public sealed class EndToEndSingleClientTests
                 async () =>
                 {
                     normalized = await store.LoadAsync(timeout.Token);
-                    return normalized.Points.Any(point => point.Direction == PointDirection.Output);
+                    return normalized.Points.Count == 1 &&
+                           normalized.Points[0].PointId == "TEMP";
                 },
                 timeout.Token);
-            var normalizedOutput = normalized!.Points.Single(point => point.Direction == PointDirection.Output);
-            Assert.Equal("IN", normalizedOutput.PointId);
-            Assert.Equal("E2E-CLIENT:TEMP", normalizedOutput.SourceInputPointId);
+            Assert.Equal(PointDirection.Input, normalized!.Points[0].Direction);
 
-            await admin.StartClientAsync("E2E-CLIENT", timeout.Token);
+            await supervisor.StartCommunicationAsync(timeout.Token);
             await WaitUntilAsync(
                 async () =>
                 {
@@ -272,7 +256,7 @@ public sealed class EndToEndSingleClientTests
                     timeout.Token));
             Assert.Contains("先停止通讯", blocked.Message);
 
-            await admin.StopClientAsync("E2E-CLIENT", timeout.Token);
+            await admin.StopCommunicationAsync(timeout.Token);
             await WaitUntilAsync(
                 async () => (await admin.GetSnapshotAsync(timeout.Token))
                     .Clients.Single().CommunicationState == ClientConnectionState.Disconnected,
@@ -290,7 +274,7 @@ public sealed class EndToEndSingleClientTests
                 ],
                 timeout.Token);
             await WaitUntilAsync(
-                async () => (await store.LoadAsync(timeout.Token)).Points
+                async () => (await admin.GetSnapshotAsync(timeout.Token)).Clients.Single().Points
                     .FirstOrDefault(point => point.PointId == "TEMP")?.PointName == "Updated after stop",
                 timeout.Token);
         }

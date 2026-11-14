@@ -10,6 +10,7 @@ public interface IHistoryStore : IAsyncDisposable
     Task<IReadOnlyList<HistoryPoint>> QueryAsync(
         string clientCode,
         string pointId,
+        PointDirection direction,
         DateTimeOffset from,
         DateTimeOffset to,
         int limit,

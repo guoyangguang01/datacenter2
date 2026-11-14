@@ -12,7 +12,9 @@ public sealed partial class ClientManagementViewModel : ObservableObject
 {
     private readonly IAdminFacade _admin;
     private readonly SemaphoreSlim _runStateRefreshGate = new(1, 1);
+    private IReadOnlyList<AdminClientView> _snapshotClients = [];
 
+    [ObservableProperty] private SystemOption? _selectedSystem;
     [ObservableProperty] private ClientOption? _selectedClient;
     [ObservableProperty] private PointFilterOption? _selectedPointFilter;
     [ObservableProperty] private string _selectedClientName = string.Empty;
@@ -25,6 +27,7 @@ public sealed partial class ClientManagementViewModel : ObservableObject
     [ObservableProperty] private bool _canManageClient;
 
     public ObservableCollection<ClientOption> Clients { get; } = [];
+    public ObservableCollection<SystemOption> Systems { get; } = [];
     public ObservableCollection<EditablePointRow> Points { get; } = [];
     public ObservableCollection<EditablePointRow> FilteredPoints { get; } = [];
     public IReadOnlyList<PointFilterOption> PointFilters { get; } =
@@ -36,6 +39,7 @@ public sealed partial class ClientManagementViewModel : ObservableObject
     public IReadOnlyList<PointDataType> DataTypeOptions { get; } = Enum.GetValues<PointDataType>();
     public string ClientCountText => $"{Clients.Count} 个客户端";
     public bool HasNoClients => Clients.Count == 0;
+    public bool HasSelectedSystem => SelectedSystem is not null;
     public string SelectedClientStateText
     {
         get
@@ -61,6 +65,16 @@ public sealed partial class ClientManagementViewModel : ObservableObject
         SelectedPointFilter = PointFilters[0];
     }
 
+    partial void OnSelectedSystemChanged(SystemOption? value)
+    {
+        OnPropertyChanged(nameof(HasSelectedSystem));
+        RebuildClientList();
+        CreateClientCommand.NotifyCanExecuteChanged();
+        StatusText = value is null
+            ? "请选择系统。"
+            : $"{value.SystemName}：{Clients.Count} 个客户端，{value.PointCount} 个点，{value.RouteCount} 条输出路由。";
+    }
+
     partial void OnSelectedClientChanged(ClientOption? value)
     {
         SelectedClientName = value?.ClientName ?? string.Empty;
@@ -78,9 +92,46 @@ public sealed partial class ClientManagementViewModel : ObservableObject
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         var selectedCode = SelectedClient?.ClientCode;
+        var selectedSystemCode = SelectedSystem?.SystemCode;
         var snapshot = await _admin.GetSnapshotAsync(cancellationToken);
+        _snapshotClients = snapshot.Clients;
+        Systems.Clear();
+        foreach (var system in snapshot.Systems ?? [])
+        {
+            Systems.Add(new SystemOption(
+                system.SystemCode,
+                system.SystemName,
+                system.Description,
+                system.PointCount,
+                system.RouteCount));
+        }
+
+        if (Systems.Count == 0 && _snapshotClients.Count > 0)
+        {
+            Systems.Add(new SystemOption(
+                "DEFAULT",
+                "默认系统",
+                string.Empty,
+                _snapshotClients.Sum(client => client.Points.Count),
+                0));
+        }
+
+        SelectedSystem = Systems.FirstOrDefault(system => system.SystemCode == selectedSystemCode)
+                         ?? Systems.FirstOrDefault(system => system.SystemCode == "FUEL")
+                         ?? Systems.FirstOrDefault();
+        RebuildClientList(selectedCode);
+        StatusText = $"已加载 {Systems.Count} 个系统，{Clients.Count} 个客户端。";
+        NotifyLayoutState();
+    }
+
+    private void RebuildClientList(string? selectedCode = null)
+    {
+        selectedCode ??= SelectedClient?.ClientCode;
         Clients.Clear();
-        foreach (var client in snapshot.Clients)
+        var systemCode = SelectedSystem?.SystemCode;
+        foreach (var client in _snapshotClients.Where(client =>
+                     systemCode is null ||
+                     string.Equals(client.SystemCode, systemCode, StringComparison.Ordinal)))
         {
             Clients.Add(new ClientOption(
                 client.ClientCode,
@@ -90,10 +141,9 @@ public sealed partial class ClientManagementViewModel : ObservableObject
                 client.CommunicationState,
                 client.Points));
         }
+
         SelectedClient = Clients.FirstOrDefault(client => client.ClientCode == selectedCode)
                          ?? Clients.FirstOrDefault();
-        StatusText = $"已加载 {Clients.Count} 个客户端。";
-        NotifyLayoutState();
     }
 
     [RelayCommand]
@@ -222,13 +272,18 @@ public sealed partial class ClientManagementViewModel : ObservableObject
     {
         try
         {
-            await _admin.CreateClientAsync(NewClientCode, NewClientName);
+            var systemCode = SelectedSystem!.SystemCode;
+            var systemName = SelectedSystem.SystemName;
+            await _admin.CreateClientAsync(
+                NewClientCode,
+                NewClientName,
+                systemCode: systemCode);
             var code = NewClientCode.Trim();
             NewClientCode = string.Empty;
             NewClientName = string.Empty;
             await InitializeAsync();
             SelectedClient = Clients.FirstOrDefault(client => client.ClientCode == code);
-            StatusText = $"已创建客户端 {code}。";
+            StatusText = $"已在 {systemName} 创建客户端 {code}。";
         }
         catch (Exception exception)
         {
@@ -237,7 +292,9 @@ public sealed partial class ClientManagementViewModel : ObservableObject
     }
 
     private bool CanCreateClient() =>
-        !string.IsNullOrWhiteSpace(NewClientCode) && !string.IsNullOrWhiteSpace(NewClientName);
+        SelectedSystem is not null &&
+        !string.IsNullOrWhiteSpace(NewClientCode) &&
+        !string.IsNullOrWhiteSpace(NewClientName);
 
     [RelayCommand(CanExecute = nameof(CanRenameClient))]
     private async Task RenameClientAsync()
@@ -317,6 +374,52 @@ public sealed partial class ClientManagementViewModel : ObservableObject
         }
         await writer.FlushAsync(cancellationToken);
         StatusText = outputOnly ? "输出测点已导出。" : "点表已导出。";
+    }
+
+    public async Task ExportGasMasterAsync(
+        Stream stream,
+        CancellationToken cancellationToken = default)
+    {
+        if (SelectedSystem is null)
+        {
+            StatusText = "请先选择系统。";
+            return;
+        }
+
+        var csv = await _admin.ExportGasMasterAsync(
+            SelectedSystem.SystemCode,
+            cancellationToken);
+        await using var writer = new StreamWriter(
+            stream,
+            new UTF8Encoding(encoderShouldEmitUTF8Identifier: true),
+            leaveOpen: true);
+        await writer.WriteAsync(csv.AsMemory(), cancellationToken);
+        await writer.FlushAsync(cancellationToken);
+        StatusText = $"已导出 {SelectedSystem.SystemName} 燃气总表。";
+    }
+
+    public async Task ImportGasMasterAsync(
+        Stream stream,
+        CancellationToken cancellationToken = default)
+    {
+        if (SelectedSystem is null)
+        {
+            StatusText = "请先选择目标系统。";
+            return;
+        }
+
+        using var reader = new StreamReader(stream, Encoding.UTF8, true, leaveOpen: true);
+        var csv = await reader.ReadToEndAsync(cancellationToken);
+        var result = await _admin.ImportGasMasterAsync(
+            SelectedSystem.SystemCode,
+            SelectedSystem.SystemName,
+            csv,
+            cancellationToken);
+        await InitializeAsync(cancellationToken);
+        StatusText =
+            $"燃气总表导入完成：{result.ClientCount} 个客户端，{result.InputCount} 个 INPUT，" +
+            $"{result.OutputCount} 个 OUTPUT，{result.RouteCount} 条路由。" +
+            (result.Warnings.Count == 0 ? string.Empty : $"警告：{string.Join("；", result.Warnings)}");
     }
 
     public async Task ImportCsvAsync(Stream stream, CancellationToken cancellationToken = default)
@@ -721,6 +824,17 @@ public sealed partial class ClientOption : ObservableObject
         OnPropertyChanged(nameof(CommunicationText));
 }
 
+public sealed record SystemOption(
+    string SystemCode,
+    string SystemName,
+    string Description,
+    int PointCount,
+    int RouteCount)
+{
+    public string Display =>
+        $"{PointCount} 点 / {RouteCount} 路由";
+}
+
 public sealed partial class EditablePointRow : ObservableObject
 {
     [ObservableProperty] private string _pointId = string.Empty;
@@ -734,6 +848,7 @@ public sealed partial class EditablePointRow : ObservableObject
     [ObservableProperty] private string _group = "默认";
 
     public IReadOnlyList<PointDataType> DataTypeOptions { get; } = Enum.GetValues<PointDataType>();
+    public string DirectionDisplay => Direction == PointDirection.Input ? "输入" : "输出";
     public IReadOnlyList<PointDirectionOption> DirectionOptions { get; } =
         PointDirectionOption.CreateAll();
     public PointDirectionOption? SelectedDirection
@@ -748,8 +863,11 @@ public sealed partial class EditablePointRow : ObservableObject
         }
     }
 
-    partial void OnDirectionChanged(PointDirection value) =>
+    partial void OnDirectionChanged(PointDirection value)
+    {
         OnPropertyChanged(nameof(SelectedDirection));
+        OnPropertyChanged(nameof(DirectionDisplay));
+    }
 
     public static EditablePointRow From(PointDefinition point) => new()
     {

@@ -18,7 +18,8 @@ public sealed class ServerConnectionOptions
 {
     public string Host { get; set; } = "127.0.0.1";
     public int Port { get; set; } = 7443;
-    public bool UseTls { get; set; } = true;
+    public int ManagementPort { get; set; } = 7444;
+    public bool UseTls { get; set; }
     public string ServerCertificateThumbprint { get; set; } = string.Empty;
     public bool AllowUntrustedServerCertificate { get; set; } = true;
 }

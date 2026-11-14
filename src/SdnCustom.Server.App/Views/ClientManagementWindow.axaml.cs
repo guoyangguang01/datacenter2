@@ -120,6 +120,64 @@ public sealed partial class ClientManagementWindow : Window
         }
     }
 
+    private async void ImportGasMaster_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ClientManagementViewModel viewModel)
+        {
+            return;
+        }
+
+        try
+        {
+            var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                Title = "导入燃气总表",
+                AllowMultiple = false,
+                FileTypeFilter = [new FilePickerFileType("CSV") { Patterns = ["*.csv"] }]
+            });
+            if (files.Count == 0)
+            {
+                return;
+            }
+
+            await using var stream = await files[0].OpenReadAsync();
+            await viewModel.ImportGasMasterAsync(stream);
+        }
+        catch (Exception exception)
+        {
+            viewModel.StatusText = $"燃气总表导入失败：{exception.Message}";
+        }
+    }
+
+    private async void ExportGasMaster_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ClientManagementViewModel viewModel)
+        {
+            return;
+        }
+
+        try
+        {
+            var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                Title = "导出燃气总表",
+                SuggestedFileName = $"{viewModel.SelectedSystem?.SystemCode ?? "gas"}-master.csv",
+                FileTypeChoices = [new FilePickerFileType("CSV") { Patterns = ["*.csv"] }]
+            });
+            if (file is null)
+            {
+                return;
+            }
+
+            await using var stream = await file.OpenWriteAsync();
+            await viewModel.ExportGasMasterAsync(stream);
+        }
+        catch (Exception exception)
+        {
+            viewModel.StatusText = $"燃气总表导出失败：{exception.Message}";
+        }
+    }
+
     private async void DeleteClient_OnClick(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not ClientManagementViewModel viewModel || viewModel.SelectedClient is null)

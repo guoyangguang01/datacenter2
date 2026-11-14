@@ -5,7 +5,8 @@ public sealed class ServerSettings
     public string DataDirectory { get; set; } = "data";
     public int GrpcPort { get; set; } = 7443;
     public int HttpPort { get; set; } = 7444;
-    public bool UseTls { get; set; } = true;
+    public bool UseTls { get; set; }
+    public bool SeedFuelSystemSample { get; set; }
     public string CertificatePath { get; set; } = string.Empty;
     public string CertificatePassword { get; set; } = string.Empty;
     public InfluxSettings Influx { get; set; } = new();

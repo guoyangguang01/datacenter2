@@ -12,11 +12,15 @@ namespace SdnCustom.Server.Runtime;
 
 public interface IServerControlService
 {
-    Task CreateClientAsync(string clientCode, string clientName, CancellationToken cancellationToken = default);
+    Task CreateClientAsync(
+        string clientCode,
+        string clientName,
+        CancellationToken cancellationToken = default,
+        string? systemCode = null);
     Task RenameClientAsync(string clientCode, string clientName, CancellationToken cancellationToken = default);
     Task DeleteClientAsync(string clientCode, CancellationToken cancellationToken = default);
-    Task StartClientAsync(string clientCode, CancellationToken cancellationToken = default);
-    Task StopClientAsync(string clientCode, CancellationToken cancellationToken = default);
+    Task StartCommunicationAsync(CancellationToken cancellationToken = default);
+    Task StopCommunicationAsync(CancellationToken cancellationToken = default);
     Task SaveClientPointsAsync(
         string clientCode,
         IReadOnlyList<SharedPointDefinition> points,
@@ -29,6 +33,7 @@ public interface IServerControlService
     Task<IReadOnlyList<HistoryPoint>> QueryHistoryAsync(
         string clientCode,
         string pointId,
+        SharedPointDirection direction,
         DateTimeOffset from,
         DateTimeOffset to,
         int limit,
@@ -39,6 +44,7 @@ public sealed class ServerControlService : IServerControlService
 {
     private readonly IClientSystemStore _clients;
     private readonly IAgentRegistry _agents;
+    private readonly IServerCommunicationGate _communicationGate;
     private readonly IClientCommunicationStateStore _communicationStates;
     private readonly IHistoryStore _history;
     private readonly IServerLogStore _logs;
@@ -49,6 +55,7 @@ public sealed class ServerControlService : IServerControlService
     public ServerControlService(
         IClientSystemStore clients,
         IAgentRegistry agents,
+        IServerCommunicationGate communicationGate,
         IClientCommunicationStateStore communicationStates,
         IHistoryStore history,
         IServerLogStore logs,
@@ -58,6 +65,7 @@ public sealed class ServerControlService : IServerControlService
     {
         _clients = clients;
         _agents = agents;
+        _communicationGate = communicationGate;
         _communicationStates = communicationStates;
         _history = history;
         _logs = logs;
@@ -69,10 +77,18 @@ public sealed class ServerControlService : IServerControlService
     public async Task CreateClientAsync(
         string clientCode,
         string clientName,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? systemCode = null)
     {
-        await _clients.CreateAuthorizedAsync(clientCode, clientName, cancellationToken).ConfigureAwait(false);
-        _logs.Add("INFO", "客户端管理", $"已登记客户端 {clientCode}（{clientName}）。");
+        var client = await _clients.CreateAuthorizedAsync(
+            clientCode,
+            clientName,
+            cancellationToken,
+            string.IsNullOrWhiteSpace(systemCode) ? "DEFAULT" : systemCode.Trim()).ConfigureAwait(false);
+        _logs.Add(
+            "INFO",
+            "客户端管理",
+            $"已在系统 {client.SystemCode} 登记客户端 {clientCode}（{clientName}）。");
     }
 
     public async Task RenameClientAsync(
@@ -118,40 +134,46 @@ public sealed class ServerControlService : IServerControlService
         _logs.Add("INFO", "客户端管理", $"已删除客户端 {clientCode}（{client.ClientName}）。");
     }
 
-    public async Task StartClientAsync(string clientCode, CancellationToken cancellationToken = default)
+    public async Task StartCommunicationAsync(CancellationToken cancellationToken = default)
     {
-        if (_agents.Find(clientCode) is null)
-        {
-            throw new InvalidOperationException($"客户端 {clientCode} 当前不在线。");
-        }
-
-        await _clients.SetDesiredRunningAsync(clientCode, true, cancellationToken).ConfigureAwait(false);
-        var sent = await _agents.SendAsync(clientCode, new ServerMessage
-        {
-            StartCommunication = new StartCommunication { CommandId = Guid.NewGuid().ToString("N") },
-            SentUnixNs = UnixTime.NowNanoseconds()
-        }, cancellationToken).ConfigureAwait(false);
-        if (!sent)
-        {
-            await _clients.SetDesiredRunningAsync(clientCode, false, cancellationToken).ConfigureAwait(false);
-            throw new InvalidOperationException($"客户端 {clientCode} 已断开，启动命令未送达。");
-        }
-
-        _logs.Add("INFO", "通讯控制", $"已请求启动客户端 {clientCode}。");
+        _communicationGate.Start();
+        _logs.Add("INFO", "通讯控制", "服务端通讯已启动，允许客户端连接。");
     }
 
-    public async Task StopClientAsync(string clientCode, CancellationToken cancellationToken = default)
+    public async Task StopCommunicationAsync(CancellationToken cancellationToken = default)
     {
-        await _clients.SetDesiredRunningAsync(clientCode, false, cancellationToken).ConfigureAwait(false);
-        var sent = await _agents.SendAsync(clientCode, new ServerMessage
+        _communicationGate.Stop();
+        _telemetry.CancelPendingBatches();
+        var clients = await _clients.ListAsync(cancellationToken).ConfigureAwait(false);
+        foreach (var client in clients)
         {
-            StopCommunication = new StopCommunication { CommandId = Guid.NewGuid().ToString("N") },
-            SentUnixNs = UnixTime.NowNanoseconds()
-        }, cancellationToken).ConfigureAwait(false);
-        if (sent)
-        {
-            _logs.Add("INFO", "通讯控制", $"已请求停止客户端 {clientCode}。");
+            await _clients.SetDesiredRunningAsync(
+                client.ClientCode,
+                false,
+                cancellationToken).ConfigureAwait(false);
         }
+
+        foreach (var session in _agents.List())
+        {
+            try
+            {
+                await session.SendAsync(new ServerMessage
+                {
+                    StopCommunication = new StopCommunication { CommandId = Guid.NewGuid().ToString("N") },
+                    SentUnixNs = UnixTime.NowNanoseconds()
+                }, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                _logs.Add("WARN", "通讯控制", $"停止客户端 {session.ClientCode} 时发送失败：{exception.Message}");
+            }
+            finally
+            {
+                await session.DisconnectAsync(cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        _logs.Add("INFO", "通讯控制", "服务端通讯已停止，现有客户端已断开，新连接将被拒绝。");
     }
 
     public async Task SaveClientPointsAsync(
@@ -170,14 +192,17 @@ public sealed class ServerControlService : IServerControlService
         }
 
         var normalizedPoints = points.Select(NormalizePoint).ToArray();
-        await ValidatePointReferencesAsync(clientCode, normalizedPoints, cancellationToken).ConfigureAwait(false);
         var stored = await _clients.SavePointsAsync(clientCode, normalizedPoints, cancellationToken).ConfigureAwait(false);
-        var remainingIds = stored.Points.Select(point => point.PointId).ToHashSet(StringComparer.Ordinal);
-        var removedIds = previous.Points
-            .Select(point => point.PointId)
-            .Where(pointId => !remainingIds.Contains(pointId))
+        var remainingKeys = stored.Points
+            .Select(point => (point.PointId, point.Direction))
+            .ToHashSet();
+        var removedEndpoints = previous.Points
+            .Where(point => !remainingKeys.Contains((point.PointId, point.Direction)))
             .ToArray();
-        await _latestValues.RemovePointsAsync(clientCode, removedIds, cancellationToken).ConfigureAwait(false);
+        await _latestValues.RemoveEndpointsAsync(
+            clientCode,
+            removedEndpoints,
+            cancellationToken).ConfigureAwait(false);
         _router.RegisterClient(clientCode, stored.Points);
         var command = new ConfigurePoints
         {
@@ -204,12 +229,10 @@ public sealed class ServerControlService : IServerControlService
     {
         var client = await _clients.GetAsync(clientCode, cancellationToken).ConfigureAwait(false)
                      ?? throw new KeyNotFoundException($"客户端未登记：{clientCode}");
-        var point = client.Points.FirstOrDefault(candidate => candidate.PointId == pointId)
+        var point = client.Points.FirstOrDefault(candidate =>
+                        candidate.PointId == pointId &&
+                        candidate.Direction == SharedPointDirection.Output)
                     ?? throw new KeyNotFoundException($"测点未登记：{pointId}");
-        if (point.Direction != SharedPointDirection.Output)
-        {
-            throw new InvalidOperationException($"测点 {pointId} 不是 OUTPUT 测点。");
-        }
 
         await _telemetry.SendManualWriteAsync(clientCode, point, value, cancellationToken).ConfigureAwait(false);
     }
@@ -217,11 +240,12 @@ public sealed class ServerControlService : IServerControlService
     public Task<IReadOnlyList<HistoryPoint>> QueryHistoryAsync(
         string clientCode,
         string pointId,
+        SharedPointDirection direction,
         DateTimeOffset from,
         DateTimeOffset to,
         int limit,
         CancellationToken cancellationToken = default) =>
-        _history.QueryAsync(clientCode, pointId, from, to, limit, cancellationToken);
+        _history.QueryAsync(clientCode, pointId, direction, from, to, limit, cancellationToken);
 
     private async Task ValidatePointReferencesAsync(
         string clientCode,

@@ -27,6 +27,11 @@ public static class ClientConfigurationValidator
             errors.Add("服务端端口必须在 1-65535 之间。");
         }
 
+        if (configuration.Server.ManagementPort is < 1 or > 65535)
+        {
+            errors.Add("服务端管理端口必须在 1-65535 之间。");
+        }
+
         if (configuration.Server.UseTls &&
             !configuration.Server.AllowUntrustedServerCertificate &&
             string.IsNullOrWhiteSpace(configuration.Server.ServerCertificateThumbprint))
@@ -40,10 +45,11 @@ public static class ClientConfigurationValidator
             errors.Add("TCP 设备地址和端口无效。");
         }
 
-        if (configuration.Device.Protocol == ClientProtocol.OpcUa &&
-            !Uri.TryCreate(configuration.Device.OpcUaEndpoint, UriKind.Absolute, out _))
+        if (configuration.Device.Protocol is ClientProtocol.OpcUaClient or ClientProtocol.OpcUaServer &&
+            (!Uri.TryCreate(configuration.Device.OpcUaEndpoint, UriKind.Absolute, out var opcUaEndpoint) ||
+             !string.Equals(opcUaEndpoint.Scheme, "opc.tcp", StringComparison.OrdinalIgnoreCase)))
         {
-            errors.Add("OPC UA Endpoint 不是有效 URI。");
+            errors.Add("OPC UA Endpoint 必须是有效的 opc.tcp URI。");
         }
 
         if (configuration.UserToCenterFrequencyMilliseconds is < 20 or > 60000)
@@ -60,9 +66,6 @@ public static class ClientConfigurationValidator
             errors.Add($"测点 ID 重复：{duplicate}");
         }
 
-        var pointsById = configuration.Points
-            .GroupBy(point => point.PointId, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
         foreach (var point in configuration.Points)
         {
             if (string.IsNullOrWhiteSpace(point.PointId) ||
@@ -72,53 +75,10 @@ public static class ClientConfigurationValidator
                 errors.Add("测点 ID、名称和地址不能为空。");
             }
 
-            if (point.Direction == PointDirection.Output && string.IsNullOrWhiteSpace(point.SourceInputPointId))
-            {
-                errors.Add($"输出测点 {point.PointId} 必须引用 INPUT 测点。");
-                continue;
-            }
-
-            if (point.Direction == PointDirection.Input &&
-                !string.IsNullOrWhiteSpace(point.SourceInputPointId))
-            {
-                errors.Add($"输入测点 {point.PointId} 是数据来源，不能设置源测点引用。");
-                continue;
-            }
-
-            if (point.Direction != PointDirection.Output ||
-                string.IsNullOrWhiteSpace(point.SourceInputPointId))
-            {
-                continue;
-            }
-
-            var source = point.SourceInputPointId.Trim();
-            var separator = source.IndexOf(':');
-            var sourceClient = separator > 0 ? source[..separator] : configuration.ClientCode;
-            if (separator > 0)
-            {
-                source = source[(separator + 1)..];
-            }
-
-            if (!string.Equals(sourceClient, configuration.ClientCode, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            if (!pointsById.TryGetValue(source, out var sourcePoint))
-            {
-                errors.Add($"输出测点 {point.PointId} 引用的 INPUT 测点不存在：{source}");
-                continue;
-            }
-
-            if (sourcePoint.Direction != PointDirection.Input)
-            {
-                errors.Add($"输出测点 {point.PointId} 必须引用 INPUT 测点，不能引用 {sourcePoint.Direction}。");
-            }
-
-            if (sourcePoint.DataType != point.DataType)
+            if (!string.IsNullOrWhiteSpace(point.SourceInputPointId))
             {
                 errors.Add(
-                    $"输出测点 {point.PointId} 与源 INPUT 测点 {source} 的数据类型必须一致。");
+                    $"客户端端点 {point.PointId} 不能保存来源引用；路由关系由服务端 PointLink 管理。");
             }
         }
 

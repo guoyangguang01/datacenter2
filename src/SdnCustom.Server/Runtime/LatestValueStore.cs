@@ -18,6 +18,10 @@ public interface ILatestValueStore
         string clientCode,
         IReadOnlyList<string> pointIds,
         CancellationToken cancellationToken = default);
+    Task RemoveEndpointsAsync(
+        string clientCode,
+        IReadOnlyList<PointDefinition> endpoints,
+        CancellationToken cancellationToken = default);
     IReadOnlyList<PointSample> GetAll();
     IReadOnlyList<PointSample> GetClient(string clientCode);
     event EventHandler<IReadOnlyList<PointSample>>? ValuesChanged;
@@ -25,7 +29,7 @@ public interface ILatestValueStore
 
 public sealed class LatestValueStore(IDbContextFactory<ServerDbContext> contextFactory) : ILatestValueStore
 {
-    private readonly ConcurrentDictionary<PointKey, PointSample> _values = new();
+    private readonly ConcurrentDictionary<(string ClientCode, string PointId, PointDirection Direction), PointSample> _values = new();
     private readonly SemaphoreSlim _persistenceGate = new(1, 1);
 
     public event EventHandler<IReadOnlyList<PointSample>>? ValuesChanged;
@@ -37,7 +41,12 @@ public sealed class LatestValueStore(IDbContextFactory<ServerDbContext> contextF
         foreach (var entity in entities)
         {
             var value = DeserializeValue(entity.ValueJson);
-            _values[PointKey.Create(entity.ClientCode, entity.PointId)] = new PointSample(
+            var direction = Enum.TryParse<PointDirection>(entity.Direction, true, out var parsedDirection)
+                ? parsedDirection
+                : string.IsNullOrWhiteSpace(entity.SourcePointId)
+                    ? PointDirection.Input
+                    : PointDirection.Output;
+            _values[(entity.ClientCode, entity.PointId, direction)] = new PointSample(
                 entity.ClientCode,
                 entity.PointId,
                 new PointValue(
@@ -65,21 +74,23 @@ public sealed class LatestValueStore(IDbContextFactory<ServerDbContext> contextF
         {
             foreach (var sample in samples)
             {
-                _values[PointKey.Create(sample.ClientCode, sample.PointId)] = sample;
+                _values[(sample.ClientCode, sample.PointId, ResolveDirection(sample))] = sample;
             }
 
             await using var context = await contextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
             foreach (var sample in samples)
             {
+                var direction = ResolveDirection(sample);
                 var entity = await context.LatestValues.FindAsync(
-                    [sample.ClientCode, sample.PointId],
+                    [sample.ClientCode, sample.PointId, direction.ToString()],
                     cancellationToken).ConfigureAwait(false);
                 if (entity is null)
                 {
                     entity = new LatestValueEntity
                     {
                         ClientCode = sample.ClientCode,
-                        PointId = sample.PointId
+                        PointId = sample.PointId,
+                        Direction = direction.ToString()
                     };
                     context.LatestValues.Add(entity);
                 }
@@ -88,6 +99,7 @@ public sealed class LatestValueStore(IDbContextFactory<ServerDbContext> contextF
                     ? null
                     : JsonSerializer.Serialize(sample.Value.Value);
                 entity.Quality = sample.Value.Quality.ToString();
+                entity.Direction = direction.ToString();
                 entity.TimestampUnixNanoseconds = sample.Value.TimestampUnixNanoseconds;
                 entity.SourceClientCode = sample.SourceClientCode ?? string.Empty;
                 entity.SourcePointId = sample.SourcePointId ?? string.Empty;
@@ -134,7 +146,10 @@ public sealed class LatestValueStore(IDbContextFactory<ServerDbContext> contextF
         {
             foreach (var pointId in pointIds)
             {
-                _values.TryRemove(PointKey.Create(clientCode, pointId), out _);
+                foreach (var role in Enum.GetValues<PointDirection>())
+                {
+                    _values.TryRemove((clientCode, pointId, role), out _);
+                }
             }
 
             await using var context = await contextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
@@ -151,10 +166,55 @@ public sealed class LatestValueStore(IDbContextFactory<ServerDbContext> contextF
         }
     }
 
+    public async Task RemoveEndpointsAsync(
+        string clientCode,
+        IReadOnlyList<PointDefinition> endpoints,
+        CancellationToken cancellationToken = default)
+    {
+        if (endpoints.Count == 0)
+        {
+            return;
+        }
+
+        var keys = endpoints
+            .Select(endpoint => (endpoint.PointId, endpoint.Direction))
+            .ToHashSet();
+        var pointIds = keys.Select(key => key.PointId).ToArray();
+        await _persistenceGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            foreach (var key in keys)
+            {
+                _values.TryRemove((clientCode, key.PointId, key.Direction), out _);
+            }
+
+            await using var context = await contextFactory.CreateDbContextAsync(cancellationToken)
+                .ConfigureAwait(false);
+            var entities = await context.LatestValues
+                .Where(entity => entity.ClientCode == clientCode && pointIds.Contains(entity.PointId))
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+            var removed = entities.Where(entity =>
+                Enum.TryParse<PointDirection>(entity.Direction, true, out var direction) &&
+                keys.Contains((entity.PointId, direction))).ToArray();
+            context.LatestValues.RemoveRange(removed);
+            await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _persistenceGate.Release();
+        }
+    }
+
     public IReadOnlyList<PointSample> GetAll() => _values.Values.ToArray();
 
     public IReadOnlyList<PointSample> GetClient(string clientCode) =>
         _values.Values.Where(value => value.ClientCode == clientCode).ToArray();
+
+    private static PointDirection ResolveDirection(PointSample sample) =>
+        string.IsNullOrWhiteSpace(sample.SourcePointId)
+            ? PointDirection.Input
+            : PointDirection.Output;
 
     private static object? DeserializeValue(string? json)
     {

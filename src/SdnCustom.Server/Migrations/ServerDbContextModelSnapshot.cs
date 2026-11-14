@@ -2,23 +2,44 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SdnCustom.Server.Persistence;
 
 #nullable disable
 
-namespace SdnCustom.Server.Persistence.Migrations
+namespace SdnCustom.Server.Migrations
 {
     [DbContext(typeof(ServerDbContext))]
-    [Migration("20261104055334_AddPointsConfigured")]
-    partial class AddPointsConfigured
+    partial class ServerDbContextModelSnapshot : ModelSnapshot
     {
-        /// <inheritdoc />
-        protected override void BuildTargetModel(ModelBuilder modelBuilder)
+        protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.14");
+
+            modelBuilder.Entity("SdnCustom.Server.Persistence.BusinessSystemEntity", b =>
+                {
+                    b.Property<string>("SystemCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SystemName")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("SystemCode");
+
+                    b.ToTable("business_system", (string)null);
+                });
 
             modelBuilder.Entity("SdnCustom.Server.Persistence.ClientSystemEntity", b =>
                 {
@@ -62,7 +83,14 @@ namespace SdnCustom.Server.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("SystemCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.HasKey("ClientCode");
+
+                    b.HasIndex("SystemCode");
 
                     b.ToTable("client_system", (string)null);
                 });
@@ -75,6 +103,9 @@ namespace SdnCustom.Server.Persistence.Migrations
 
                     b.Property<string>("PointId")
                         .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Direction")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Quality")
@@ -95,7 +126,7 @@ namespace SdnCustom.Server.Persistence.Migrations
                     b.Property<string>("ValueJson")
                         .HasColumnType("TEXT");
 
-                    b.HasKey("ClientCode", "PointId");
+                    b.HasKey("ClientCode", "PointId", "Direction");
 
                     b.ToTable("latest_value", (string)null);
                 });
@@ -110,6 +141,9 @@ namespace SdnCustom.Server.Persistence.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Direction")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Address")
                         .IsRequired()
                         .HasMaxLength(512)
@@ -122,11 +156,19 @@ namespace SdnCustom.Server.Persistence.Migrations
                     b.Property<double>("Deadband")
                         .HasColumnType("REAL");
 
-                    b.Property<string>("Direction")
+                    b.Property<string>("Group")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("Group")
+                    b.Property<string>("OpcUaParameter1")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OpcUaParameter2")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OpcUaParameter3")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
@@ -135,7 +177,7 @@ namespace SdnCustom.Server.Persistence.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("SourceInputPointId")
+                    b.Property<string>("Protocol")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
@@ -143,9 +185,75 @@ namespace SdnCustom.Server.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.HasKey("ClientCode", "PointId");
+                    b.HasKey("ClientCode", "PointId", "Direction");
 
                     b.ToTable("point_catalog", (string)null);
+                });
+
+            modelBuilder.Entity("SdnCustom.Server.Persistence.PointLinkEntity", b =>
+                {
+                    b.Property<string>("LinkId")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Declaration")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("SourceClientCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SourcePointId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SourcePointName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SourceProtocol")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SystemCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TargetClientCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TargetPointId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("LinkId");
+
+                    b.HasIndex("SystemCode", "SourceClientCode", "SourcePointId");
+
+                    b.ToTable("point_link", (string)null);
+                });
+
+            modelBuilder.Entity("SdnCustom.Server.Persistence.ClientSystemEntity", b =>
+                {
+                    b.HasOne("SdnCustom.Server.Persistence.BusinessSystemEntity", "BusinessSystem")
+                        .WithMany("Clients")
+                        .HasForeignKey("SystemCode")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("BusinessSystem");
                 });
 
             modelBuilder.Entity("SdnCustom.Server.Persistence.PointCatalogEntity", b =>
@@ -157,6 +265,24 @@ namespace SdnCustom.Server.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("ClientSystem");
+                });
+
+            modelBuilder.Entity("SdnCustom.Server.Persistence.PointLinkEntity", b =>
+                {
+                    b.HasOne("SdnCustom.Server.Persistence.BusinessSystemEntity", "BusinessSystem")
+                        .WithMany("Links")
+                        .HasForeignKey("SystemCode")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("BusinessSystem");
+                });
+
+            modelBuilder.Entity("SdnCustom.Server.Persistence.BusinessSystemEntity", b =>
+                {
+                    b.Navigation("Clients");
+
+                    b.Navigation("Links");
                 });
 
             modelBuilder.Entity("SdnCustom.Server.Persistence.ClientSystemEntity", b =>

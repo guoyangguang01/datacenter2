@@ -16,7 +16,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private CancellationTokenSource? _simulationCancellation;
     private DateTimeOffset? _logViewClearedAt;
     private string? _lastSelectedClientCode;
-    private string? _lastSelectedPointId;
+    private string? _lastSelectedPointKey;
     private int _historyQueryGeneration;
 
     [ObservableProperty] private ClientRowViewModel? _selectedClient;
@@ -24,6 +24,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [ObservableProperty] private string _statusText = "正在读取系统状态...";
     [ObservableProperty] private int _onlineClients;
     [ObservableProperty] private int _totalPoints;
+    [ObservableProperty] private string _systemSummary = "未选择系统";
     [ObservableProperty] private string _newClientCode = string.Empty;
     [ObservableProperty] private string _newClientName = string.Empty;
     [ObservableProperty] private string _writeValue = string.Empty;
@@ -32,6 +33,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [ObservableProperty] private string _historyTo = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
     [ObservableProperty] private int _historyLimit = 1000;
     [ObservableProperty] private int _simulationIntervalMilliseconds = 200;
+    [ObservableProperty] private bool _isCommunicationRunning;
     [ObservableProperty] private bool _isSimulationRunning;
     [ObservableProperty] private bool _isHistoryChartActive;
     [ObservableProperty] private bool _isHistoryQuerying;
@@ -75,10 +77,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
     partial void OnSelectedPointChanged(PointRowViewModel? value)
     {
         var pointChanged = !string.Equals(
-            _lastSelectedPointId,
-            value?.PointId,
+            _lastSelectedPointKey,
+            value is null ? null : $"{value.Direction}:{value.PointId}",
             StringComparison.Ordinal);
-        _lastSelectedPointId = value?.PointId;
+        _lastSelectedPointKey = value is null ? null : $"{value.Direction}:{value.PointId}";
         if (pointChanged)
         {
             Interlocked.Increment(ref _historyQueryGeneration);
@@ -120,7 +122,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
         try
         {
             var selectedCode = SelectedClient?.ClientCode;
-            var selectedPointId = SelectedPoint?.PointId;
+            var selectedPointKey = SelectedPoint is null
+                ? null
+                : $"{SelectedPoint.Direction}:{SelectedPoint.PointId}";
             var snapshot = await _admin.GetSnapshotAsync(cancellationToken);
             Clients.Clear();
             foreach (var client in snapshot.Clients)
@@ -130,7 +134,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
             SelectedClient = Clients.FirstOrDefault(client => client.ClientCode == selectedCode) ?? Clients.FirstOrDefault();
             RefreshPoints();
-            SelectedPoint = Points.FirstOrDefault(point => point.PointId == selectedPointId) ?? Points.FirstOrDefault();
+            SelectedPoint = Points.FirstOrDefault(point =>
+                                $"{point.Direction}:{point.PointId}" == selectedPointKey)
+                            ?? Points.FirstOrDefault();
             if (IsSimulationRunning &&
                 SelectedClient is not
                 {
@@ -152,6 +158,12 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
             OnlineClients = snapshot.OnlineClients;
             TotalPoints = snapshot.TotalPoints;
+            IsCommunicationRunning = snapshot.CommunicationRunning;
+            var currentSystem = snapshot.Systems?.FirstOrDefault(system => system.SystemCode == "FUEL")
+                                ?? snapshot.Systems?.FirstOrDefault();
+            SystemSummary = currentSystem is null
+                ? "未分组客户端"
+                : $"{currentSystem.SystemName} · {currentSystem.ClientCount} 客户端 · {currentSystem.RouteCount} 条输出路由";
             StatusText = $"系统监视器：{OnlineClients} 个客户端在线 / {TotalPoints} 个测点";
             NotifyCommandStates();
         }
@@ -191,14 +203,13 @@ public sealed partial class MainWindowViewModel : ObservableObject
     partial void OnNewClientCodeChanged(string value) => CreateClientCommand.NotifyCanExecuteChanged();
     partial void OnNewClientNameChanged(string value) => CreateClientCommand.NotifyCanExecuteChanged();
 
-    [RelayCommand(CanExecute = nameof(CanStartClient))]
-    private async Task StartClientAsync()
+    [RelayCommand(CanExecute = nameof(CanStartCommunication))]
+    private async Task StartCommunicationAsync()
     {
-        if (SelectedClient is null) return;
         try
         {
-            await _admin.StartClientAsync(SelectedClient.ClientCode);
-            OperationMessage = $"已发送启动命令：{SelectedClient.ClientCode}";
+            await _admin.StartCommunicationAsync();
+            OperationMessage = "服务端通讯已启动，客户端现在可以连接。";
             await RefreshAsync();
         }
         catch (Exception exception)
@@ -207,17 +218,16 @@ public sealed partial class MainWindowViewModel : ObservableObject
         }
     }
 
-    private bool CanStartClient() => SelectedClient is { Online: true, DesiredRunning: false };
+    private bool CanStartCommunication() => !IsCommunicationRunning;
 
-    [RelayCommand(CanExecute = nameof(CanStopClient))]
-    private async Task StopClientAsync()
+    [RelayCommand(CanExecute = nameof(CanStopCommunication))]
+    private async Task StopCommunicationAsync()
     {
-        if (SelectedClient is null) return;
         StopSimulation();
         try
         {
-            await _admin.StopClientAsync(SelectedClient.ClientCode);
-            OperationMessage = $"已发送停止命令：{SelectedClient.ClientCode}";
+            await _admin.StopCommunicationAsync();
+            OperationMessage = "服务端通讯已停止，现有客户端已断开，新连接将被拒绝。";
             await RefreshAsync();
         }
         catch (Exception exception)
@@ -226,7 +236,13 @@ public sealed partial class MainWindowViewModel : ObservableObject
         }
     }
 
-    private bool CanStopClient() => SelectedClient is { DesiredRunning: true } or { Online: true };
+    private bool CanStopCommunication() => IsCommunicationRunning;
+
+    partial void OnIsCommunicationRunningChanged(bool value)
+    {
+        StartCommunicationCommand.NotifyCanExecuteChanged();
+        StopCommunicationCommand.NotifyCanExecuteChanged();
+    }
 
     [RelayCommand(CanExecute = nameof(CanWritePoint))]
     private async Task WritePointAsync()
@@ -296,6 +312,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         var queryGeneration = Interlocked.Increment(ref _historyQueryGeneration);
         var selectedClientCode = SelectedClient.ClientCode;
         var selectedPointId = SelectedPoint.PointId;
+        var selectedDirection = SelectedPoint.Direction;
         IsHistoryQuerying = true;
         OperationMessage = "正在查询历史数据...";
         try
@@ -306,13 +323,15 @@ public sealed partial class MainWindowViewModel : ObservableObject
             var records = await _admin.QueryHistoryAsync(
                 selectedClientCode,
                 selectedPointId,
+                SelectedPoint.Direction,
                 from,
                 to,
                 Math.Clamp(HistoryLimit, 1, 10000),
                 timeout.Token);
             if (queryGeneration != Volatile.Read(ref _historyQueryGeneration) ||
                 SelectedClient?.ClientCode != selectedClientCode ||
-                SelectedPoint?.PointId != selectedPointId)
+                SelectedPoint?.PointId != selectedPointId ||
+                SelectedPoint?.Direction != selectedDirection)
             {
                 OperationMessage = "查询完成，但当前选择已变化，旧结果已丢弃。";
                 return;
@@ -473,8 +492,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     private void NotifyCommandStates()
     {
-        StartClientCommand.NotifyCanExecuteChanged();
-        StopClientCommand.NotifyCanExecuteChanged();
+        StartCommunicationCommand.NotifyCanExecuteChanged();
+        StopCommunicationCommand.NotifyCanExecuteChanged();
         WritePointCommand.NotifyCanExecuteChanged();
         ToggleSimulationCommand.NotifyCanExecuteChanged();
         QueryHistoryCommand.NotifyCanExecuteChanged();
@@ -492,7 +511,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
         foreach (var point in SelectedClient.Points)
         {
-            var value = SelectedClient.LatestValues.FirstOrDefault(candidate => candidate.PointId == point.PointId);
+            var value = SelectedClient.LatestValues.FirstOrDefault(candidate =>
+                candidate.PointId == point.PointId &&
+                candidate.Direction == point.Direction);
             var row = new PointRowViewModel(
                 SelectedClient.ClientName,
                 SelectedClient.ClientCode,

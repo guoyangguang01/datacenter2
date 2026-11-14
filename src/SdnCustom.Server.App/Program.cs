@@ -22,7 +22,9 @@ internal static class Program
             }
         }
 
-        var app = ServerHost.Build(args);
+        var app = ServerHost.Build(
+            args,
+            settings => settings.SeedFuelSystemSample = ReadSeedSampleSetting());
         await ServerHost.InitializeAsync(app);
 
         if (headless)
@@ -61,5 +63,15 @@ internal static class Program
             .AddEnvironmentVariables()
             .Build();
         return configuration.GetValue("SdnCustom:HttpPort", 7444);
+    }
+
+    private static bool ReadSeedSampleSetting()
+    {
+        var configuration = new ConfigurationBuilder()
+            .SetBasePath(AppContext.BaseDirectory)
+            .AddJsonFile("appsettings.json", optional: true)
+            .AddEnvironmentVariables()
+            .Build();
+        return configuration.GetValue("SdnCustom:SeedFuelSystemSample", true);
     }
 }

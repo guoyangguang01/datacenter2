@@ -49,7 +49,7 @@ public sealed class ClientConfigurationTests
     }
 
     [Fact]
-    public void RejectsOutputPointWithoutSource()
+    public void AllowsOutputEndpointWithoutRouteSource()
     {
         var configuration = new ClientConfiguration
         {
@@ -68,11 +68,11 @@ public sealed class ClientConfigurationTests
 
         var errors = ClientConfigurationValidator.Validate(configuration);
 
-        Assert.Contains(errors, error => error.Contains("必须引用 INPUT", StringComparison.Ordinal));
+        Assert.DoesNotContain(errors, error => error.Contains("来源引用", StringComparison.Ordinal));
     }
 
     [Fact]
-    public void RejectsLocalOutputReferenceThatDoesNotPointToInput()
+    public void RejectsEndpointWithRouteSource()
     {
         var configuration = new ClientConfiguration
         {
@@ -110,11 +110,11 @@ public sealed class ClientConfigurationTests
         Assert.Contains(
             errors,
             error => error.Contains("OUT-1", StringComparison.Ordinal) &&
-                     error.Contains("不能引用", StringComparison.Ordinal));
+                     error.Contains("PointLink", StringComparison.Ordinal));
     }
 
     [Fact]
-    public void RejectsMissingLocalInputReference()
+    public void RejectsAnyEndpointWithRouteSource()
     {
         var configuration = new ClientConfiguration
         {
@@ -136,8 +136,8 @@ public sealed class ClientConfigurationTests
 
         Assert.Contains(
             errors,
-            error => error.Contains("MISSING", StringComparison.Ordinal) &&
-                     error.Contains("不存在", StringComparison.Ordinal));
+            error => error.Contains("OUT", StringComparison.Ordinal) &&
+                     error.Contains("PointLink", StringComparison.Ordinal));
     }
 
     [Fact]

@@ -1,6 +1,7 @@
 using SdnCustom.Server.Admin;
 using SdnCustom.Server.App.ViewModels;
 using SdnCustom.Server.History;
+using SdnCustom.Server.Persistence;
 using SdnCustom.Server.Runtime;
 using SdnCustom.Shared.Model;
 
@@ -76,7 +77,8 @@ public sealed class MainWindowViewModelTests
         public Task CreateClientAsync(
             string clientCode,
             string clientName,
-            CancellationToken cancellationToken = default) =>
+            CancellationToken cancellationToken = default,
+            string? systemCode = null) =>
             throw new NotSupportedException();
 
         public Task RenameClientAsync(
@@ -90,14 +92,10 @@ public sealed class MainWindowViewModelTests
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
-        public Task StartClientAsync(
-            string clientCode,
-            CancellationToken cancellationToken = default) =>
+        public Task StartCommunicationAsync(CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
-        public Task StopClientAsync(
-            string clientCode,
-            CancellationToken cancellationToken = default) =>
+        public Task StopCommunicationAsync(CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
         public Task SaveClientPointsAsync(
@@ -113,9 +111,22 @@ public sealed class MainWindowViewModelTests
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
+        public Task<GasMasterImportResult> ImportGasMasterAsync(
+            string systemCode,
+            string systemName,
+            string csv,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<string> ExportGasMasterAsync(
+            string systemCode,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
         public Task<IReadOnlyList<HistoryPoint>> QueryHistoryAsync(
             string clientCode,
             string pointId,
+            PointDirection direction,
             DateTimeOffset from,
             DateTimeOffset to,
             int limit,

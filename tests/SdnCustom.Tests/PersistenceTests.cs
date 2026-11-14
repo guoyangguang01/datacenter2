@@ -8,6 +8,101 @@ namespace SdnCustom.Tests;
 public sealed class PersistenceTests
 {
     [Fact]
+    public async Task SeedsFuelSystemSampleFromEmbeddedCsv()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "sdncustom-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var options = new DbContextOptionsBuilder<ServerDbContext>()
+                .UseSqlite($"Data Source={Path.Combine(directory, "sample.db")}")
+                .Options;
+            var factory = new TestDbContextFactory(options);
+            var clients = new ClientSystemStore(factory);
+            await clients.InitializeAsync();
+
+            var gasMaster = await CreateGasMasterServiceAsync(factory);
+            var seeder = new FuelSystemSampleSeeder(factory, gasMaster);
+            await seeder.SeedAsync();
+            await seeder.SeedAsync();
+
+            await using var context = await factory.CreateDbContextAsync();
+            var system = await context.BusinessSystems.SingleAsync();
+            Assert.Equal("FUEL", system.SystemCode);
+            Assert.Equal("燃油系统", system.SystemName);
+            Assert.Equal(5, await context.ClientSystems.CountAsync());
+            Assert.Equal(392, await context.PointCatalog.CountAsync());
+            Assert.Equal(
+                200,
+                await context.PointCatalog.CountAsync(point => point.Direction == "Input"));
+            Assert.Equal(
+                192,
+                await context.PointCatalog.CountAsync(point => point.Direction == "Output"));
+            Assert.Equal(732, await context.PointLinks.CountAsync());
+            Assert.Equal(
+                366,
+                await context.PointLinks.CountAsync(link => link.Declaration == "Output"));
+            Assert.Equal(
+                175,
+                await context.PointLinks.CountAsync(link =>
+                    link.Declaration == "Output" && link.Enabled));
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(directory, true);
+            }
+            catch (IOException)
+            {
+            }
+        }
+    }
+
+    [Fact]
+    public async Task ExportsAndReimportsRawGasMasterTable()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "sdncustom-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var options = new DbContextOptionsBuilder<ServerDbContext>()
+                .UseSqlite($"Data Source={Path.Combine(directory, "roundtrip.db")}")
+                .Options;
+            var factory = new TestDbContextFactory(options);
+            var clients = new ClientSystemStore(factory);
+            await clients.InitializeAsync();
+            var service = await CreateGasMasterServiceAsync(factory);
+            await new FuelSystemSampleSeeder(factory, service).SeedAsync();
+
+            var csv = await service.ExportAsync("FUEL");
+            var lines = csv.Split(
+                ["\r\n", "\n"],
+                StringSplitOptions.RemoveEmptyEntries);
+            Assert.Equal(733, lines.Length);
+            Assert.Contains("测点id,测点名称", lines[0]);
+
+            var result = await service.ImportAsync("FUEL", "燃油系统", csv);
+
+            Assert.Equal(5, result.ClientCount);
+            Assert.Equal(200, result.InputCount);
+            Assert.Equal(192, result.OutputCount);
+            Assert.Equal(366, result.RouteCount);
+            Assert.Contains(result.Warnings, warning => warning.Contains("数字型 OPC UA"));
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(directory, true);
+            }
+            catch (IOException)
+            {
+            }
+        }
+    }
+
+    [Fact]
     public async Task PersistsClientRegistrationDesiredStateAndLatestValues()
     {
         var directory = Path.Combine(Path.GetTempPath(), "sdncustom-tests", Guid.NewGuid().ToString("N"));
@@ -24,7 +119,7 @@ public sealed class PersistenceTests
             var declaredRegistration = new ClientRegistration(
                 "CLIENT-1",
                 "Client one",
-                ClientProtocol.OpcUa,
+                ClientProtocol.OpcUaClient,
                 "opc.tcp://127.0.0.1:4840",
                 "1.0",
                 "revision-1",
@@ -61,7 +156,7 @@ public sealed class PersistenceTests
             ]);
             var stored = await clients.GetAsync("CLIENT-1");
 
-            Assert.Equal(ClientProtocol.OpcUa, registration.Protocol);
+            Assert.Equal(ClientProtocol.OpcUaClient, registration.Protocol);
             Assert.True(stored!.DesiredRunning);
             var storedPoint = Assert.Single(stored.Points);
             Assert.Equal("P2", storedPoint.PointId);
@@ -110,6 +205,18 @@ public sealed class PersistenceTests
             {
             }
         }
+    }
+
+    private static async Task<GasMasterTableService> CreateGasMasterServiceAsync(
+        IDbContextFactory<ServerDbContext> factory)
+    {
+        var latest = new LatestValueStore(factory);
+        await latest.InitializeAsync();
+        return new GasMasterTableService(
+            factory,
+            new AgentRegistry(),
+            latest,
+            new PointLinkCatalog(new PointRouter(), factory));
     }
 
     private sealed class TestDbContextFactory(DbContextOptions<ServerDbContext> options)

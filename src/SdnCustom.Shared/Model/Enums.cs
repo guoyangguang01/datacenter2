@@ -3,7 +3,8 @@ namespace SdnCustom.Shared.Model;
 public enum ClientProtocol
 {
     CustomTcp,
-    OpcUa
+    OpcUaClient,
+    OpcUaServer
 }
 
 public enum PointDirection

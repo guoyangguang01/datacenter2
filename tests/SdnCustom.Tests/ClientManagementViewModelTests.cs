@@ -2,6 +2,7 @@ using System.Text;
 using SdnCustom.Server.Admin;
 using SdnCustom.Server.App.ViewModels;
 using SdnCustom.Server.History;
+using SdnCustom.Server.Persistence;
 using SdnCustom.Server.Runtime;
 using SdnCustom.Shared.Model;
 
@@ -178,6 +179,30 @@ public sealed class ClientManagementViewModelTests
         Assert.Contains(",输入,", csv);
     }
 
+    [Fact]
+    public async Task CreatesClientInCurrentlySelectedSystem()
+    {
+        var snapshot = new AdminSnapshot(
+            [],
+            0,
+            0,
+            [
+                new AdminSystemView("FUEL", "燃油系统", string.Empty, 0, 0, 0),
+                new AdminSystemView("CHEM", "化学系统", string.Empty, 0, 0, 0)
+            ]);
+        var admin = new StubAdminFacade(snapshot);
+        var viewModel = new ClientManagementViewModel(admin);
+        await viewModel.InitializeAsync();
+
+        viewModel.SelectedSystem = viewModel.Systems.Single(system => system.SystemCode == "CHEM");
+        viewModel.NewClientCode = "CHEM01";
+        viewModel.NewClientName = "化学客户端";
+        await viewModel.CreateClientCommand.ExecuteAsync(null);
+
+        Assert.Equal("CHEM", admin.CreatedClientSystemCode);
+        Assert.Contains("化学系统", viewModel.StatusText);
+    }
+
     private sealed class StubAdminFacade(AdminSnapshot snapshot) : IAdminFacade
     {
         public Task<AdminSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default) =>
@@ -202,8 +227,14 @@ public sealed class ClientManagementViewModelTests
         public Task CreateClientAsync(
             string clientCode,
             string clientName,
-            CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
+            CancellationToken cancellationToken = default,
+            string? systemCode = null)
+        {
+            CreatedClientSystemCode = systemCode;
+            return Task.CompletedTask;
+        }
+
+        public string? CreatedClientSystemCode { get; private set; }
 
         public Task RenameClientAsync(
             string clientCode,
@@ -214,10 +245,10 @@ public sealed class ClientManagementViewModelTests
         public Task DeleteClientAsync(string clientCode, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
-        public Task StartClientAsync(string clientCode, CancellationToken cancellationToken = default) =>
+        public Task StartCommunicationAsync(CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
-        public Task StopClientAsync(string clientCode, CancellationToken cancellationToken = default) =>
+        public Task StopCommunicationAsync(CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
         public Task SaveClientPointsAsync(
@@ -233,9 +264,22 @@ public sealed class ClientManagementViewModelTests
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
+        public Task<GasMasterImportResult> ImportGasMasterAsync(
+            string systemCode,
+            string systemName,
+            string csv,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<string> ExportGasMasterAsync(
+            string systemCode,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
         public Task<IReadOnlyList<HistoryPoint>> QueryHistoryAsync(
             string clientCode,
             string pointId,
+            PointDirection direction,
             DateTimeOffset from,
             DateTimeOffset to,
             int limit,

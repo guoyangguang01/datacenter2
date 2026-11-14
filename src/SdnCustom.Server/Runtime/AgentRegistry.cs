@@ -10,14 +10,17 @@ public interface IAgentSession : IAsyncDisposable
     string InstanceId { get; }
     DateTimeOffset ConnectedAt { get; }
     TimeSpan IdleTime { get; }
+    CancellationToken CloseToken { get; }
     void Touch();
     Task SendAsync(ServerMessage message, CancellationToken cancellationToken = default);
+    Task DisconnectAsync(CancellationToken cancellationToken = default);
 }
 
 public sealed class AgentSession : IAgentSession, IAsyncDisposable
 {
     private readonly IServerStreamWriter<ServerMessage> _writer;
     private readonly SemaphoreSlim _writeGate = new(1, 1);
+    private readonly CancellationTokenSource _closeCancellation = new();
     private long _lastActivityTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
 
     public AgentSession(string clientCode, string instanceId, IServerStreamWriter<ServerMessage> writer)
@@ -33,6 +36,7 @@ public sealed class AgentSession : IAgentSession, IAsyncDisposable
     public DateTimeOffset ConnectedAt { get; }
     public TimeSpan IdleTime => System.Diagnostics.Stopwatch.GetElapsedTime(
         Interlocked.Read(ref _lastActivityTimestamp));
+    public CancellationToken CloseToken => _closeCancellation.Token;
 
     public void Touch() => Interlocked.Exchange(
         ref _lastActivityTimestamp,
@@ -51,8 +55,16 @@ public sealed class AgentSession : IAgentSession, IAsyncDisposable
         }
     }
 
+    public Task DisconnectAsync(CancellationToken cancellationToken = default)
+    {
+        _closeCancellation.Cancel();
+        return Task.CompletedTask;
+    }
+
     public ValueTask DisposeAsync()
     {
+        _closeCancellation.Cancel();
+        _closeCancellation.Dispose();
         _writeGate.Dispose();
         return ValueTask.CompletedTask;
     }

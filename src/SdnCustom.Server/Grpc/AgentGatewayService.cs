@@ -8,6 +8,7 @@ using ContractPointSample = SdnCustom.Contracts.Agent.V1.PointSample;
 using SharedClientConnectionState = SdnCustom.Shared.Model.ClientConnectionState;
 using SharedPointDataType = SdnCustom.Shared.Model.PointDataType;
 using SharedPointDefinition = SdnCustom.Shared.Model.PointDefinition;
+using SharedPointDirection = SdnCustom.Shared.Model.PointDirection;
 using SharedPointSample = SdnCustom.Shared.Model.PointSample;
 
 namespace SdnCustom.Server.Grpc;
@@ -16,6 +17,7 @@ public sealed class AgentGatewayService : AgentGateway.AgentGatewayBase
 {
     private readonly IClientSystemStore _clients;
     private readonly IAgentRegistry _agents;
+    private readonly IServerCommunicationGate _communicationGate;
     private readonly IClientCommunicationStateStore _communicationStates;
     private readonly IPointRouter _router;
     private readonly ITelemetryService _telemetry;
@@ -24,6 +26,7 @@ public sealed class AgentGatewayService : AgentGateway.AgentGatewayBase
     public AgentGatewayService(
         IClientSystemStore clients,
         IAgentRegistry agents,
+        IServerCommunicationGate communicationGate,
         IClientCommunicationStateStore communicationStates,
         IPointRouter router,
         ITelemetryService telemetry,
@@ -31,6 +34,7 @@ public sealed class AgentGatewayService : AgentGateway.AgentGatewayBase
     {
         _clients = clients;
         _agents = agents;
+        _communicationGate = communicationGate;
         _communicationStates = communicationStates;
         _router = router;
         _telemetry = telemetry;
@@ -68,6 +72,18 @@ public sealed class AgentGatewayService : AgentGateway.AgentGatewayBase
 
             clientCode = first.ClientCode.Trim();
             instanceId = first.Hello.InstanceId;
+            if (!_communicationGate.IsRunning)
+            {
+                const string message = "服务端通讯未启动，禁止客户端连接。";
+                await responseStream.WriteAsync(new ServerMessage
+                {
+                    Welcome = new Welcome { Accepted = false, Message = message },
+                    SentUnixNs = UnixTime.NowNanoseconds()
+                }).ConfigureAwait(false);
+                _logs.Add("WARN", "连接", $"拒绝客户端 {clientCode}：{message}");
+                return;
+            }
+
             var registration = new ClientRegistration(
                 clientCode,
                 first.Hello.ClientName,
@@ -127,8 +143,9 @@ public sealed class AgentGatewayService : AgentGateway.AgentGatewayBase
                 SharedClientConnectionState.Disconnected,
                 "已连接服务端，等待启动通讯。");
 
-            using var streamCancellation =
-                CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken);
+            using var streamCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                context.CancellationToken,
+                session.CloseToken);
             var watchdog = MonitorHeartbeatAsync(session, streamCancellation);
             try
             {
@@ -195,7 +212,13 @@ public sealed class AgentGatewayService : AgentGateway.AgentGatewayBase
         string clientCode,
         CancellationToken cancellationToken)
     {
+        if (!_communicationGate.IsRunning)
+        {
+            return;
+        }
+
         var pointTypes = _router.GetClientPoints(clientCode)
+            .Where(point => point.Direction == SharedPointDirection.Input)
             .ToDictionary(point => point.PointId, point => point.DataType, StringComparer.Ordinal);
         switch (message.PayloadCase)
         {
@@ -213,10 +236,10 @@ public sealed class AgentGatewayService : AgentGateway.AgentGatewayBase
                     true,
                     cancellationToken).ConfigureAwait(false);
                 break;
-            case AgentMessage.PayloadOneofCase.WriteResult:
-                await _telemetry.HandleWriteResultAsync(
+            case AgentMessage.PayloadOneofCase.WriteResults:
+                await _telemetry.HandleWriteResultsAsync(
                     clientCode,
-                    message.WriteResult,
+                    message.WriteResults,
                     cancellationToken).ConfigureAwait(false);
                 break;
             case AgentMessage.PayloadOneofCase.StatusChanged:

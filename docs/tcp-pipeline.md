@@ -48,9 +48,8 @@
 8. `isConnected()` 为假 → 非 MQTT 走 `channelService.syncDisconnected`（`:140-147`），
    消除「假连接」
 9. **`adapter.readPoints(points)`（`:149`）← TCP 链路入口**
-10. `CustomTcpAdapter.readPoints`（`CustomTcpAdapter.java:147`）——
-    `synchronized(lock)` **把整个请求-响应包在锁里**（`:151`）→ 组 body
-    （pointIds + addresses）→ `send(READ_REQUEST)`（`:160`）→ `receive()` 取**一帧**
+10. `CustomTcpConnection.ReadAsync`——把整个请求-响应包在锁里 → 组批量 body
+    （仅 pointIds，不发送地址）→ `send(READ_REQUEST)` → `receive()` 取**一帧**
     （`:162`）→ 断言 `command == READ_RESPONSE`，不是就抛（`:163`）→ 解析 values，
     填 `sourceChannelId` / 时间戳 / 质量 → 返回
 11. 任何异常 → `connected = false` + `closeConnection()` + 抛 `Read failed`
@@ -79,13 +78,12 @@
 > 只 `propagationService.submitBatch(publishable)` 入队，下列步骤全部发生在
 > `PropagationService.process`（线程名 `propagation`，单线程 FIFO）里。
 
-14. `InputPointPropagator.propagate(outputChanges)`（`InputPointPropagator.java:41`）——
+14. `InputPointPropagator.propagate(outputChanges)`——
     `findByReferencePointIdIn` 一次查出引用这些 OUTPUT 的 INPUT → 逐个
     `writeToChannel:79`：通道不存在 / 未连接就跳过（`:81-95`）→
     `adapter.writePoint(inputPoint, value)`（`:98`）
-    → `CustomTcpAdapter.writePoint:119`：**同一把 `lock`**（`:123`）→ 发
-    `WRITE_REQUEST` → `receive()` 再取一帧 → 断言 `WRITE_RESPONSE`（`:133`）；失败即
-    关连接（`:139-141`）
+    → `CustomTcpConnection.WriteBatchAsync`：**同一把锁** → 一次发送批量
+    `WRITE_REQUEST(values[])` → 接收 `WRITE_RESPONSE(results[])`。
 15. INPUT 值取 OUTPUT 的值/质量/时间戳；写出成功取该通道为来源，失败退回 INPUT 自己的
     `channelId`（`toInputValue:115`）。写出失败只记 `propagation.failures`，**不降质量**
 16. `PropagationService.propagateSafely`（`PropagationService.java:150`）吞掉传播异常——
@@ -161,6 +159,16 @@ ws-push     单线程 FIFO  ← pushBatch（采集环上只有 propagation 调�
 | 帧长上限 | 65535 | `CustomTcpAdapter.java:239` |
 | 重连扫描 / 初始退避 / 封顶 | 5s / 2s / 60s | `sdncustom.channel.reconnect.*` |
 | 落库 / 推送队列容量 | 200 / 200 | `sdncustom.persistence.queue-capacity` 等 |
+
+## 批量协议
+
+当前自定义 TCP 已按批量数据语义实现：
+
+- 读请求使用 `pointIds` 数组，不发送逐节点 `addresses`；
+- 读响应使用 `values` 数组；
+- 写请求使用批量 `values` 数组；
+- 写响应使用按 pointId 返回的 `results` 数组；
+- 服务端自动传播会按目标客户端聚合为一个 `WritePoints` gRPC 命令。
 
 ## 计划插入点（**尚未实现**）
 

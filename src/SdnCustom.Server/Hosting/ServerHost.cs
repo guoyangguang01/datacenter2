@@ -77,15 +77,20 @@ public static class ServerHost
         });
 
         builder.Services.AddSingleton<IClientSystemStore, ClientSystemStore>();
+        builder.Services.AddSingleton<IBusinessSystemStore, BusinessSystemStore>();
+        builder.Services.AddSingleton<FuelSystemSampleSeeder>();
         builder.Services.AddSingleton<ILatestValueStore, LatestValueStore>();
         builder.Services.AddSingleton<IAgentRegistry, AgentRegistry>();
+        builder.Services.AddSingleton<IServerCommunicationGate, ServerCommunicationGate>();
         builder.Services.AddSingleton<IClientCommunicationStateStore, ClientCommunicationStateStore>();
         builder.Services.AddSingleton<IPointRouter, PointRouter>();
+        builder.Services.AddSingleton<PointLinkCatalog>();
         builder.Services.AddSingleton<IServerLogStore, ServerLogStore>();
         builder.Services.AddSingleton<InfluxHistoryStore>();
         builder.Services.AddSingleton<IHistoryStore>(provider => provider.GetRequiredService<InfluxHistoryStore>());
         builder.Services.AddHostedService(provider => provider.GetRequiredService<InfluxHistoryStore>());
         builder.Services.AddSingleton<ITelemetryService, TelemetryService>();
+        builder.Services.AddSingleton<IGasMasterTableService, GasMasterTableService>();
         builder.Services.AddSingleton<IServerControlService, ServerControlService>();
         builder.Services.AddSingleton<IAdminFacade, AdminFacade>();
 
@@ -103,6 +108,20 @@ public static class ServerHost
             IAdminFacade admin,
             CancellationToken cancellationToken) =>
             Results.Ok(await admin.GetSystemSettingsAsync(cancellationToken)));
+        app.MapGet("/api/clients", async (
+            IAdminFacade admin,
+            CancellationToken cancellationToken) =>
+        {
+            var snapshot = await admin.GetSnapshotAsync(cancellationToken);
+            return Results.Ok(snapshot.Clients
+                .Select(client => new ClientDirectoryItem(
+                    client.ClientCode,
+                    client.ClientName,
+                    client.SystemCode,
+                    client.SystemName,
+                    client.Online))
+                .ToArray());
+        });
         app.MapGet("/api/logs", async (
             int? count,
             IAdminFacade admin,
@@ -113,8 +132,32 @@ public static class ServerHost
             IAdminFacade admin,
             CancellationToken cancellationToken) =>
         {
-            await admin.CreateClientAsync(request.ClientCode, request.ClientName, cancellationToken);
+            await admin.CreateClientAsync(
+                request.ClientCode,
+                request.ClientName,
+                cancellationToken,
+                request.SystemCode);
             return Results.Created($"/api/clients/{request.ClientCode}", request);
+        });
+        app.MapPost("/api/systems/import-gas", async (
+            ImportGasMasterRequest request,
+            IAdminFacade admin,
+            CancellationToken cancellationToken) =>
+            Results.Ok(await admin.ImportGasMasterAsync(
+                request.SystemCode,
+                request.SystemName,
+                request.Csv,
+                cancellationToken)));
+        app.MapGet("/api/systems/{systemCode}/export-gas", async (
+            string systemCode,
+            IAdminFacade admin,
+            CancellationToken cancellationToken) =>
+        {
+            var csv = await admin.ExportGasMasterAsync(systemCode, cancellationToken);
+            return Results.File(
+                System.Text.Encoding.UTF8.GetBytes(csv),
+                "text/csv; charset=utf-8",
+                $"{systemCode}-gas-master.csv");
         });
         app.MapPut("/api/clients/{clientCode}", async (
             string clientCode,
@@ -133,20 +176,18 @@ public static class ServerHost
             await admin.DeleteClientAsync(clientCode, cancellationToken);
             return Results.NoContent();
         });
-        app.MapPost("/api/clients/{clientCode}/start", async (
-            string clientCode,
+        app.MapPost("/api/communication/start", async (
             IAdminFacade admin,
             CancellationToken cancellationToken) =>
         {
-            await admin.StartClientAsync(clientCode, cancellationToken);
+            await admin.StartCommunicationAsync(cancellationToken);
             return Results.NoContent();
         });
-        app.MapPost("/api/clients/{clientCode}/stop", async (
-            string clientCode,
+        app.MapPost("/api/communication/stop", async (
             IAdminFacade admin,
             CancellationToken cancellationToken) =>
         {
-            await admin.StopClientAsync(clientCode, cancellationToken);
+            await admin.StopCommunicationAsync(cancellationToken);
             return Results.NoContent();
         });
         app.MapPost("/api/clients/{clientCode}/write", async (
@@ -170,6 +211,7 @@ public static class ServerHost
         app.MapGet("/api/history", async (
             string clientCode,
             string pointId,
+            PointDirection direction,
             DateTimeOffset from,
             DateTimeOffset to,
             int? limit,
@@ -179,6 +221,7 @@ public static class ServerHost
             return Results.Ok(await admin.QueryHistoryAsync(
                 clientCode,
                 pointId,
+                direction,
                 from,
                 to,
                 limit ?? 1000,
@@ -218,6 +261,14 @@ public static class ServerHost
     {
         await app.Services.GetRequiredService<IClientSystemStore>()
             .InitializeAsync(cancellationToken).ConfigureAwait(false);
+        var settings = app.Services.GetRequiredService<IOptions<ServerSettings>>().Value;
+        if (settings.SeedFuelSystemSample)
+        {
+            await app.Services.GetRequiredService<FuelSystemSampleSeeder>()
+                .SeedAsync(cancellationToken).ConfigureAwait(false);
+        }
+        await app.Services.GetRequiredService<PointLinkCatalog>()
+            .ReloadAsync(cancellationToken).ConfigureAwait(false);
         await app.Services.GetRequiredService<ILatestValueStore>()
             .InitializeAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -229,7 +280,7 @@ public static class ServerHost
             return X509CertificateLoader.LoadPkcs12FromFile(
                 Path.GetFullPath(settings.CertificatePath, AppContext.BaseDirectory),
                 settings.CertificatePassword,
-                X509KeyStorageFlags.EphemeralKeySet);
+                X509KeyStorageFlags.DefaultKeySet);
         }
 
         var certDirectory = Path.Combine(dataDirectory, "certs");
@@ -241,7 +292,7 @@ public static class ServerHost
             return X509CertificateLoader.LoadPkcs12FromFile(
                 pfxPath,
                 string.Empty,
-                X509KeyStorageFlags.EphemeralKeySet);
+                X509KeyStorageFlags.DefaultKeySet);
         }
 
         using var rsa = RSA.Create(3072);
@@ -276,6 +327,6 @@ public static class ServerHost
         return X509CertificateLoader.LoadPkcs12FromFile(
             pfxPath,
             string.Empty,
-            X509KeyStorageFlags.EphemeralKeySet);
+            X509KeyStorageFlags.DefaultKeySet);
     }
 }

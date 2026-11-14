@@ -5,4 +5,7 @@
   <ItemGroup>
     <ProjectReference Include="..\SdnCustom.Shared\SdnCustom.Shared.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Server" />
+  </ItemGroup>
 </Project>

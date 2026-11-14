@@ -31,7 +31,7 @@
 
         <TextBlock Text="安全与故障排查" Classes="h2" />
         <TextBlock TextWrapping="Wrap"
-                   Text="客户端代码是唯一身份依据，请仅在可信内网使用。服务端默认启用 TLS；生产环境应替换开发 InfluxDB Token。连接、写入和路由错误可在“服务端日志”窗口查看。" />
+                   Text="客户端代码是唯一身份依据，默认面向可信内网。服务端与客户端默认使用非 TLS 连接，需要时可显式启用 TLS；生产环境应替换开发 InfluxDB Token。连接、写入和路由错误可在“服务端日志”窗口查看。" />
       </StackPanel>
       </Border>
     </ScrollViewer>

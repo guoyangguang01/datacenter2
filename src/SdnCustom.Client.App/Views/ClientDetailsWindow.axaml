@@ -15,11 +15,11 @@
 
     <ScrollViewer Grid.Row="1">
       <StackPanel Margin="20,12" Spacing="12"
-                  IsEnabled="{Binding IsConnectionConfigurationEnabled}">
+                  IsEnabled="{Binding IsExternalServiceConfigurationEnabled}">
         <Border Classes="card">
           <StackPanel Spacing="8">
-            <TextBlock Text="服务端 TLS 设置" FontSize="16" FontWeight="SemiBold" />
-            <Grid ColumnDefinitions="150,220,100,160" RowDefinitions="34,34,34"
+            <TextBlock Text="服务端连接与 TLS 设置" FontSize="16" FontWeight="SemiBold" />
+            <Grid ColumnDefinitions="150,220,100,160" RowDefinitions="34,34,34,34"
                   ColumnSpacing="8" RowSpacing="4">
               <TextBlock Text="安全连接：" VerticalAlignment="Center" />
               <CheckBox Grid.Column="1" Content="启用 TLS" IsChecked="{Binding UseTls}"
@@ -32,6 +32,8 @@
               <TextBox Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3"
                        Text="{Binding ServerCertificateThumbprint}"
                        Watermark="关闭自动信任时填写 SHA-1 指纹" />
+              <TextBlock Grid.Row="3" Text="管理端口：" VerticalAlignment="Center" />
+              <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding ManagementPort}" />
             </Grid>
           </StackPanel>
         </Border>
@@ -43,7 +45,7 @@
                   ColumnSpacing="8" RowSpacing="4">
               <TextBlock Text="通讯协议：" VerticalAlignment="Center" />
               <ComboBox Grid.Column="1" ItemsSource="{Binding ProtocolOptions}"
-                        SelectedItem="{Binding Protocol}" />
+                        SelectedItem="{Binding SelectedProtocolOption}" />
               <TextBlock Grid.Column="2" Text="超时(ms)：" VerticalAlignment="Center" />
               <NumericUpDown Grid.Column="3" Value="{Binding TimeoutMilliseconds}"
                              Minimum="100" Maximum="120000" Increment="500" />
@@ -53,12 +55,12 @@
               <TextBlock Grid.Row="1" Grid.Column="2" Text="端口：" VerticalAlignment="Center" />
               <TextBox Grid.Row="1" Grid.Column="3" Text="{Binding DevicePort}" />
 
-              <TextBlock Grid.Row="2" Text="OPC UA Endpoint：" VerticalAlignment="Center" />
+              <TextBlock Grid.Row="2" Text="{Binding OpcUaEndpointLabel}" VerticalAlignment="Center" />
               <TextBox Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3"
                        Text="{Binding OpcUaEndpoint}"
                        Watermark="opc.tcp://127.0.0.1:4840" />
               <TextBlock Grid.Row="3" Grid.ColumnSpan="4" Foreground="#6A7786"
-                         Text="TCP 协议使用设备 IP/端口；OPC UA 协议使用 Endpoint。切换协议后请保存并重新连接。" />
+                         Text="{Binding OpcUaModeDescription}" TextWrapping="Wrap" />
             </Grid>
           </StackPanel>
         </Border>
@@ -95,7 +97,7 @@
     <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center"
                 VerticalAlignment="Center" Spacing="24">
       <Button Classes="primary" Content="保存并关闭" Width="116" Click="SaveAndClose_OnClick"
-              IsEnabled="{Binding IsConnectionConfigurationEnabled}" />
+              IsEnabled="{Binding IsExternalServiceConfigurationEnabled}" />
       <Button Classes="subtle" Content="取消" Width="100" Click="Cancel_OnClick" />
     </StackPanel>
   </Grid>
