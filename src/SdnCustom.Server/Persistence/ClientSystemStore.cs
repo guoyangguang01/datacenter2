@@ -226,10 +226,9 @@ public sealed class ClientSystemStore(IDbContextFactory<ServerDbContext> context
                 $"测点 ID 与方向重复：{duplicate.Key.PointId}/{duplicate.Key.Direction}");
         }
         if (points.Any(point => string.IsNullOrWhiteSpace(point.PointId) ||
-                                string.IsNullOrWhiteSpace(point.PointName) ||
-                                string.IsNullOrWhiteSpace(point.Address)))
+                                string.IsNullOrWhiteSpace(point.PointName)))
         {
-            throw new InvalidOperationException("测点 ID、名称和地址不能为空。");
+            throw new InvalidOperationException("测点的 ID 和名称不能为空。");
         }
         if (points.Any(point => !string.IsNullOrWhiteSpace(point.SourceInputPointId)))
         {
@@ -347,6 +346,7 @@ public sealed class ClientSystemStore(IDbContextFactory<ServerDbContext> context
         var value = string.Join(
             "|",
             points.OrderBy(point => point.PointId, StringComparer.Ordinal)
+                .ThenBy(point => point.Direction)
                 .Select(point =>
                     $"{point.PointId}:{point.PointName}:{point.Address}:{point.DataType}:{point.Direction}:{point.Deadband}"));
         return Convert.ToHexString(

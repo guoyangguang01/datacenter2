@@ -26,7 +26,8 @@ public sealed class AgentSupervisor : IAsyncDisposable
 
     private readonly IClientConfigStore _configStore;
     private readonly IDeviceConnectionFactory _deviceFactory;
-    private readonly ConcurrentDictionary<string, SharedPointSample> _latestValues = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<(string PointId, SharedPointDirection Direction), SharedPointSample>
+        _latestValues = new();
     private readonly SemaphoreSlim _sendGate = new(1, 1);
     private readonly object _statusGate = new();
     private CancellationTokenSource? _cancellation;
@@ -56,7 +57,8 @@ public sealed class AgentSupervisor : IAsyncDisposable
     public bool IsServerConnected => _serverConnected;
     public bool IsDeviceRunning => _deviceRunning;
     public bool IsRunning => _supervisorTask is { IsCompleted: false };
-    public IReadOnlyDictionary<string, SharedPointSample> LatestValues => _latestValues;
+    public IReadOnlyDictionary<(string PointId, SharedPointDirection Direction), SharedPointSample> LatestValues =>
+        _latestValues;
 
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
@@ -493,7 +495,7 @@ public sealed class AgentSupervisor : IAsyncDisposable
     {
         foreach (var sample in samples)
         {
-            _latestValues[sample.PointId] = sample;
+            _latestValues[(sample.PointId, SharedPointDirection.Input)] = sample;
         }
 
         var batch = new PointBatch();
@@ -526,12 +528,14 @@ public sealed class AgentSupervisor : IAsyncDisposable
         CancellationToken cancellationToken)
     {
         var configuredPoints = (_configuration?.Points ?? [])
-            .ToDictionary(point => point.PointId, StringComparer.Ordinal);
+            .ToDictionary(point => (point.PointId, point.Direction));
         var items = new List<DeviceWriteItem>(command.Points.Count);
         var preparationErrors = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var point in command.Points)
         {
-            if (!configuredPoints.TryGetValue(point.PointId, out var configuredPoint))
+            if (!configuredPoints.TryGetValue(
+                    (point.PointId, SharedPointDirection.Output),
+                    out var configuredPoint))
             {
                 preparationErrors[point.PointId] =
                     $"客户端点表中未配置 OUTPUT 端点 {point.PointId}。";
@@ -622,7 +626,7 @@ public sealed class AgentSupervisor : IAsyncDisposable
                         : item.TimestampUnixNanoseconds),
                 item.SourceClientCode,
                 item.SourcePointId);
-            _latestValues[item.Point.PointId] = sample;
+            _latestValues[(item.Point.PointId, SharedPointDirection.Output)] = sample;
             writtenValues.Add(sample);
         }
 
@@ -720,6 +724,7 @@ public sealed class AgentSupervisor : IAsyncDisposable
         var text = string.Join(
             "|",
             points.OrderBy(point => point.PointId, StringComparer.Ordinal)
+                .ThenBy(point => point.Direction)
                 .Select(point => $"{point.PointId}:{point.Address}:{point.DataType}:{point.Direction}:{point.SourceInputPointId}"));
         return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text)));
     }

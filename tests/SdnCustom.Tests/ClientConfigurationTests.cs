@@ -72,6 +72,68 @@ public sealed class ClientConfigurationTests
     }
 
     [Fact]
+    public void AllowsSamePointIdInOppositeDirectionsForTcp()
+    {
+        var configuration = new ClientConfiguration
+        {
+            ClientCode = "CLIENT-01",
+            Device = new DeviceOptions { Protocol = ClientProtocol.CustomTcp },
+            Points =
+            [
+                new PointDefinition
+                {
+                    PointId = "POINT-1",
+                    PointName = "External input",
+                    Address = string.Empty,
+                    Direction = PointDirection.Output
+                },
+                new PointDefinition
+                {
+                    PointId = "POINT-1",
+                    PointName = "External output",
+                    Address = string.Empty,
+                    Direction = PointDirection.Input
+                }
+            ]
+        };
+
+        var errors = ClientConfigurationValidator.Validate(configuration);
+
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public void RejectsSamePointIdInSameDirection()
+    {
+        var configuration = new ClientConfiguration
+        {
+            ClientCode = "CLIENT-01",
+            Device = new DeviceOptions { Protocol = ClientProtocol.CustomTcp },
+            Points =
+            [
+                new PointDefinition
+                {
+                    PointId = "POINT-1",
+                    PointName = "First",
+                    Address = string.Empty,
+                    Direction = PointDirection.Input
+                },
+                new PointDefinition
+                {
+                    PointId = "POINT-1",
+                    PointName = "Second",
+                    Address = string.Empty,
+                    Direction = PointDirection.Input
+                }
+            ]
+        };
+
+        Assert.Contains(
+            ClientConfigurationValidator.Validate(configuration),
+            error => error.Contains("POINT-1/Input", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void RejectsEndpointWithRouteSource()
     {
         var configuration = new ClientConfiguration

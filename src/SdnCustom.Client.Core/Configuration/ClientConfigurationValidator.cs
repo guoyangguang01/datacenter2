@@ -58,21 +58,20 @@ public static class ClientConfigurationValidator
         }
 
         var duplicates = configuration.Points
-            .GroupBy(point => point.PointId, StringComparer.Ordinal)
+            .GroupBy(point => (point.PointId, point.Direction))
             .Where(group => group.Count() > 1)
             .Select(group => group.Key);
         foreach (var duplicate in duplicates)
         {
-            errors.Add($"测点 ID 重复：{duplicate}");
+            errors.Add($"测点 ID 与方向重复：{duplicate.PointId}/{duplicate.Direction}");
         }
 
         foreach (var point in configuration.Points)
         {
             if (string.IsNullOrWhiteSpace(point.PointId) ||
-                string.IsNullOrWhiteSpace(point.PointName) ||
-                string.IsNullOrWhiteSpace(point.Address))
+                string.IsNullOrWhiteSpace(point.PointName))
             {
-                errors.Add("测点 ID、名称和地址不能为空。");
+                errors.Add("测点的 ID 和名称不能为空。");
             }
 
             if (!string.IsNullOrWhiteSpace(point.SourceInputPointId))

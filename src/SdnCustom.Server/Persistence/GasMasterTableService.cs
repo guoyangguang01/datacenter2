@@ -59,7 +59,9 @@ public sealed class GasMasterTableService(
             .ConfigureAwait(false);
         var clientsByCode = clients.ToDictionary(client => client.ClientCode, StringComparer.Ordinal);
         var requiredClientCodes = parsed.Rows
-            .SelectMany(row => new[] { row.UserCode, row.TargetUserCode })
+            .SelectMany(row => row.PointType == "输入"
+                ? new[] { row.UserCode, row.SourceUserCode }
+                : new[] { row.UserCode, row.TargetUserCode })
             .Where(code => !string.IsNullOrWhiteSpace(code))
             .ToHashSet(StringComparer.Ordinal);
         var missingClients = requiredClientCodes
@@ -89,6 +91,10 @@ public sealed class GasMasterTableService(
             if (row.PointType == "输出")
             {
                 AddExpectedProtocol(expectedProtocols, row.TargetUserCode, row.TargetProtocol);
+            }
+            else
+            {
+                AddExpectedProtocol(expectedProtocols, row.SourceUserCode, row.SourceProtocol);
             }
         }
 
@@ -130,8 +136,11 @@ public sealed class GasMasterTableService(
                                   !string.IsNullOrWhiteSpace(row.Parameter2) ||
                                   !string.IsNullOrWhiteSpace(row.Parameter3))
                               ?? rows[0];
+            var addressProtocol = string.IsNullOrWhiteSpace(endpointRow.SourceProtocol)
+                ? endpointRow.Protocol
+                : endpointRow.SourceProtocol;
             var address = BuildNodeId(
-                endpointRow.Protocol,
+                addressProtocol,
                 endpointRow.Parameter1,
                 endpointRow.Parameter2,
                 endpointRow.Parameter3);
@@ -143,7 +152,7 @@ public sealed class GasMasterTableService(
                 PointId = group.Key.PointId,
                 PointName = endpointRow.PointName,
                 Address = address.NodeId ?? string.Empty,
-                Protocol = endpointRow.Protocol,
+                Protocol = addressProtocol,
                 DataType = MapDataType(endpointRow.DataType).ToString(),
                 Unit = endpointRow.Unit,
                 Direction = PointDirection.Input.ToString(),
@@ -680,6 +689,7 @@ public sealed class GasMasterTableService(
         var value = string.Join(
             "|",
             points.OrderBy(point => point.PointId, StringComparer.Ordinal)
+                .ThenBy(point => point.Direction)
                 .Select(point =>
                     $"{point.PointId}:{point.PointName}:{point.Address}:{point.DataType}:" +
                     $"{point.OpcUaParameter1}:{point.OpcUaParameter2}:{point.OpcUaParameter3}"));

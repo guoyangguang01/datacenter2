@@ -14,7 +14,7 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
     private readonly IClientConfigStore _configStore;
     private readonly AgentSupervisor _supervisor;
     private readonly IClientDirectoryClient _clientDirectory;
-    private readonly Dictionary<string, PointDefinition> _pointLookup = new(StringComparer.Ordinal);
+    private readonly Dictionary<(string PointId, PointDirection Direction), PointDefinition> _pointLookup = new();
     private readonly Dictionary<(string PointId, PointDirection Direction), PointValue> _latestByPointId = new();
     private List<PointDefinition> _configuredPoints = [];
 
@@ -332,7 +332,7 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
         _pointLookup.Clear();
         foreach (var point in _configuredPoints)
         {
-            _pointLookup[point.PointId] = point;
+            _pointLookup[(point.PointId, point.Direction)] = point;
         }
         RebuildPointRows();
     }
@@ -428,7 +428,7 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
                 }
                 LatestValues.Insert(0, new LatestValueRow(
                     sample.PointId,
-                    _pointLookup.GetValueOrDefault(sample.PointId)?.PointName ?? sample.PointId,
+                    _pointLookup.GetValueOrDefault((sample.PointId, direction))?.PointName ?? sample.PointId,
                     direction,
                     sample.Value.Value?.ToString() ?? "--",
                     sample.Value.Quality.ToString(),

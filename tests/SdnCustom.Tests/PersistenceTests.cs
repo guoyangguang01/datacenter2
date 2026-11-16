@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using SdnCustom.Client.Core.Configuration;
 using SdnCustom.Server.Persistence;
 using SdnCustom.Server.Runtime;
 using SdnCustom.Shared.Model;
@@ -43,9 +44,29 @@ public sealed class PersistenceTests
                 366,
                 await context.PointLinks.CountAsync(link => link.Declaration == "Output"));
             Assert.Equal(
-                175,
+                250,
                 await context.PointLinks.CountAsync(link =>
                     link.Declaration == "Output" && link.Enabled));
+
+            foreach (var client in await clients.ListAsync())
+            {
+                Assert.Empty(ClientConfigurationValidator.Validate(new ClientConfiguration
+                {
+                    ClientCode = client.ClientCode,
+                    ClientName = client.ClientName,
+                    Device = new DeviceOptions { Protocol = client.Protocol },
+                    Points = client.Points.ToList()
+                }));
+            }
+
+            var fzxt = await clients.GetAsync("FZXT");
+            Assert.NotNull(fzxt);
+            Assert.Contains(fzxt!.Points, point =>
+                point.PointId == "FZXT10001-b" &&
+                point.Direction == PointDirection.Input);
+            Assert.Contains(fzxt.Points, point =>
+                point.PointId == "FZXT10001-b" &&
+                point.Direction == PointDirection.Output);
         }
         finally
         {
@@ -88,7 +109,13 @@ public sealed class PersistenceTests
             Assert.Equal(200, result.InputCount);
             Assert.Equal(192, result.OutputCount);
             Assert.Equal(366, result.RouteCount);
-            Assert.Contains(result.Warnings, warning => warning.Contains("数字型 OPC UA"));
+            Assert.DoesNotContain(result.Warnings, warning => warning.Contains("数字型 OPC UA"));
+
+            var secondExport = await service.ExportAsync("FUEL");
+            Assert.Equal(
+                lines.Order(StringComparer.Ordinal),
+                secondExport.Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries)
+                    .Order(StringComparer.Ordinal));
         }
         finally
         {

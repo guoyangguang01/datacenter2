@@ -510,10 +510,9 @@ public sealed partial class ClientManagementViewModel : ObservableObject
             var pointName = Value("pointName").Trim();
             var address = Value("address").Trim();
             if (string.IsNullOrWhiteSpace(pointId) ||
-                string.IsNullOrWhiteSpace(pointName) ||
-                string.IsNullOrWhiteSpace(address))
+                string.IsNullOrWhiteSpace(pointName))
             {
-                errors.Add($"第 {lineNumber} 行测点 ID、名称和地址不能为空。");
+                errors.Add($"第 {lineNumber} 行测点的 ID 和名称不能为空。");
                 continue;
             }
 
@@ -542,13 +541,13 @@ public sealed partial class ClientManagementViewModel : ObservableObject
         }
 
         var duplicateIds = imported
-            .GroupBy(point => point.PointId, StringComparer.Ordinal)
+            .GroupBy(point => (point.PointId, point.Direction))
             .Where(group => group.Count() > 1)
-            .Select(group => group.Key)
+            .Select(group => $"{group.Key.PointId}/{group.Key.Direction}")
             .ToArray();
         if (duplicateIds.Length > 0)
         {
-            errors.Add($"测点 ID 重复：{string.Join("、", duplicateIds)}");
+            errors.Add($"测点 ID 与方向重复：{string.Join("、", duplicateIds)}");
         }
 
         if (errors.Count > 0)
