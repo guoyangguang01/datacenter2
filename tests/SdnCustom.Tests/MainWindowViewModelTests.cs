@@ -30,11 +30,91 @@ public sealed class MainWindowViewModelTests
         Assert.Contains("旧结果已丢弃", viewModel.OperationMessage);
     }
 
-    private sealed class StubAdminFacade(Task<IReadOnlyList<HistoryPoint>> history)
+    [Fact]
+    public async Task DisplaysInputsAndTargetOutputsForSelectedClient()
+    {
+        var admin = new StubAdminFacade(
+            Task.FromResult<IReadOnlyList<HistoryPoint>>([]),
+            twoClients: true);
+        var viewModel = new MainWindowViewModel(admin);
+        await viewModel.RefreshAsync();
+
+        Assert.Single(viewModel.InputPoints);
+        Assert.Equal("A-IN", viewModel.InputPoints[0].PointId);
+        Assert.Empty(viewModel.OutputPoints);
+
+        viewModel.SelectedClient = viewModel.Clients.Single(client => client.ClientCode == "B");
+        Assert.Empty(viewModel.InputPoints);
+        var output = Assert.Single(viewModel.OutputPoints);
+        Assert.Equal("B", output.ClientCode);
+        Assert.Equal("B-OUT", output.PointId);
+
+        viewModel.SelectedPoint = output;
+        viewModel.WriteValue = "true";
+        Assert.True(viewModel.WritePointCommand.CanExecute(null));
+        await viewModel.WritePointCommand.ExecuteAsync(null);
+
+        Assert.Equal("B", admin.LastWriteClientCode);
+        Assert.Equal("B-OUT", admin.LastWritePointId);
+    }
+
+    private sealed class StubAdminFacade(
+        Task<IReadOnlyList<HistoryPoint>> history,
+        bool twoClients = false)
         : IAdminFacade
     {
+        public string? LastWriteClientCode { get; private set; }
+        public string? LastWritePointId { get; private set; }
+
         public Task<AdminSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default)
         {
+            if (twoClients)
+            {
+                var sourcePoint = new PointDefinition
+                {
+                    PointId = "A-IN",
+                    PointName = "Source input",
+                    Address = string.Empty,
+                    Direction = PointDirection.Input
+                };
+                var targetPoint = new PointDefinition
+                {
+                    PointId = "B-OUT",
+                    PointName = "Target output",
+                    Address = string.Empty,
+                    DataType = PointDataType.Bool,
+                    Direction = PointDirection.Output
+                };
+                var source = new AdminClientView(
+                    "A",
+                    "Source client",
+                    true,
+                    true,
+                    ClientConnectionState.Connected,
+                    ClientProtocol.CustomTcp,
+                    "127.0.0.1:9001",
+                    "1.0",
+                    DateTimeOffset.UtcNow,
+                    [sourcePoint],
+                    []);
+                var target = new AdminClientView(
+                    "B",
+                    "Target client",
+                    true,
+                    true,
+                    ClientConnectionState.Connected,
+                    ClientProtocol.CustomTcp,
+                    "127.0.0.1:9002",
+                    "1.0",
+                    DateTimeOffset.UtcNow,
+                    [targetPoint],
+                    []);
+                return Task.FromResult(new AdminSnapshot(
+                    [source, target],
+                    2,
+                    2));
+            }
+
             var points = new[]
             {
                 new PointDefinition
@@ -108,8 +188,12 @@ public sealed class MainWindowViewModelTests
             string clientCode,
             string pointId,
             object? value,
-            CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
+            CancellationToken cancellationToken = default)
+        {
+            LastWriteClientCode = clientCode;
+            LastWritePointId = pointId;
+            return Task.CompletedTask;
+        }
 
         public Task<GasMasterImportResult> ImportGasMasterAsync(
             string systemCode,

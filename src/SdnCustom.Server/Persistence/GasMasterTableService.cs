@@ -122,37 +122,31 @@ public sealed class GasMasterTableService(
                 $"以下客户端不属于系统 {systemCode}：" + string.Join("、", wrongSystemClients));
         }
 
-        var inputGroups = parsed.Rows
-            .Where(row => row.PointType == "输入")
-            .GroupBy(row => (row.UserCode, row.PointId))
-            .ToArray();
-        var inputAvailability = new Dictionary<string, bool>(StringComparer.Ordinal);
-        var pointEntities = new List<PointCatalogEntity>();
-        foreach (var group in inputGroups)
+        var sourceInputEndpoints = new Dictionary<string, PointCatalogEntity>(StringComparer.Ordinal);
+        var sourceInputAvailability = new Dictionary<string, bool>(StringComparer.Ordinal);
+        foreach (var group in parsed.Rows
+                     .Where(row => row.PointType == "输出")
+                     .GroupBy(row => (row.UserCode, row.PointId)))
         {
-            var rows = group.ToArray();
-            var endpointRow = rows.FirstOrDefault(row =>
+            var endpointRow = group.FirstOrDefault(row =>
                                   !string.IsNullOrWhiteSpace(row.Parameter1) ||
                                   !string.IsNullOrWhiteSpace(row.Parameter2) ||
                                   !string.IsNullOrWhiteSpace(row.Parameter3))
-                              ?? rows[0];
-            var addressProtocol = string.IsNullOrWhiteSpace(endpointRow.SourceProtocol)
-                ? endpointRow.Protocol
-                : endpointRow.SourceProtocol;
+                              ?? group.First();
             var address = BuildNodeId(
-                addressProtocol,
+                endpointRow.Protocol,
                 endpointRow.Parameter1,
                 endpointRow.Parameter2,
                 endpointRow.Parameter3);
-            var available = address.Status is "supported" or "not-applicable";
-            inputAvailability[$"{group.Key.UserCode}:{group.Key.PointId}"] = available;
-            pointEntities.Add(new PointCatalogEntity
+            var endpointKey = EndpointKey(group.Key.UserCode, group.Key.PointId);
+            sourceInputAvailability[endpointKey] = address.Status is "supported" or "not-applicable";
+            sourceInputEndpoints[endpointKey] = new PointCatalogEntity
             {
                 ClientCode = group.Key.UserCode,
                 PointId = group.Key.PointId,
                 PointName = endpointRow.PointName,
                 Address = address.NodeId ?? string.Empty,
-                Protocol = addressProtocol,
+                Protocol = endpointRow.Protocol,
                 DataType = MapDataType(endpointRow.DataType).ToString(),
                 Unit = endpointRow.Unit,
                 Direction = PointDirection.Input.ToString(),
@@ -160,104 +154,127 @@ public sealed class GasMasterTableService(
                 OpcUaParameter2 = endpointRow.Parameter2,
                 OpcUaParameter3 = endpointRow.Parameter3,
                 Group = systemName
-            });
-        }
-
-        var pointIdsByName = inputGroups.ToDictionary(
-            group => $"{group.Key.UserCode}|{group.First().PointName}",
-            group => group.Key.PointId,
-            StringComparer.Ordinal);
-        var linkEntities = new Dictionary<string, PointLinkEntity>(StringComparer.Ordinal);
-        var outputEndpoints = new Dictionary<string, PointCatalogEntity>(StringComparer.Ordinal);
-        foreach (var row in parsed.Rows.Where(row => row.PointType == "输入"))
-        {
-            var sourcePointId = pointIdsByName.GetValueOrDefault(
-                $"{row.SourceUserCode}|{row.SourcePointName}",
-                string.Empty);
-            var linkId = BuildLinkId(
-                systemCode,
-                "Input",
-                row.SourceUserCode,
-                sourcePointId,
-                row.SourcePointName,
-                row.UserCode,
-                row.PointId,
-                row.PointName);
-            linkEntities[linkId] = new PointLinkEntity
-            {
-                LinkId = linkId,
-                SystemCode = systemCode,
-                Declaration = "Input",
-                SourceClientCode = row.SourceUserCode,
-                SourcePointId = sourcePointId,
-                SourcePointName = row.SourcePointName,
-                SourceProtocol = row.SourceProtocol,
-                TargetClientCode = row.UserCode,
-                TargetPointId = row.PointId,
-                Enabled = inputAvailability.GetValueOrDefault(
-                    $"{row.UserCode}:{row.PointId}",
-                    false)
             };
         }
 
+        var declaredTargetEndpoints = new Dictionary<string, PointCatalogEntity>(StringComparer.Ordinal);
+        var declaredTargetAvailability = new Dictionary<string, bool>(StringComparer.Ordinal);
+        foreach (var group in parsed.Rows
+                     .Where(row => row.PointType == "输入")
+                     .GroupBy(row => (row.UserCode, row.PointId)))
+        {
+            var endpointRow = group.FirstOrDefault(row =>
+                                  !string.IsNullOrWhiteSpace(row.Parameter1) ||
+                                  !string.IsNullOrWhiteSpace(row.Parameter2) ||
+                                  !string.IsNullOrWhiteSpace(row.Parameter3))
+                              ?? group.First();
+            var address = BuildNodeId(
+                endpointRow.Protocol,
+                endpointRow.Parameter1,
+                endpointRow.Parameter2,
+                endpointRow.Parameter3);
+            var endpointKey = EndpointKey(group.Key.UserCode, group.Key.PointId);
+            declaredTargetAvailability[endpointKey] =
+                address.Status is "supported" or "not-applicable";
+            declaredTargetEndpoints[endpointKey] = new PointCatalogEntity
+            {
+                ClientCode = group.Key.UserCode,
+                PointId = group.Key.PointId,
+                PointName = endpointRow.PointName,
+                Address = address.NodeId ?? string.Empty,
+                Protocol = endpointRow.Protocol,
+                DataType = MapDataType(endpointRow.DataType).ToString(),
+                Unit = endpointRow.Unit,
+                Direction = PointDirection.Output.ToString(),
+                OpcUaParameter1 = endpointRow.Parameter1,
+                OpcUaParameter2 = endpointRow.Parameter2,
+                OpcUaParameter3 = endpointRow.Parameter3,
+                Group = systemName
+            };
+        }
+
+        var linkEntities = new Dictionary<string, PointLinkEntity>(StringComparer.Ordinal);
+        var outputEndpoints = new Dictionary<string, PointCatalogEntity>(StringComparer.Ordinal);
+        var targetAvailability = new Dictionary<string, bool>(StringComparer.Ordinal);
         foreach (var row in parsed.Rows.Where(row => row.PointType == "输出"))
         {
             var suffix = GetPointSuffix(row.PointId, row.UserCode);
             var targetPointId = row.TargetUserCode + suffix;
+            var sourceKey = EndpointKey(row.UserCode, row.PointId);
+            var targetKey = EndpointKey(row.TargetUserCode, targetPointId);
+            if (!sourceInputEndpoints.TryGetValue(sourceKey, out var sourceEndpoint))
+            {
+                throw new InvalidDataException(
+                    $"输出关系缺少源 INPUT 端点声明：{row.UserCode}:{row.PointId}");
+            }
+
+            var endpointCompatible = true;
+            if (!outputEndpoints.TryGetValue(targetKey, out var targetEndpoint))
+            {
+                if (declaredTargetEndpoints.TryGetValue(targetKey, out var declaredEndpoint))
+                {
+                    targetEndpoint = declaredEndpoint;
+                    targetAvailability[targetKey] =
+                        declaredTargetAvailability.GetValueOrDefault(targetKey, false);
+                }
+                else
+                {
+                    var targetAddress = BuildNodeId(
+                        row.TargetProtocol,
+                        row.TargetParameter1,
+                        row.TargetParameter2,
+                        row.TargetParameter3);
+                    targetEndpoint = new PointCatalogEntity
+                    {
+                        ClientCode = row.TargetUserCode,
+                        PointId = targetPointId,
+                        PointName = row.TargetPointName,
+                        Address = targetAddress.NodeId ?? string.Empty,
+                        Protocol = row.TargetProtocol,
+                        DataType = MapDataType(row.DataType).ToString(),
+                        Unit = row.Unit,
+                        Direction = PointDirection.Output.ToString(),
+                        OpcUaParameter1 = row.TargetParameter1,
+                        OpcUaParameter2 = row.TargetParameter2,
+                        OpcUaParameter3 = row.TargetParameter3,
+                        Group = systemName
+                    };
+                    targetAvailability[targetKey] =
+                        targetAddress.Status is "supported" or "not-applicable";
+                }
+
+                outputEndpoints[targetKey] = targetEndpoint;
+            }
+            else if (!declaredTargetEndpoints.ContainsKey(targetKey) &&
+                     !string.Equals(
+                         targetEndpoint.Address,
+                         BuildNodeId(
+                             row.TargetProtocol,
+                             row.TargetParameter1,
+                             row.TargetParameter2,
+                             row.TargetParameter3).NodeId ?? string.Empty,
+                         StringComparison.Ordinal))
+            {
+                endpointCompatible = false;
+                warnings.Add(
+                    $"目标 OUTPUT {targetKey} 在总表中出现多个地址，冲突路由已禁用。");
+            }
+
             var linkId = BuildLinkId(
                 systemCode,
                 "Output",
                 row.UserCode,
                 row.PointId,
-                row.PointName,
+                sourceEndpoint.PointName,
                 row.TargetUserCode,
-                targetPointId,
-                row.TargetPointName);
+                targetEndpoint.PointId,
+                targetEndpoint.PointName);
             if (linkEntities.ContainsKey(linkId))
             {
                 warnings.Add($"忽略重复路由：{row.UserCode}:{row.PointId} -> {targetPointId}");
                 continue;
             }
 
-            var targetAddress = BuildNodeId(
-                row.TargetProtocol,
-                row.TargetParameter1,
-                row.TargetParameter2,
-                row.TargetParameter3);
-            var endpointKey = $"{row.TargetUserCode}:{targetPointId}";
-            var endpointCompatible = true;
-            if (!outputEndpoints.TryGetValue(endpointKey, out var outputEndpoint))
-            {
-                outputEndpoint = new PointCatalogEntity
-                {
-                    ClientCode = row.TargetUserCode,
-                    PointId = targetPointId,
-                    PointName = row.TargetPointName,
-                    Address = targetAddress.NodeId ?? string.Empty,
-                    Protocol = row.TargetProtocol,
-                    DataType = MapDataType(row.DataType).ToString(),
-                    Unit = row.Unit,
-                    Direction = PointDirection.Output.ToString(),
-                    OpcUaParameter1 = row.TargetParameter1,
-                    OpcUaParameter2 = row.TargetParameter2,
-                    OpcUaParameter3 = row.TargetParameter3,
-                    Group = systemName
-                };
-                outputEndpoints[endpointKey] = outputEndpoint;
-            }
-            else if (!string.Equals(outputEndpoint.Address, targetAddress.NodeId ?? string.Empty,
-                         StringComparison.Ordinal))
-            {
-                endpointCompatible = false;
-                warnings.Add(
-                    $"目标 OUTPUT {endpointKey} 在总表中出现多个地址，冲突路由已禁用。");
-            }
-
-            var sourceAvailable =
-                inputAvailability.GetValueOrDefault($"{row.UserCode}:{row.PointId}", false);
-            var targetAvailable =
-                endpointCompatible &&
-                (targetAddress.Status is "supported" or "not-applicable");
             linkEntities[linkId] = new PointLinkEntity
             {
                 LinkId = linkId,
@@ -265,14 +282,17 @@ public sealed class GasMasterTableService(
                 Declaration = "Output",
                 SourceClientCode = row.UserCode,
                 SourcePointId = row.PointId,
-                SourcePointName = row.PointName,
-                SourceProtocol = row.Protocol,
+                SourcePointName = sourceEndpoint.PointName,
+                SourceProtocol = sourceEndpoint.Protocol,
                 TargetClientCode = row.TargetUserCode,
                 TargetPointId = targetPointId,
-                Enabled = sourceAvailable && targetAvailable
+                Enabled = endpointCompatible &&
+                          sourceInputAvailability.GetValueOrDefault(sourceKey, false) &&
+                          targetAvailability.GetValueOrDefault(targetKey, false)
             };
         }
 
+        var pointEntities = sourceInputEndpoints.Values.ToList();
         pointEntities.AddRange(outputEndpoints.Values);
 
         var unsupportedNumeric = pointEntities.Count(point =>
@@ -376,7 +396,7 @@ public sealed class GasMasterTableService(
                 StringComparer.Ordinal,
                 cancellationToken)
             .ConfigureAwait(false);
-        var outputLinks = await context.PointLinks
+        var links = await context.PointLinks
             .AsNoTracking()
             .Where(link => link.SystemCode == systemCode && link.Declaration == "Output")
             .OrderBy(link => link.SourceClientCode)
@@ -385,46 +405,37 @@ public sealed class GasMasterTableService(
             .ThenBy(link => link.TargetPointId)
             .ToArrayAsync(cancellationToken)
             .ConfigureAwait(false);
-        var inputLinks = await context.PointLinks
-            .AsNoTracking()
-            .Where(link => link.SystemCode == systemCode && link.Declaration == "Input")
-            .OrderBy(link => link.TargetClientCode)
-            .ThenBy(link => link.TargetPointId)
-            .ThenBy(link => link.SourceClientCode)
-            .ThenBy(link => link.SourcePointName)
-            .ToArrayAsync(cancellationToken)
-            .ConfigureAwait(false);
 
         var output = new StringBuilder();
         output.AppendLine(string.Join(',', Headers.Select(Escape)));
-        foreach (var link in outputLinks)
+        foreach (var link in links)
         {
             var sourcePoint = points.GetValueOrDefault(
                 $"{link.SourceClientCode}:{link.SourcePointId}:Input");
             var targetPoint = points.GetValueOrDefault(
                 $"{link.TargetClientCode}:{link.TargetPointId}:Output");
-            if (targetPoint is null)
+            if (sourcePoint is null || targetPoint is null)
             {
                 continue;
             }
             var sourceClient = clients[link.SourceClientCode];
             var targetClient = clients[link.TargetClientCode];
-            var dataType = ToGasDataType(targetPoint.DataType);
-            var unit = targetPoint.Unit;
+            var dataType = ToGasDataType(sourcePoint.DataType);
+            var unit = sourcePoint.Unit;
 
             WriteCsvRow(output,
             [
-                link.SourcePointId,
-                link.SourcePointName,
+                sourcePoint.PointId,
+                sourcePoint.PointName,
                 dataType,
                 unit,
                 sourceClient.ClientName,
                 link.SourceClientCode,
-                ToGasProtocol(sourceClient.Protocol),
+                sourcePoint.Protocol,
                 "输出",
-                sourcePoint?.OpcUaParameter1 ?? string.Empty,
-                sourcePoint?.OpcUaParameter2 ?? string.Empty,
-                sourcePoint?.OpcUaParameter3 ?? string.Empty,
+                sourcePoint.OpcUaParameter1,
+                sourcePoint.OpcUaParameter2,
+                sourcePoint.OpcUaParameter3,
                 string.Empty,
                 string.Empty,
                 string.Empty,
@@ -437,36 +448,23 @@ public sealed class GasMasterTableService(
                 targetPoint.OpcUaParameter2,
                 targetPoint.OpcUaParameter3
             ]);
-
-        }
-
-        foreach (var link in inputLinks)
-        {
-            var sourceClient = clients[link.SourceClientCode];
-            var targetClient = clients[link.TargetClientCode];
-            var targetPoint = points.GetValueOrDefault(
-                $"{link.TargetClientCode}:{link.TargetPointId}:Input");
-            if (targetPoint is null)
-            {
-                continue;
-            }
             WriteCsvRow(output,
             [
-                link.TargetPointId,
+                targetPoint.PointId,
                 targetPoint.PointName,
                 ToGasDataType(targetPoint.DataType),
                 targetPoint.Unit,
                 targetClient.ClientName,
                 link.TargetClientCode,
-                ToGasProtocol(targetClient.Protocol),
+                targetPoint.Protocol,
                 "输入",
                 targetPoint.OpcUaParameter1,
                 targetPoint.OpcUaParameter2,
                 targetPoint.OpcUaParameter3,
                 sourceClient.ClientName,
                 link.SourceClientCode,
-                link.SourceProtocol,
-                link.SourcePointName,
+                sourcePoint.Protocol,
+                sourcePoint.PointName,
                 string.Empty,
                 string.Empty,
                 string.Empty,
@@ -660,14 +658,6 @@ public sealed class GasMasterTableService(
             _ => "double"
         };
 
-    private static string ToGasProtocol(string value) =>
-        value switch
-        {
-            nameof(ClientProtocol.OpcUaClient) => "OPC UA客户端",
-            nameof(ClientProtocol.OpcUaServer) => "OPC UA服务端",
-            _ => "TCP"
-        };
-
     private static string BuildLinkId(
         string systemCode,
         string declaration,
@@ -683,6 +673,9 @@ public sealed class GasMasterTableService(
             $"{targetClientCode}|{targetPointId}|{targetPointName}";
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(identity)))[..32];
     }
+
+    private static string EndpointKey(string clientCode, string pointId) =>
+        $"{clientCode}:{pointId}";
 
     private static string ComputeRevision(IReadOnlyList<PointCatalogEntity> points)
     {

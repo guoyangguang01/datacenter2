@@ -78,9 +78,11 @@ public sealed partial class MainWindowViewModel : ObservableObject
     {
         var pointChanged = !string.Equals(
             _lastSelectedPointKey,
-            value is null ? null : $"{value.Direction}:{value.PointId}",
+            value is null ? null : $"{value.ClientCode}:{value.Direction}:{value.PointId}",
             StringComparison.Ordinal);
-        _lastSelectedPointKey = value is null ? null : $"{value.Direction}:{value.PointId}";
+        _lastSelectedPointKey = value is null
+            ? null
+            : $"{value.ClientCode}:{value.Direction}:{value.PointId}";
         if (pointChanged)
         {
             Interlocked.Increment(ref _historyQueryGeneration);
@@ -124,7 +126,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
             var selectedCode = SelectedClient?.ClientCode;
             var selectedPointKey = SelectedPoint is null
                 ? null
-                : $"{SelectedPoint.Direction}:{SelectedPoint.PointId}";
+                : $"{SelectedPoint.ClientCode}:{SelectedPoint.Direction}:{SelectedPoint.PointId}";
             var snapshot = await _admin.GetSnapshotAsync(cancellationToken);
             Clients.Clear();
             foreach (var client in snapshot.Clients)
@@ -135,15 +137,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
             SelectedClient = Clients.FirstOrDefault(client => client.ClientCode == selectedCode) ?? Clients.FirstOrDefault();
             RefreshPoints();
             SelectedPoint = Points.FirstOrDefault(point =>
-                                $"{point.Direction}:{point.PointId}" == selectedPointKey)
+                                $"{point.ClientCode}:{point.Direction}:{point.PointId}" == selectedPointKey)
                             ?? Points.FirstOrDefault();
             if (IsSimulationRunning &&
-                SelectedClient is not
-                {
-                    Online: true,
-                    DesiredRunning: true,
-                    CommunicationState: ClientConnectionState.Connected
-                })
+                (SelectedPoint is null || !IsWriteTargetAvailable(SelectedPoint.ClientCode)))
             {
                 StopSimulation();
             }
@@ -250,8 +247,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
         if (SelectedClient is null || SelectedPoint is null) return;
         try
         {
-            await WriteSelectedPointOnceAsync(SelectedClient.ClientCode, SelectedPoint, WriteValue);
-            OperationMessage = $"写入成功：{SelectedPoint.PointId} = {WriteValue}";
+            await WriteSelectedPointOnceAsync(SelectedPoint.ClientCode, SelectedPoint, WriteValue);
+            OperationMessage =
+                $"写入成功：{SelectedPoint.ClientCode}:{SelectedPoint.PointId} = {WriteValue}";
         }
         catch (Exception exception)
         {
@@ -261,13 +259,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     private bool CanWritePoint() =>
         !IsSimulationRunning &&
-        SelectedClient is
-        {
-            Online: true,
-            DesiredRunning: true,
-            CommunicationState: ClientConnectionState.Connected
-        } &&
         SelectedPoint is { Direction: PointDirection.Output } &&
+        IsWriteTargetAvailable(SelectedPoint.ClientCode) &&
         !string.IsNullOrWhiteSpace(WriteValue);
 
     [RelayCommand(CanExecute = nameof(CanToggleSimulation))]
@@ -288,7 +281,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         IsSimulationRunning = true;
         OperationMessage = $"已开始模拟 {SelectedPoint.PointId}，周期 {SimulationIntervalMilliseconds}ms。";
         _ = RunSimulationAsync(
-            SelectedClient.ClientCode,
+            SelectedPoint.ClientCode,
             SelectedPoint,
             WriteValue,
             _simulationCancellation.Token);
@@ -296,13 +289,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     private bool CanToggleSimulation() =>
         IsSimulationRunning ||
-        (SelectedClient is
-         {
-             Online: true,
-             DesiredRunning: true,
-             CommunicationState: ClientConnectionState.Connected
-         } &&
-         SelectedPoint is { Direction: PointDirection.Output } &&
+        (SelectedPoint is { Direction: PointDirection.Output } &&
+         IsWriteTargetAvailable(SelectedPoint.ClientCode) &&
          !string.IsNullOrWhiteSpace(WriteValue));
 
     [RelayCommand(CanExecute = nameof(CanQueryHistory))]
@@ -310,7 +298,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     {
         if (SelectedClient is null || SelectedPoint is null) return;
         var queryGeneration = Interlocked.Increment(ref _historyQueryGeneration);
-        var selectedClientCode = SelectedClient.ClientCode;
+        var selectedClientCode = SelectedPoint.ClientCode;
         var selectedPointId = SelectedPoint.PointId;
         var selectedDirection = SelectedPoint.Direction;
         IsHistoryQuerying = true;
@@ -329,7 +317,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
                 Math.Clamp(HistoryLimit, 1, 10000),
                 timeout.Token);
             if (queryGeneration != Volatile.Read(ref _historyQueryGeneration) ||
-                SelectedClient?.ClientCode != selectedClientCode ||
+                SelectedPoint?.ClientCode != selectedClientCode ||
                 SelectedPoint?.PointId != selectedPointId ||
                 SelectedPoint?.Direction != selectedDirection)
             {
@@ -538,6 +526,16 @@ public sealed partial class MainWindowViewModel : ObservableObject
             }
         }
     }
+
+    private bool IsWriteTargetAvailable(string clientCode) =>
+        Clients.Any(client =>
+            string.Equals(client.ClientCode, clientCode, StringComparison.Ordinal) &&
+            client is
+            {
+                Online: true,
+                DesiredRunning: true,
+                CommunicationState: ClientConnectionState.Connected
+            });
 }
 
 public sealed class ClientRowViewModel(AdminClientView client)
@@ -582,4 +580,5 @@ public sealed record PointRowViewModel(
     public string ValueText => Value?.ToString() ?? "--";
     public string QualityText => Quality?.ToString() ?? "--";
     public string TimestampText => Timestamp?.ToLocalTime().ToString("HH:mm:ss.fff") ?? "--";
+    public override string ToString() => $"{ClientCode} · {PointId} · {PointName}";
 }

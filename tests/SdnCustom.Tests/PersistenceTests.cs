@@ -39,14 +39,17 @@ public sealed class PersistenceTests
             Assert.Equal(
                 192,
                 await context.PointCatalog.CountAsync(point => point.Direction == "Output"));
-            Assert.Equal(732, await context.PointLinks.CountAsync());
+            Assert.Equal(366, await context.PointLinks.CountAsync());
             Assert.Equal(
                 366,
                 await context.PointLinks.CountAsync(link => link.Declaration == "Output"));
             Assert.Equal(
-                250,
+                229,
                 await context.PointLinks.CountAsync(link =>
                     link.Declaration == "Output" && link.Enabled));
+            Assert.Equal(
+                0,
+                await context.PointLinks.CountAsync(link => link.Declaration == "Input"));
 
             foreach (var client in await clients.ListAsync())
             {
@@ -67,6 +70,38 @@ public sealed class PersistenceTests
             Assert.Contains(fzxt.Points, point =>
                 point.PointId == "FZXT10001-b" &&
                 point.Direction == PointDirection.Output);
+
+            var fzxtInputEndpoint = await context.PointCatalog.SingleAsync(point =>
+                point.ClientCode == "FZXT" &&
+                point.PointId == "FZXT10001-b" &&
+                point.Direction == "Input");
+            Assert.Equal("主操作台急停", fzxtInputEndpoint.PointName);
+            Assert.Equal("TCP", fzxtInputEndpoint.Protocol);
+            Assert.Equal(string.Empty, fzxtInputEndpoint.Address);
+
+            var fzxtOutputEndpoint = await context.PointCatalog.SingleAsync(point =>
+                point.ClientCode == "FZXT" &&
+                point.PointId == "FZXT10001-b" &&
+                point.Direction == "Output");
+            Assert.Equal("主操作台急停", fzxtOutputEndpoint.PointName);
+            Assert.Equal("TCP", fzxtOutputEndpoint.Protocol);
+            Assert.Equal(string.Empty, fzxtOutputEndpoint.Address);
+
+            var outputRoute = await context.PointLinks.SingleAsync(link =>
+                link.SourceClientCode == "FZXT" &&
+                link.SourcePointId == "FZXT10001-b" &&
+                link.TargetClientCode == "XNCZ");
+            Assert.Equal("Output", outputRoute.Declaration);
+            Assert.Equal("FZXT10001-b", outputRoute.SourcePointId);
+            Assert.Equal("XNCZ10001-b", outputRoute.TargetPointId);
+            Assert.False(outputRoute.Enabled);
+
+            var inputRoute = await context.PointLinks.SingleAsync(link =>
+                link.SourceClientCode == "XNCZ" &&
+                link.SourcePointId == "XNCZ10001-b" &&
+                link.TargetClientCode == "FZXT");
+            Assert.Equal("FZXT10001-b", inputRoute.TargetPointId);
+            Assert.True(inputRoute.Enabled);
         }
         finally
         {
@@ -109,7 +144,7 @@ public sealed class PersistenceTests
             Assert.Equal(200, result.InputCount);
             Assert.Equal(192, result.OutputCount);
             Assert.Equal(366, result.RouteCount);
-            Assert.DoesNotContain(result.Warnings, warning => warning.Contains("数字型 OPC UA"));
+            Assert.Contains(result.Warnings, warning => warning.Contains("数字型 OPC UA"));
 
             var secondExport = await service.ExportAsync("FUEL");
             Assert.Equal(

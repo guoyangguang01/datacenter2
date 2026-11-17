@@ -49,10 +49,13 @@ docker compose up -d
 
 开发配置默认使用：
 
-- URL：`http://127.0.0.1:8086`
+- URL：`http://127.0.0.1:8087`
 - Org：`sdncustom`
 - Bucket：`sdncustom`
 - Token：`sdncustom-dev-token`
+
+> 宿主机 `8086` 可能已被其他软件的 InfluxDB 1.x 使用，因此项目容器固定映射到 `8087`。
+> 如需修改地址，可通过 `SdnCustom__Influx__Url` 覆盖配置。
 
 生产环境必须通过 `SdnCustom__Influx__Token` 或配置文件替换开发 token。
 

@@ -8,6 +8,11 @@
 > 2026-11-15 实施状态：燃气总表系统级导入/导出、系统/客户端分组、统一 PointLink 关系表、
 > TCP 批量读写协议和“燃油系统”内置样例已落地。纯数字参数按 TCP 来源/去向配置解析，
 > 不属于数字型 OPC UA NodeId。
+>
+> 2026-11-17 方向修正：总表用户视角的“输出”行生成本系统 `INPUT` 端点，用户视角的“输入”
+> 行用于校正目标系统 `OUTPUT` 端点；每条输出关系单独生成一条 `INPUT → OUTPUT` 的
+> `PointLink`。当前样例为 200 个 INPUT、192 个 OUTPUT、366 条路由，不再生成 366 条重复的
+> “输入来源关系” PointLink。
 
 ## 1. 结论
 
@@ -278,7 +283,7 @@ fuel-csv-utf8.csv
 - 5 个预创建客户端：FZXT、SWGZ、SWSC、SWXT、XNCZ；
 - 200 个 INPUT 端点；
 - 192 个 OUTPUT 端点；
-- 732 条统一 PointLink 声明：366 条输出关系、366 条输入来源关系；
+- 366 条 `INPUT → OUTPUT` PointLink 路由；
 - 每条路由保留原始参数，并为可支持的字符串型 OPC UA NodeId 生成 NodeId；
 - TCP 纯数字参数按来源/去向协议处理，不作为 OPC UA NodeId；
 - TCP 路由使用批量 pointId，不要求逐节点地址。

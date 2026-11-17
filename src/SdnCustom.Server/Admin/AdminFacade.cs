@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using SdnCustom.Server.Configuration;
 using SdnCustom.Server.History;
@@ -38,12 +39,25 @@ public sealed record AdminSystemView(
     int PointCount,
     int RouteCount);
 
+public sealed record AdminRouteView(
+    string SourceClientCode,
+    string SourcePointId,
+    string SourcePointName,
+    string TargetClientCode,
+    string TargetPointId,
+    string TargetPointName,
+    PointDataType DataType,
+    string Unit,
+    string Address,
+    bool Enabled);
+
 public sealed record AdminSnapshot(
     IReadOnlyList<AdminClientView> Clients,
     int OnlineClients,
     int TotalPoints,
     IReadOnlyList<AdminSystemView>? Systems = null,
-    bool CommunicationRunning = false);
+    bool CommunicationRunning = false,
+    IReadOnlyList<AdminRouteView>? Routes = null);
 
 public sealed record AdminSystemSettingsView(
     string DataDirectory,
@@ -103,6 +117,7 @@ public sealed class AdminFacade : IAdminFacade
     private readonly IServerLogStore _logs;
     private readonly IOptions<ServerSettings> _settings;
     private readonly IGasMasterTableService _gasMasterTable;
+    private readonly IDbContextFactory<ServerDbContext> _contextFactory;
 
     public AdminFacade(
         IClientSystemStore clients,
@@ -114,7 +129,8 @@ public sealed class AdminFacade : IAdminFacade
         IServerControlService control,
         IServerLogStore logs,
         IOptions<ServerSettings> settings,
-        IGasMasterTableService gasMasterTable)
+        IGasMasterTableService gasMasterTable,
+        IDbContextFactory<ServerDbContext> contextFactory)
     {
         _clients = clients;
         _systems = systems;
@@ -126,6 +142,7 @@ public sealed class AdminFacade : IAdminFacade
         _logs = logs;
         _settings = settings;
         _gasMasterTable = gasMasterTable;
+        _contextFactory = contextFactory;
     }
 
     public async Task<AdminSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default)
@@ -144,6 +161,41 @@ public sealed class AdminFacade : IAdminFacade
                 string.IsNullOrWhiteSpace(value.SourcePointId)
                     ? PointDirection.Input
                     : PointDirection.Output));
+        var pointsByKey = clients
+            .SelectMany(client => client.Points.Select(point => (
+                Key: $"{client.ClientCode}:{point.PointId}:{point.Direction}",
+                Point: point)))
+            .ToDictionary(item => item.Key, item => item.Point, StringComparer.Ordinal);
+        await using var context = await _contextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var routeEntities = await context.PointLinks
+            .AsNoTracking()
+            .Where(route => route.Declaration == "Output")
+            .OrderBy(route => route.SourceClientCode)
+            .ThenBy(route => route.SourcePointId)
+            .ThenBy(route => route.TargetClientCode)
+            .ThenBy(route => route.TargetPointId)
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var routes = routeEntities
+            .Select(route => (
+                Route: route,
+                Target: pointsByKey.GetValueOrDefault(
+                    $"{route.TargetClientCode}:{route.TargetPointId}:{PointDirection.Output}")))
+            .Where(item => item.Target is not null)
+            .Select(item => new AdminRouteView(
+                item.Route.SourceClientCode,
+                item.Route.SourcePointId,
+                item.Route.SourcePointName,
+                item.Route.TargetClientCode,
+                item.Route.TargetPointId,
+                item.Target!.PointName,
+                item.Target.DataType,
+                item.Target.Unit,
+                item.Target.Address,
+                item.Route.Enabled))
+            .ToArray();
 
         var result = clients.Select(client =>
         {
@@ -192,7 +244,8 @@ public sealed class AdminFacade : IAdminFacade
             result.Count(client => client.Online),
             result.Sum(client => client.Points.Count),
             systemViews,
-            _communicationGate.IsRunning);
+            _communicationGate.IsRunning,
+            routes);
     }
 
     public Task<AdminSystemSettingsView> GetSystemSettingsAsync(
