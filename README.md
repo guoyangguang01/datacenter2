@@ -29,7 +29,7 @@ native/
 ## 环境
 
 - .NET 10 SDK。仓库内可使用隔离安装的 `.dotnet/dotnet.exe`。
-- Docker，用于 InfluxDB。
+- InfluxDB 可使用发布包内置运行时、独立 InfluxDB 安装包，或通过 Docker 运行。
 - Windows 和 Linux 运行 Avalonia 桌面端；服务器也可通过 `--headless` 无界面运行。
 
 本机安装的隔离 SDK：
@@ -42,6 +42,24 @@ native/
 构建脚本会设置 `AVALONIA_TELEMETRY_OPTOUT=1`，避免 Avalonia 构建任务写入受限的用户目录。
 
 ## 启动 InfluxDB
+
+发布包内置 InfluxDB 2.7.12。Windows 服务端包解压后运行：
+
+```powershell
+.\influxdb\start-influxdb.ps1
+```
+
+Linux 服务端包解压后运行：
+
+```bash
+bash ./influxdb/start-influxdb.sh
+```
+
+首次启动会自动初始化开发用组织、Bucket、管理员和 Token。数据保存在
+`influxdb/data/`，日志保存在 `influxdb/logs/`。独立安装可使用
+`artifacts/packages/influxdb-{win,linux}-x64`，接入方式与服务端内置版本相同。
+
+开发环境也可以继续使用 Docker：
 
 ```bash
 docker compose up -d
@@ -103,7 +121,11 @@ Linux/macOS 对应脚本为 `start-server.sh`、`start-headless.sh` 和 `start-c
 .\scripts\publish.ps1
 ```
 
-发布目录为 `artifacts/publish/{server,client}-{win,linux}-x64`。
+发布采用自包含模式，目标机不需要预装 .NET；服务端包同时包含 InfluxDB 2.7.12。
+服务端和客户端分别输出到
+`artifacts/publish/{server,client}-{win,linux}-x64`；独立压缩包位于
+`artifacts/packages/{server,client}-{win,linux}-x64`，InfluxDB 独立安装包位于
+`artifacts/packages/influxdb-{win,linux}-x64`，可分别部署。
 
 ## 首次使用
 
