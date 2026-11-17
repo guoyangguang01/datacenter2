@@ -4,6 +4,7 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using SdnCustom.Server.App.ViewModels;
+using SdnCustom.Shared.Model;
 
 namespace SdnCustom.Server.App.Views;
 
@@ -52,7 +53,23 @@ public sealed partial class ClientManagementWindow : Window
     {
         if (DataContext is ClientManagementViewModel viewModel)
         {
-            await ExportAsync(viewModel, outputOnly: true, "output-points.csv");
+            await ExportAsync(
+                viewModel,
+                PointDirection.Input,
+                "导出用户输出测点",
+                $"{viewModel.SelectedClient?.ClientCode ?? "client"}-user-output-points.csv");
+        }
+    }
+
+    private async void ExportInputs_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is ClientManagementViewModel viewModel)
+        {
+            await ExportAsync(
+                viewModel,
+                PointDirection.Output,
+                "导出用户输入测点",
+                $"{viewModel.SelectedClient?.ClientCode ?? "client"}-user-input-points.csv");
         }
     }
 
@@ -60,20 +77,25 @@ public sealed partial class ClientManagementWindow : Window
     {
         if (DataContext is ClientManagementViewModel viewModel)
         {
-            await ExportAsync(viewModel, outputOnly: false, "points.csv");
+            await ExportAsync(
+                viewModel,
+                null,
+                "导出当前客户端点表",
+                $"{viewModel.SelectedClient?.ClientCode ?? "client"}-points.csv");
         }
     }
 
     private async Task ExportAsync(
         ClientManagementViewModel viewModel,
-        bool outputOnly,
+        PointDirection? direction,
+        string title,
         string suggestedName)
     {
         try
         {
             var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
             {
-                Title = outputOnly ? "导出所有输出测点" : "导出点表",
+                Title = title,
                 SuggestedFileName = suggestedName,
                 FileTypeChoices = [new FilePickerFileType("CSV") { Patterns = ["*.csv"] }]
             });
@@ -83,7 +105,7 @@ public sealed partial class ClientManagementWindow : Window
             }
 
             await using var stream = await file.OpenWriteAsync();
-            await viewModel.ExportCsvAsync(stream, outputOnly);
+            await viewModel.ExportCsvAsync(stream, direction);
         }
         catch (Exception exception)
         {
@@ -102,7 +124,7 @@ public sealed partial class ClientManagementWindow : Window
         {
             var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
             {
-                Title = "导入点表",
+                Title = "导入当前客户端点表",
                 AllowMultiple = false,
                 FileTypeFilter = [new FilePickerFileType("CSV") { Patterns = ["*.csv"] }]
             });

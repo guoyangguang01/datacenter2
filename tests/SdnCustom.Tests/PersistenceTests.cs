@@ -138,6 +138,7 @@ public sealed class PersistenceTests
             Assert.Equal(733, lines.Length);
             Assert.Contains("测点id,测点名称", lines[0]);
 
+            await clients.UpdateAsync("FZXT", "仿真系统", ClientProtocol.OpcUaClient);
             var result = await service.ImportAsync("FUEL", "燃油系统", csv);
 
             Assert.Equal(5, result.ClientCount);
@@ -145,6 +146,9 @@ public sealed class PersistenceTests
             Assert.Equal(192, result.OutputCount);
             Assert.Equal(366, result.RouteCount);
             Assert.Contains(result.Warnings, warning => warning.Contains("数字型 OPC UA"));
+            Assert.Contains(result.Warnings, warning =>
+                warning.Contains("FZXT") && warning.Contains("映射为 TCP"));
+            Assert.Equal(ClientProtocol.Tcp, (await clients.GetAsync("FZXT"))!.Protocol);
 
             var secondExport = await service.ExportAsync("FUEL");
             Assert.Equal(
@@ -177,7 +181,10 @@ public sealed class PersistenceTests
             var factory = new TestDbContextFactory(options);
             var clients = new ClientSystemStore(factory);
             await clients.InitializeAsync();
-            await clients.CreateAuthorizedAsync("CLIENT-1", "Client one");
+            await clients.CreateAuthorizedAsync(
+                "CLIENT-1",
+                "Client one",
+                protocol: ClientProtocol.OpcUaClient);
             var declaredRegistration = new ClientRegistration(
                 "CLIENT-1",
                 "Client one",
@@ -248,11 +255,18 @@ public sealed class PersistenceTests
             await latest.RemovePointsAsync("CLIENT-1", ["P1"]);
             Assert.DoesNotContain(latest.GetClient("CLIENT-1"), value => value.PointId == "P1");
 
-            var renamed = await clients.RenameAsync("CLIENT-1", "Renamed client");
+            var renamed = await clients.UpdateAsync("CLIENT-1", "Renamed client");
             Assert.Equal("Renamed client", renamed.ClientName);
             Assert.Equal("Renamed client", (await clients.GetAsync("CLIENT-1"))!.ClientName);
             await clients.RegisterAsync(declaredRegistration);
             Assert.Equal("Renamed client", (await clients.GetAsync("CLIENT-1"))!.ClientName);
+
+            await clients.CreateAuthorizedAsync(
+                "CLIENT-2",
+                "Client two",
+                protocol: ClientProtocol.Tcp);
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+                clients.RegisterAsync(declaredRegistration with { ClientCode = "CLIENT-2" }));
 
             await clients.DeleteAsync("CLIENT-1");
             Assert.Null(await clients.GetAsync("CLIENT-1"));

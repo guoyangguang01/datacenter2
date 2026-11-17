@@ -26,7 +26,7 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private bool _useTls;
     [ObservableProperty] private bool _allowUntrustedServerCertificate = true;
     [ObservableProperty] private string _serverCertificateThumbprint = string.Empty;
-    [ObservableProperty] private ClientProtocol _protocol = ClientProtocol.CustomTcp;
+    [ObservableProperty] private ClientProtocol _protocol = ClientProtocol.Tcp;
     [ObservableProperty] private string _deviceHost = "127.0.0.1";
     [ObservableProperty] private int _devicePort = 9002;
     [ObservableProperty] private string _opcUaEndpoint = "opc.tcp://127.0.0.1:4840";
@@ -60,18 +60,18 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
     };
     public string ExternalModeDescription => Protocol switch
     {
-        ClientProtocol.CustomTcp =>
-            "TCP 服务端模式：外部程序连接监听地址并主动推送 INPUT；OUTPUT 由本客户端主动广播，外部程序持续监听。",
+        ClientProtocol.Tcp =>
+            "TCP 服务端模式：当前系统监听，燃油系统用户主动连接；接收 MsgPack datas 作为 INPUT，并按同一协议推送 OUTPUT。",
         ClientProtocol.OpcUaClient =>
             "OPC UA 客户端模式：连接外部 OPC UA 服务器并读写配置的节点。",
         ClientProtocol.OpcUaServer =>
             "OPC UA 服务端模式：启动内置服务器，并按当前客户端点表创建输入/输出节点。",
         _ => string.Empty
     };
-    public string ExternalHostLabel => Protocol == ClientProtocol.CustomTcp
+    public string ExternalHostLabel => Protocol == ClientProtocol.Tcp
         ? "监听 IP"
         : "外部服务 IP";
-    public string ExternalPortLabel => Protocol == ClientProtocol.CustomTcp
+    public string ExternalPortLabel => Protocol == ClientProtocol.Tcp
         ? "监听端口"
         : "端口";
 
@@ -82,7 +82,7 @@ public sealed partial class ClientViewModel : ObservableObject, IAsyncDisposable
     public ObservableCollection<ClientLogEntry> Logs { get; } = [];
     public IReadOnlyList<ProtocolDisplayOption> ProtocolOptions { get; } =
     [
-        new(ClientProtocol.CustomTcp, "TCP 服务端"),
+        new(ClientProtocol.Tcp, "TCP"),
         new(ClientProtocol.OpcUaClient, "OPC UA 客户端"),
         new(ClientProtocol.OpcUaServer, "OPC UA 服务端")
     ];

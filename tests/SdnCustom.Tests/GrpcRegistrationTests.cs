@@ -119,9 +119,13 @@ public sealed class GrpcRegistrationTests
 
             var remote = await SdnCustom.Server.Admin.RemoteAdminFacade.TryCreateAsync(httpPort);
             Assert.NotNull(remote);
-            await remote.RenameClientAsync("CLIENT-DELETE", "Renamed client");
+            await remote.UpdateClientAsync(
+                "CLIENT-DELETE",
+                "Renamed client",
+                ClientProtocol.OpcUaServer);
             var renamed = Assert.Single((await remote.GetSnapshotAsync()).Clients);
             Assert.Equal("Renamed client", renamed.ClientName);
+            Assert.Equal(ClientProtocol.OpcUaServer, renamed.Protocol);
 
             await remote.DeleteClientAsync("CLIENT-DELETE");
             Assert.Empty((await remote.GetSnapshotAsync()).Clients);
@@ -153,7 +157,7 @@ public sealed class GrpcRegistrationTests
             ProtocolVersion = "1",
             ClientName = "Test",
             InstanceId = Guid.NewGuid().ToString("N"),
-            Protocol = DeviceProtocol.CustomTcp,
+            Protocol = DeviceProtocol.Tcp,
             EndpointDisplay = "127.0.0.1:9002"
         };
         hello.Points.Add(ContractMapper.ToContract(new SharedPointDefinition

@@ -1,15 +1,12 @@
-using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
-using System.Text;
-using System.Text.Json;
 using SdnCustom.Shared;
 using SdnCustom.Shared.Model;
 
 namespace SdnCustom.Protocols.Tcp;
 
-public sealed class CustomTcpServerDeviceConnection : IDeviceConnection
+public sealed class TcpServerDeviceConnection : IDeviceConnection
 {
     private readonly object _peersGate = new();
     private readonly ConcurrentDictionary<string, PointSample> _latestInputs = new(StringComparer.Ordinal);
@@ -20,7 +17,7 @@ public sealed class CustomTcpServerDeviceConnection : IDeviceConnection
     private Task? _acceptTask;
     private DeviceConnectionOptions _options = new();
 
-    public ClientProtocol Protocol => ClientProtocol.CustomTcp;
+    public ClientProtocol Protocol => ClientProtocol.Tcp;
     public bool IsConnected => _listener is not null && _cancellation?.IsCancellationRequested == false;
 
     public Task ConnectAsync(
@@ -29,7 +26,7 @@ public sealed class CustomTcpServerDeviceConnection : IDeviceConnection
     {
         if (!IPAddress.TryParse(options.Host, out var address))
         {
-            throw new InvalidOperationException($"TCP 服务端监听地址无效：{options.Host}");
+            throw new InvalidOperationException($"燃油系统 TCP 监听地址无效：{options.Host}");
         }
 
         _options = options;
@@ -53,14 +50,21 @@ public sealed class CustomTcpServerDeviceConnection : IDeviceConnection
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        bool hasPeer;
+        lock (_peersGate)
+        {
+            hasPeer = _peers.Count > 0;
+        }
+
+        var now = UnixTime.NowNanoseconds();
         var values = points
             .Where(point => point.Direction == PointDirection.Input)
-            .Select(point => _latestInputs.TryGetValue(point.PointId, out var sample)
+            .Select(point => hasPeer && _latestInputs.TryGetValue(point.PointId, out var sample)
                 ? sample
                 : new PointSample(
                     clientCode,
                     point.PointId,
-                    new PointValue(null, PointQuality.CommLost, UnixTime.NowNanoseconds())))
+                    new PointValue(null, PointQuality.CommLost, now)))
             .ToArray();
         return Task.FromResult<IReadOnlyList<PointSample>>(values);
     }
@@ -75,17 +79,9 @@ public sealed class CustomTcpServerDeviceConnection : IDeviceConnection
             return [];
         }
 
-        var body = JsonSerializer.Serialize(new
-        {
-            values = items.Select(item => new
-            {
-                pointId = item.Point.PointId,
-                value = item.Value,
-                quality = "Good",
-                timestamp = item.TimestampUnixNanoseconds / 1_000_000L
-            }).ToArray()
-        });
-        var frame = new TcpFrame(TcpCommand.ValuePush, body).Encode();
+        var body = TcpMessageCodec.EncodeValues(
+            items.Select(item => new TcpValue(item.Point.PointId, item.Value)));
+        var frame = TcpFrame.Encode(body);
         TcpPeer[] peers;
         lock (_peersGate)
         {
@@ -103,11 +99,12 @@ public sealed class CustomTcpServerDeviceConnection : IDeviceConnection
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
                 RemovePeer(peer);
+                await peer.DisposeAsync().ConfigureAwait(false);
             }
         }
 
         var success = delivered > 0;
-        var error = success ? string.Empty : "没有已连接的外部 TCP 客户端，输出未发送。";
+        var error = success ? string.Empty : "没有已连接的燃油系统 TCP 用户，输出未发送。";
         return items
             .Select(item => new DeviceWriteResult(item.Point.PointId, success, error))
             .ToArray();
@@ -184,6 +181,7 @@ public sealed class CustomTcpServerDeviceConnection : IDeviceConnection
             }
 
             client.NoDelay = true;
+            client.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
             var peer = new TcpPeer(client);
             lock (_peersGate)
             {
@@ -197,27 +195,21 @@ public sealed class CustomTcpServerDeviceConnection : IDeviceConnection
     {
         try
         {
+            var maximumBodyLength = Math.Max(
+                _options.SizeLimitBytes,
+                TcpFrame.DefaultMaximumBodyLength);
             while (!cancellationToken.IsCancellationRequested)
             {
-                var frame = await ReceiveAsync(
+                var frame = await TcpFrame.ReadAsync(
                     peer.Stream,
-                    _options.SizeLimitBytes,
+                    maximumBodyLength,
                     cancellationToken).ConfigureAwait(false);
-                switch (frame.Command)
-                {
-                    case TcpCommand.ValuePush:
-                        ApplyInputPush(frame.Body);
-                        break;
-                    case TcpCommand.HeartbeatRequest:
-                        await peer.SendAsync(
-                            new TcpFrame(TcpCommand.HeartbeatResponse, string.Empty).Encode(),
-                            cancellationToken).ConfigureAwait(false);
-                        break;
-                }
+                ApplyInputValues(frame.Body);
             }
         }
         catch (Exception exception) when (
-            exception is IOException or SocketException or OperationCanceledException or InvalidDataException)
+            exception is IOException or SocketException or ObjectDisposedException or
+                OperationCanceledException or InvalidDataException or OverflowException)
         {
         }
         finally
@@ -227,45 +219,29 @@ public sealed class CustomTcpServerDeviceConnection : IDeviceConnection
         }
     }
 
-    private void ApplyInputPush(string body)
+    private void ApplyInputValues(ReadOnlySpan<byte> body)
     {
-        using var document = JsonDocument.Parse(body);
-        if (!document.RootElement.TryGetProperty("values", out var values) ||
-            values.ValueKind != JsonValueKind.Array)
+        foreach (var item in TcpMessageCodec.DecodeValues(body))
         {
-            return;
-        }
-
-        foreach (var item in values.EnumerateArray())
-        {
-            var pointId = item.TryGetProperty("pointId", out var pointIdElement)
-                ? pointIdElement.GetString()
-                : null;
-            if (pointId is null || !_inputPoints.TryGetValue(pointId, out var point))
+            if (!_inputPoints.TryGetValue(item.PointId, out var point))
             {
                 continue;
             }
 
-            var rawValue = item.TryGetProperty("value", out var valueElement)
-                ? ReadJsonValue(valueElement)
-                : null;
-            var qualityText = item.TryGetProperty("quality", out var qualityElement)
-                ? qualityElement.GetString()
-                : "Good";
-            var quality = Enum.TryParse<PointQuality>(qualityText, true, out var parsedQuality)
-                ? parsedQuality
-                : PointQuality.Good;
-            var timestamp = item.TryGetProperty("timestamp", out var timestampElement) &&
-                            timestampElement.TryGetInt64(out var milliseconds)
-                ? milliseconds * 1_000_000L
-                : UnixTime.NowNanoseconds();
-            _latestInputs[pointId] = new PointSample(
-                _options.ClientCode,
-                pointId,
-                new PointValue(
-                    PointTypeConverter.Convert(rawValue, point.DataType),
-                    quality,
-                    timestamp));
+            try
+            {
+                _latestInputs[item.PointId] = new PointSample(
+                    _options.ClientCode,
+                    item.PointId,
+                    new PointValue(
+                        PointTypeConverter.Convert(item.Value, point.DataType),
+                        PointQuality.Good,
+                        UnixTime.NowNanoseconds()));
+            }
+            catch (Exception exception) when (
+                exception is FormatException or InvalidCastException or OverflowException)
+            {
+            }
         }
     }
 
@@ -274,49 +250,31 @@ public sealed class CustomTcpServerDeviceConnection : IDeviceConnection
         lock (_peersGate)
         {
             _peers.Remove(peer);
+            if (_peers.Count == 0)
+            {
+                _latestInputs.Clear();
+            }
         }
     }
-
-    private static async Task<TcpFrame> ReceiveAsync(
-        NetworkStream stream,
-        int sizeLimitBytes,
-        CancellationToken cancellationToken)
-    {
-        var lengthBytes = new byte[4];
-        await stream.ReadExactlyAsync(lengthBytes, cancellationToken).ConfigureAwait(false);
-        var length = BinaryPrimitives.ReadInt32BigEndian(lengthBytes);
-        if (length is <= 0 or > 65535 || length > sizeLimitBytes)
-        {
-            throw new InvalidDataException($"Invalid TCP frame length: {length}.");
-        }
-
-        var payload = new byte[length];
-        await stream.ReadExactlyAsync(payload, cancellationToken).ConfigureAwait(false);
-        return TcpFrame.Decode(payload);
-    }
-
-    private static object? ReadJsonValue(JsonElement value) => value.ValueKind switch
-    {
-        JsonValueKind.Null or JsonValueKind.Undefined => null,
-        JsonValueKind.True => true,
-        JsonValueKind.False => false,
-        JsonValueKind.Number when value.TryGetInt64(out var integer) => integer,
-        JsonValueKind.Number => value.GetDouble(),
-        JsonValueKind.String => value.GetString(),
-        _ => value.GetRawText()
-    };
 
     private sealed class TcpPeer(TcpClient client) : IAsyncDisposable
     {
         private readonly SemaphoreSlim _sendGate = new(1, 1);
+        private int _disposed;
 
         public NetworkStream Stream { get; } = client.GetStream();
 
         public async Task SendAsync(byte[] frame, CancellationToken cancellationToken)
         {
+            ObjectDisposedException.ThrowIf(
+                Volatile.Read(ref _disposed) != 0,
+                this);
             await _sendGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                ObjectDisposedException.ThrowIf(
+                    Volatile.Read(ref _disposed) != 0,
+                    this);
                 await Stream.WriteAsync(frame, cancellationToken).ConfigureAwait(false);
                 await Stream.FlushAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -328,11 +286,16 @@ public sealed class CustomTcpServerDeviceConnection : IDeviceConnection
 
         public ValueTask DisposeAsync()
         {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            {
+                return ValueTask.CompletedTask;
+            }
+
             try
             {
                 client.Client.Shutdown(SocketShutdown.Both);
             }
-            catch (SocketException)
+            catch (Exception exception) when (exception is SocketException or ObjectDisposedException)
             {
             }
             Stream.Dispose();

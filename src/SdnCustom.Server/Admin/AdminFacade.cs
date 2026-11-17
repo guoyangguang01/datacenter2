@@ -77,8 +77,13 @@ public interface IAdminFacade
         string clientCode,
         string clientName,
         CancellationToken cancellationToken = default,
-        string? systemCode = null);
-    Task RenameClientAsync(string clientCode, string clientName, CancellationToken cancellationToken = default);
+        string? systemCode = null,
+        ClientProtocol protocol = ClientProtocol.Tcp);
+    Task UpdateClientAsync(
+        string clientCode,
+        string clientName,
+        ClientProtocol protocol,
+        CancellationToken cancellationToken = default);
     Task DeleteClientAsync(string clientCode, CancellationToken cancellationToken = default);
     Task StartCommunicationAsync(CancellationToken cancellationToken = default);
     Task StopCommunicationAsync(CancellationToken cancellationToken = default);
@@ -271,11 +276,16 @@ public sealed class AdminFacade : IAdminFacade
         string clientCode,
         string clientName,
         CancellationToken cancellationToken = default,
-        string? systemCode = null) =>
-        _control.CreateClientAsync(clientCode, clientName, cancellationToken, systemCode);
+        string? systemCode = null,
+        ClientProtocol protocol = ClientProtocol.Tcp) =>
+        _control.CreateClientAsync(clientCode, clientName, cancellationToken, systemCode, protocol);
 
-    public Task RenameClientAsync(string clientCode, string clientName, CancellationToken cancellationToken = default) =>
-        _control.RenameClientAsync(clientCode, clientName, cancellationToken);
+    public Task UpdateClientAsync(
+        string clientCode,
+        string clientName,
+        ClientProtocol protocol,
+        CancellationToken cancellationToken = default) =>
+        _control.UpdateClientAsync(clientCode, clientName, protocol, cancellationToken);
 
     public Task DeleteClientAsync(string clientCode, CancellationToken cancellationToken = default) =>
         _control.DeleteClientAsync(clientCode, cancellationToken);

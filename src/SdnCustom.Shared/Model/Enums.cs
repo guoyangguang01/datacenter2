@@ -2,7 +2,7 @@ namespace SdnCustom.Shared.Model;
 
 public enum ClientProtocol
 {
-    CustomTcp,
+    Tcp,
     OpcUaClient,
     OpcUaServer
 }

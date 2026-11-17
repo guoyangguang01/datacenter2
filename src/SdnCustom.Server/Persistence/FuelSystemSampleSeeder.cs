@@ -61,10 +61,10 @@ public sealed class FuelSystemSampleSeeder(
 
     private static readonly (string Code, string Name, ClientProtocol Protocol)[] SampleClients =
     [
-        ("FZXT", "仿真系统", ClientProtocol.CustomTcp),
-        ("SWGZ", "三维感知", ClientProtocol.CustomTcp),
-        ("SWSC", "实物系统（数采）", ClientProtocol.CustomTcp),
-        ("SWXT", "实物系统（PLC）", ClientProtocol.CustomTcp),
+        ("FZXT", "仿真系统", ClientProtocol.Tcp),
+        ("SWGZ", "三维感知", ClientProtocol.Tcp),
+        ("SWSC", "实物系统（数采）", ClientProtocol.Tcp),
+        ("SWXT", "实物系统（PLC）", ClientProtocol.Tcp),
         ("XNCZ", "虚拟操作", ClientProtocol.OpcUaClient)
     ];
 }

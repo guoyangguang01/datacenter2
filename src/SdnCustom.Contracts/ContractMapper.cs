@@ -20,7 +20,7 @@ public static class ContractMapper
 {
     public static DeviceProtocol ToContract(SharedClientProtocol protocol) => protocol switch
     {
-        SharedClientProtocol.CustomTcp => DeviceProtocol.CustomTcp,
+        SharedClientProtocol.Tcp => DeviceProtocol.Tcp,
         SharedClientProtocol.OpcUaClient => DeviceProtocol.OpcUaClient,
         SharedClientProtocol.OpcUaServer => DeviceProtocol.OpcUaServer,
         _ => DeviceProtocol.Unspecified
@@ -28,10 +28,10 @@ public static class ContractMapper
 
     public static SharedClientProtocol FromContract(DeviceProtocol protocol) => protocol switch
     {
-        DeviceProtocol.CustomTcp => SharedClientProtocol.CustomTcp,
+        DeviceProtocol.Tcp => SharedClientProtocol.Tcp,
         DeviceProtocol.OpcUaClient => SharedClientProtocol.OpcUaClient,
         DeviceProtocol.OpcUaServer => SharedClientProtocol.OpcUaServer,
-        _ => SharedClientProtocol.CustomTcp
+        _ => SharedClientProtocol.Tcp
     };
 
     public static ContractPointDirection ToContract(SharedPointDirection direction) =>

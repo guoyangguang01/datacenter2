@@ -153,7 +153,7 @@
             <Border Classes="panel" Margin="0,0,4,0">
               <Grid RowDefinitions="34,30,*">
                 <Border Classes="tableHeader" Padding="12,0">
-                  <TextBlock Text="软件输入数据" FontWeight="SemiBold" />
+                  <TextBlock Text="用户输入数据" FontWeight="SemiBold" />
                 </Border>
                 <Grid Grid.Row="1" ColumnDefinitions="1.5*,2*,0.8*,0.8*,1.2*,0.9*"
                       Background="{DynamicResource SurfaceMutedBrush}">
@@ -183,7 +183,7 @@
             <Border Grid.Column="1" Classes="panel" Margin="4,0,0,0">
               <Grid RowDefinitions="34,30,*">
                 <Border Classes="tableHeader" Padding="12,0">
-                  <TextBlock Text="输出分发数据" FontWeight="SemiBold" />
+                  <TextBlock Text="用户输出数据" FontWeight="SemiBold" />
                 </Border>
                 <Grid Grid.Row="1" ColumnDefinitions="1.5*,2*,0.8*,0.8*,1.2*,0.9*"
                       Background="{DynamicResource SurfaceMutedBrush}">
@@ -194,7 +194,7 @@
                   <TextBlock Grid.Column="4" Text="最新值" Margin="7,6" />
                   <TextBlock Grid.Column="5" Text="质量" Margin="7,6" />
                 </Grid>
-                <ListBox Grid.Row="2" ItemsSource="{Binding OutputPoints}" Background="Transparent" BorderThickness="0">
+                <ListBox Grid.Row="2" ItemsSource="{Binding EmittedPoints}" Background="Transparent" BorderThickness="0">
                   <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="vm:PointRowViewModel">
                       <Grid ColumnDefinitions="1.5*,2*,0.8*,0.8*,1.2*,0.9*" Margin="3,7">
@@ -219,13 +219,8 @@
           <Border Classes="toolbar">
             <StackPanel Orientation="Horizontal" Spacing="12">
               <StackPanel>
-                <TextBlock Text="当前模拟用户" FontSize="12" />
+                <TextBlock Text="当前模拟客户端" FontSize="12" />
                 <TextBlock Text="{Binding SelectedClient.ClientName}" FontWeight="SemiBold" />
-              </StackPanel>
-              <StackPanel>
-                <TextBlock Text="数据用户" FontSize="12" />
-                <ComboBox ItemsSource="{Binding Clients}" SelectedItem="{Binding SelectedClient}" Width="150"
-                          IsEnabled="{Binding IsSimulationConfigurationEnabled}" />
               </StackPanel>
               <StackPanel>
                 <TextBlock Text="模拟频率(ms)" FontSize="12" />
@@ -234,7 +229,7 @@
                                IsEnabled="{Binding IsSimulationConfigurationEnabled}" />
               </StackPanel>
               <StackPanel>
-                <TextBlock Text="当前输出测点" FontSize="12" />
+                <TextBlock Text="当前用户输入数据" FontSize="12" />
                 <ComboBox ItemsSource="{Binding OutputPoints}" SelectedItem="{Binding SelectedPoint}" Width="170"
                           IsEnabled="{Binding IsSimulationConfigurationEnabled}" />
               </StackPanel>
@@ -284,8 +279,14 @@
           <Border Classes="toolbar">
             <StackPanel Spacing="8">
               <StackPanel Orientation="Horizontal" Spacing="8">
-                <TextBlock Text="数据用户" VerticalAlignment="Center" />
-                <ComboBox ItemsSource="{Binding Clients}" SelectedItem="{Binding SelectedClient}" Width="160" />
+                <TextBlock Text="客户端" VerticalAlignment="Center" />
+                <ComboBox ItemsSource="{Binding Clients}" SelectedItem="{Binding SelectedClient}" Width="220">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ClientRowViewModel">
+                      <TextBlock Text="{Binding DisplayName}" />
+                    </DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
                 <TextBlock Text="开始时间" VerticalAlignment="Center" />
                 <TextBox Text="{Binding HistoryFrom}" Width="175" />
                 <TextBlock Text="结束时间" VerticalAlignment="Center" />
@@ -298,7 +299,14 @@
                         Padding="14,5" />
               </StackPanel>
               <StackPanel Orientation="Horizontal" Spacing="8">
-                <ComboBox ItemsSource="{Binding Points}" SelectedItem="{Binding SelectedPoint}" Width="240" />
+                <TextBlock Text="测点" VerticalAlignment="Center" />
+                <ComboBox ItemsSource="{Binding HistoryPoints}" SelectedItem="{Binding SelectedPoint}" Width="360">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:PointRowViewModel">
+                      <TextBlock Text="{Binding HistoryDisplay}" />
+                    </DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
                 <Button Classes="primary" Content="绘制图表" Click="DrawChart_OnClick"
                         Padding="14,5" />
                 <TextBlock Text="{Binding OperationMessage}" VerticalAlignment="Center" Foreground="#53687A" />

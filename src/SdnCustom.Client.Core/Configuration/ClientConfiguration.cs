@@ -26,7 +26,7 @@ public sealed class ServerConnectionOptions
 
 public sealed class DeviceOptions
 {
-    public ClientProtocol Protocol { get; set; } = ClientProtocol.CustomTcp;
+    public ClientProtocol Protocol { get; set; } = ClientProtocol.Tcp;
     public string Host { get; set; } = "127.0.0.1";
     public int Port { get; set; } = 9002;
     public string OpcUaEndpoint { get; set; } = "opc.tcp://127.0.0.1:4840";

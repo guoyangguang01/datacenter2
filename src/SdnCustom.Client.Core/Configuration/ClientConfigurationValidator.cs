@@ -39,7 +39,7 @@ public static class ClientConfigurationValidator
             errors.Add("关闭“信任自动生成证书”时，必须填写服务端证书指纹。");
         }
 
-        if (configuration.Device.Protocol == ClientProtocol.CustomTcp &&
+        if (configuration.Device.Protocol == ClientProtocol.Tcp &&
             (string.IsNullOrWhiteSpace(configuration.Device.Host) || configuration.Device.Port is < 1 or > 65535))
         {
             errors.Add("TCP 设备地址和端口无效。");

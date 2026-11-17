@@ -16,8 +16,13 @@ public interface IServerControlService
         string clientCode,
         string clientName,
         CancellationToken cancellationToken = default,
-        string? systemCode = null);
-    Task RenameClientAsync(string clientCode, string clientName, CancellationToken cancellationToken = default);
+        string? systemCode = null,
+        ClientProtocol protocol = ClientProtocol.Tcp);
+    Task UpdateClientAsync(
+        string clientCode,
+        string clientName,
+        ClientProtocol protocol,
+        CancellationToken cancellationToken = default);
     Task DeleteClientAsync(string clientCode, CancellationToken cancellationToken = default);
     Task StartCommunicationAsync(CancellationToken cancellationToken = default);
     Task StopCommunicationAsync(CancellationToken cancellationToken = default);
@@ -78,26 +83,36 @@ public sealed class ServerControlService : IServerControlService
         string clientCode,
         string clientName,
         CancellationToken cancellationToken = default,
-        string? systemCode = null)
+        string? systemCode = null,
+        ClientProtocol protocol = ClientProtocol.Tcp)
     {
         var client = await _clients.CreateAuthorizedAsync(
             clientCode,
             clientName,
             cancellationToken,
-            string.IsNullOrWhiteSpace(systemCode) ? "DEFAULT" : systemCode.Trim()).ConfigureAwait(false);
+            string.IsNullOrWhiteSpace(systemCode) ? "DEFAULT" : systemCode.Trim(),
+            protocol).ConfigureAwait(false);
         _logs.Add(
             "INFO",
             "客户端管理",
-            $"已在系统 {client.SystemCode} 登记客户端 {clientCode}（{clientName}）。");
+            $"已在系统 {client.SystemCode} 登记客户端 {clientCode}（{clientName}，{protocol}）。");
     }
 
-    public async Task RenameClientAsync(
+    public async Task UpdateClientAsync(
         string clientCode,
         string clientName,
+        ClientProtocol protocol,
         CancellationToken cancellationToken = default)
     {
-        var client = await _clients.RenameAsync(clientCode, clientName, cancellationToken).ConfigureAwait(false);
-        _logs.Add("INFO", "客户端管理", $"客户端 {clientCode} 已改名为 {client.ClientName}。");
+        var client = await _clients.UpdateAsync(
+            clientCode,
+            clientName,
+            protocol,
+            cancellationToken).ConfigureAwait(false);
+        _logs.Add(
+            "INFO",
+            "客户端管理",
+            $"客户端 {clientCode} 已更新为 {client.ClientName}（{client.Protocol}）。");
     }
 
     public async Task DeleteClientAsync(string clientCode, CancellationToken cancellationToken = default)

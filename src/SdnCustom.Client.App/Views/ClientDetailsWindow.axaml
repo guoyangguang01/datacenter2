@@ -50,9 +50,9 @@
               <NumericUpDown Grid.Column="3" Value="{Binding TimeoutMilliseconds}"
                              Minimum="100" Maximum="120000" Increment="500" />
 
-              <TextBlock Grid.Row="1" Text="TCP 服务监听 IP：" VerticalAlignment="Center" />
+              <TextBlock Grid.Row="1" Text="{Binding ExternalHostLabel}" VerticalAlignment="Center" />
               <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding DeviceHost}" />
-              <TextBlock Grid.Row="1" Grid.Column="2" Text="端口：" VerticalAlignment="Center" />
+              <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding ExternalPortLabel}" VerticalAlignment="Center" />
               <TextBox Grid.Row="1" Grid.Column="3" Text="{Binding DevicePort}" />
 
               <TextBlock Grid.Row="2" Text="{Binding OpcUaEndpointLabel}" VerticalAlignment="Center" />

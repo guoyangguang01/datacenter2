@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Sockets;
-using System.Text.Json;
 using SdnCustom.Client.Core.Configuration;
 using SdnCustom.Client.Core.Runtime;
 using SdnCustom.Protocols.Tcp;
@@ -54,7 +53,7 @@ public sealed class EndToEndSingleClientTests
                 },
                 Device = new DeviceOptions
                 {
-                    Protocol = ClientProtocol.CustomTcp,
+                    Protocol = ClientProtocol.Tcp,
                     Host = "127.0.0.1",
                     Port = unavailableDevicePort,
                     TimeoutMilliseconds = 500
@@ -137,7 +136,7 @@ public sealed class EndToEndSingleClientTests
                 },
                 Device = new DeviceOptions
                 {
-                    Protocol = ClientProtocol.CustomTcp,
+                    Protocol = ClientProtocol.Tcp,
                     Host = "127.0.0.1",
                     Port = deviceServerPort,
                     TimeoutMilliseconds = 2000
@@ -233,21 +232,10 @@ public sealed class EndToEndSingleClientTests
             using var externalTcp = new TcpClient();
             await externalTcp.ConnectAsync(IPAddress.Loopback, deviceServerPort, timeout.Token);
             var externalTcpStream = externalTcp.GetStream();
-            var inputBody = JsonSerializer.Serialize(new
-            {
-                values = new[]
-                {
-                    new
-                    {
-                        pointId = "TEMP",
-                        value = 21.5,
-                        quality = "Good",
-                        timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
-                    }
-                }
-            });
+            var inputBody = TcpMessageCodec.EncodeValues(
+                [new TcpValue("TEMP", 21.5)]);
             await externalTcpStream.WriteAsync(
-                new TcpFrame(TcpCommand.ValuePush, inputBody).Encode(),
+                TcpFrame.Encode(inputBody),
                 timeout.Token);
             await WaitUntilAsync(
                 async () =>

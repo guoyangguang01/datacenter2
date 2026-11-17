@@ -98,17 +98,22 @@ public sealed class GasMasterTableService(
             }
         }
 
-        var invalidProtocolClients = expectedProtocols
-            .Where(pair =>
-                !Enum.TryParse<ClientProtocol>(clientsByCode[pair.Key].Protocol, true, out var current) ||
-                current != pair.Value)
-            .Select(pair =>
-                $"{pair.Key}(配置={clientsByCode[pair.Key].Protocol}, 总表={pair.Value})")
-            .ToArray();
-        if (invalidProtocolClients.Length > 0)
+        foreach (var (clientCode, protocol) in expectedProtocols)
         {
-            throw new InvalidOperationException(
-                "客户端协议未配置或与总表不一致：" + string.Join("、", invalidProtocolClients));
+            var client = clientsByCode[clientCode];
+            if (!Enum.TryParse<ClientProtocol>(client.Protocol, true, out var current))
+            {
+                warnings.Add(
+                    $"客户端 {clientCode} 的协议由空值映射为 {ToGasProtocol(protocol)}。");
+            }
+            else if (current != protocol)
+            {
+                warnings.Add(
+                    $"客户端 {clientCode} 的协议已按总表从 {ToGasProtocol(current)} " +
+                    $"映射为 {ToGasProtocol(protocol)}。");
+            }
+
+            client.Protocol = protocol.ToString();
         }
 
         var wrongSystemClients = requiredClientCodes
@@ -622,14 +627,7 @@ public sealed class GasMasterTableService(
         string clientCode,
         string gasProtocol)
     {
-        var protocol = gasProtocol switch
-        {
-            "TCP" => ClientProtocol.CustomTcp,
-            "OPC UA客户端" => ClientProtocol.OpcUaClient,
-            "OPC UA服务端" => ClientProtocol.OpcUaServer,
-            _ => throw new InvalidDataException(
-                $"客户端 {clientCode} 的协议不支持：{gasProtocol}")
-        };
+        var protocol = MapGasProtocol(gasProtocol, clientCode);
         if (protocols.TryGetValue(clientCode, out var existing) && existing != protocol)
         {
             throw new InvalidDataException(
@@ -638,6 +636,24 @@ public sealed class GasMasterTableService(
 
         protocols[clientCode] = protocol;
     }
+
+    private static ClientProtocol MapGasProtocol(string gasProtocol, string clientCode) =>
+        gasProtocol.Trim().Replace(" ", string.Empty, StringComparison.Ordinal).ToUpperInvariant() switch
+        {
+            "TCP" => ClientProtocol.Tcp,
+            "OPCUA客户端" => ClientProtocol.OpcUaClient,
+            "OPCUA服务端" => ClientProtocol.OpcUaServer,
+            _ => throw new InvalidDataException(
+                $"客户端 {clientCode} 的协议不支持：{gasProtocol}")
+        };
+
+    private static string ToGasProtocol(ClientProtocol protocol) => protocol switch
+    {
+        ClientProtocol.Tcp => "TCP",
+        ClientProtocol.OpcUaClient => "OPC UA客户端",
+        ClientProtocol.OpcUaServer => "OPC UA服务端",
+        _ => protocol.ToString()
+    };
 
     private static string ToGasDataType(string? value) =>
         value switch

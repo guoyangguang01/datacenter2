@@ -20,7 +20,7 @@ public sealed class MainWindowViewModelTests
         Assert.NotNull(originalPoint);
 
         var queryTask = viewModel.QueryHistoryCommand.ExecuteAsync(null);
-        viewModel.SelectedPoint = viewModel.Points.Single(point => point.PointId == "P2");
+        viewModel.SelectedPoint = viewModel.HistoryPoints.Single(point => point.PointId == "P2");
         completion.SetResult([
             new HistoryPoint(DateTimeOffset.UtcNow, 42d, PointQuality.Good)
         ]);
@@ -31,7 +31,7 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
-    public async Task DisplaysInputsAndTargetOutputsForSelectedClient()
+    public async Task UsesUserPerspectiveForInputsAndEmittedOutputs()
     {
         var admin = new StubAdminFacade(
             Task.FromResult<IReadOnlyList<HistoryPoint>>([]),
@@ -39,15 +39,24 @@ public sealed class MainWindowViewModelTests
         var viewModel = new MainWindowViewModel(admin);
         await viewModel.RefreshAsync();
 
-        Assert.Single(viewModel.InputPoints);
-        Assert.Equal("A-IN", viewModel.InputPoints[0].PointId);
-        Assert.Empty(viewModel.OutputPoints);
+        Assert.Empty(viewModel.InputPoints);
+        var emitted = Assert.Single(viewModel.EmittedPoints);
+        Assert.Equal("A-IN", emitted.PointId);
+        var writableOutput = Assert.Single(viewModel.OutputPoints);
+        Assert.Equal("A-OUT", writableOutput.PointId);
 
         viewModel.SelectedClient = viewModel.Clients.Single(client => client.ClientCode == "B");
-        Assert.Empty(viewModel.InputPoints);
+        Assert.Equal("Target client  (B)", viewModel.SelectedClient.ToString());
+        var input = Assert.Single(viewModel.InputPoints);
+        Assert.Equal("A", input.ClientCode);
+        Assert.Equal("A-IN", input.PointId);
+        Assert.Empty(viewModel.EmittedPoints);
         var output = Assert.Single(viewModel.OutputPoints);
         Assert.Equal("B", output.ClientCode);
         Assert.Equal("B-OUT", output.PointId);
+        var historyPoint = Assert.Single(viewModel.HistoryPoints);
+        Assert.Equal("B-OUT", historyPoint.PointId);
+        Assert.DoesNotContain(viewModel.HistoryPoints, point => point.ClientCode == "A");
 
         viewModel.SelectedPoint = output;
         viewModel.WriteValue = "true";
@@ -85,17 +94,25 @@ public sealed class MainWindowViewModelTests
                     DataType = PointDataType.Bool,
                     Direction = PointDirection.Output
                 };
+                var sourceOutputPoint = new PointDefinition
+                {
+                    PointId = "A-OUT",
+                    PointName = "Source writable output",
+                    Address = string.Empty,
+                    DataType = PointDataType.Bool,
+                    Direction = PointDirection.Output
+                };
                 var source = new AdminClientView(
                     "A",
                     "Source client",
                     true,
                     true,
                     ClientConnectionState.Connected,
-                    ClientProtocol.CustomTcp,
+                    ClientProtocol.Tcp,
                     "127.0.0.1:9001",
                     "1.0",
                     DateTimeOffset.UtcNow,
-                    [sourcePoint],
+                    [sourcePoint, sourceOutputPoint],
                     []);
                 var target = new AdminClientView(
                     "B",
@@ -103,16 +120,28 @@ public sealed class MainWindowViewModelTests
                     true,
                     true,
                     ClientConnectionState.Connected,
-                    ClientProtocol.CustomTcp,
+                    ClientProtocol.Tcp,
                     "127.0.0.1:9002",
                     "1.0",
                     DateTimeOffset.UtcNow,
                     [targetPoint],
                     []);
+                var route = new AdminRouteView(
+                    "A",
+                    "A-IN",
+                    "Source input",
+                    "B",
+                    "B-OUT",
+                    "Target output",
+                    PointDataType.Bool,
+                    string.Empty,
+                    string.Empty,
+                    true);
                 return Task.FromResult(new AdminSnapshot(
                     [source, target],
                     2,
-                    2));
+                    3,
+                    Routes: [route]));
             }
 
             var points = new[]
@@ -136,7 +165,7 @@ public sealed class MainWindowViewModelTests
                 true,
                 true,
                 ClientConnectionState.Connected,
-                ClientProtocol.CustomTcp,
+                ClientProtocol.Tcp,
                 "127.0.0.1:9002",
                 "1.0",
                 DateTimeOffset.UtcNow,
@@ -158,12 +187,14 @@ public sealed class MainWindowViewModelTests
             string clientCode,
             string clientName,
             CancellationToken cancellationToken = default,
-            string? systemCode = null) =>
+            string? systemCode = null,
+            ClientProtocol protocol = ClientProtocol.Tcp) =>
             throw new NotSupportedException();
 
-        public Task RenameClientAsync(
+        public Task UpdateClientAsync(
             string clientCode,
             string clientName,
+            ClientProtocol protocol,
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 

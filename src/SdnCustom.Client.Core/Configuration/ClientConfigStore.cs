@@ -9,7 +9,11 @@ public sealed class ClientConfigStore : IClientConfigStore
     {
         WriteIndented = true,
         PropertyNameCaseInsensitive = true,
-        Converters = { new JsonStringEnumConverter() }
+        Converters =
+        {
+            new ClientProtocolJsonConverter(),
+            new JsonStringEnumConverter()
+        }
     };
 
     public ClientConfigStore(string? configPath = null)

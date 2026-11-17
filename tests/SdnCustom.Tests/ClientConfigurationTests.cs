@@ -6,6 +6,41 @@ namespace SdnCustom.Tests;
 public sealed class ClientConfigurationTests
 {
     [Fact]
+    public async Task LoadsLegacyCustomTcpProtocolNameAsTcp()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "sdncustom-tests", Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(directory, "client.json");
+        try
+        {
+            Directory.CreateDirectory(directory);
+            await File.WriteAllTextAsync(
+                path,
+                """
+                {
+                  "ClientCode": "CLIENT-01",
+                  "ClientName": "Legacy",
+                  "Device": {
+                    "Protocol": "CustomTcp",
+                    "Host": "127.0.0.1",
+                    "Port": 9002
+                  }
+                }
+                """);
+
+            var loaded = await new ClientConfigStore(path).LoadAsync();
+
+            Assert.Equal(ClientProtocol.Tcp, loaded.Device.Protocol);
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task SavesAndLoadsConfigurationAtomically()
     {
         var directory = Path.Combine(Path.GetTempPath(), "sdncustom-tests", Guid.NewGuid().ToString("N"));
@@ -18,7 +53,12 @@ public sealed class ClientConfigurationTests
                 ClientCode = "CLIENT-01",
                 ClientName = "Fuel system",
                 Server = new ServerConnectionOptions { Host = "10.0.0.2", Port = 7443, UseTls = true },
-                Device = new DeviceOptions { Protocol = ClientProtocol.CustomTcp, Host = "10.0.0.3", Port = 9002 },
+                Device = new DeviceOptions
+                {
+                    Protocol = ClientProtocol.Tcp,
+                    Host = "10.0.0.3",
+                    Port = 9002
+                },
                 Points =
                 [
                     new PointDefinition
@@ -77,7 +117,7 @@ public sealed class ClientConfigurationTests
         var configuration = new ClientConfiguration
         {
             ClientCode = "CLIENT-01",
-            Device = new DeviceOptions { Protocol = ClientProtocol.CustomTcp },
+            Device = new DeviceOptions { Protocol = ClientProtocol.Tcp },
             Points =
             [
                 new PointDefinition
@@ -108,7 +148,7 @@ public sealed class ClientConfigurationTests
         var configuration = new ClientConfiguration
         {
             ClientCode = "CLIENT-01",
-            Device = new DeviceOptions { Protocol = ClientProtocol.CustomTcp },
+            Device = new DeviceOptions { Protocol = ClientProtocol.Tcp },
             Points =
             [
                 new PointDefinition

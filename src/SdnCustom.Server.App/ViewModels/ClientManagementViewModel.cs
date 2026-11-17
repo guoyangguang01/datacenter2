@@ -18,9 +18,11 @@ public sealed partial class ClientManagementViewModel : ObservableObject
     [ObservableProperty] private ClientOption? _selectedClient;
     [ObservableProperty] private PointFilterOption? _selectedPointFilter;
     [ObservableProperty] private string _selectedClientName = string.Empty;
+    [ObservableProperty] private ProtocolOption? _selectedClientProtocolOption;
     [ObservableProperty] private EditablePointRow? _selectedPoint;
     [ObservableProperty] private string _newClientCode = string.Empty;
     [ObservableProperty] private string _newClientName = string.Empty;
+    [ObservableProperty] private ProtocolOption? _newClientProtocolOption;
     [ObservableProperty] private string _statusText = string.Empty;
     [ObservableProperty] private bool _canEditPoints = true;
     [ObservableProperty] private bool _isPointsReadOnly;
@@ -33,12 +35,19 @@ public sealed partial class ClientManagementViewModel : ObservableObject
     public IReadOnlyList<PointFilterOption> PointFilters { get; } =
     [
         new("全部", null),
-        new("输入测点", PointDirection.Input),
-        new("输出测点", PointDirection.Output)
+        new("用户输入数据", PointDirection.Output),
+        new("用户输出数据", PointDirection.Input)
     ];
     public IReadOnlyList<PointDataType> DataTypeOptions { get; } = Enum.GetValues<PointDataType>();
+    public IReadOnlyList<ProtocolOption> ProtocolOptions { get; } =
+    [
+        new(ClientProtocol.Tcp, "TCP"),
+        new(ClientProtocol.OpcUaClient, "OPC UA 客户端"),
+        new(ClientProtocol.OpcUaServer, "OPC UA 服务端")
+    ];
     public string ClientCountText => $"{Clients.Count} 个客户端";
     public bool HasNoClients => Clients.Count == 0;
+    public bool HasSelectedClient => SelectedClient is not null;
     public bool HasSelectedSystem => SelectedSystem is not null;
     public string SelectedClientStateText
     {
@@ -50,7 +59,8 @@ public sealed partial class ClientManagementViewModel : ObservableObject
             }
 
             var connection = SelectedClient.Online ? "在线" : "离线";
-            return $"{connection} · {SelectedClient.CommunicationText} · {Points.Count} 个测点";
+            return $"{connection} · {SelectedClient.CommunicationText} · " +
+                   $"{SelectedClient.ProtocolDisplay} · {Points.Count} 个测点";
         }
     }
     public bool ShowPoints => SelectedClient is not null && FilteredPoints.Count > 0;
@@ -63,6 +73,7 @@ public sealed partial class ClientManagementViewModel : ObservableObject
     {
         _admin = admin;
         SelectedPointFilter = PointFilters[0];
+        NewClientProtocolOption = ProtocolOptions[0];
     }
 
     partial void OnSelectedSystemChanged(SystemOption? value)
@@ -72,19 +83,24 @@ public sealed partial class ClientManagementViewModel : ObservableObject
         CreateClientCommand.NotifyCanExecuteChanged();
         StatusText = value is null
             ? "请选择系统。"
-            : $"{value.SystemName}：{Clients.Count} 个客户端，{value.PointCount} 个点，{value.RouteCount} 条输出路由。";
+            : $"{value.SystemName}：{Clients.Count} 个客户端，{value.PointCount} 个点，{value.RouteCount} 条数据路由。";
     }
 
     partial void OnSelectedClientChanged(ClientOption? value)
     {
         SelectedClientName = value?.ClientName ?? string.Empty;
+        SelectedClientProtocolOption = ProtocolOptions.FirstOrDefault(option =>
+            option.Value == (value?.Protocol ?? ClientProtocol.Tcp));
         CanManageClient = value is not null;
         LoadPoints();
         NotifyLayoutState();
-        RenameClientCommand.NotifyCanExecuteChanged();
+        SaveClientConfigurationCommand.NotifyCanExecuteChanged();
     }
 
-    partial void OnSelectedClientNameChanged(string value) => RenameClientCommand.NotifyCanExecuteChanged();
+    partial void OnSelectedClientNameChanged(string value) =>
+        SaveClientConfigurationCommand.NotifyCanExecuteChanged();
+    partial void OnSelectedClientProtocolOptionChanged(ProtocolOption? value) =>
+        SaveClientConfigurationCommand.NotifyCanExecuteChanged();
     partial void OnNewClientCodeChanged(string value) => CreateClientCommand.NotifyCanExecuteChanged();
     partial void OnNewClientNameChanged(string value) => CreateClientCommand.NotifyCanExecuteChanged();
     partial void OnSelectedPointFilterChanged(PointFilterOption? value) => RefreshFilteredPoints();
@@ -139,6 +155,7 @@ public sealed partial class ClientManagementViewModel : ObservableObject
                 client.Online,
                 client.DesiredRunning,
                 client.CommunicationState,
+                client.Protocol,
                 client.Points));
         }
 
@@ -223,6 +240,18 @@ public sealed partial class ClientManagementViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private void SelectPointGroup(PointGroupSelection? selection)
+    {
+        if (selection is null)
+        {
+            return;
+        }
+
+        SelectedClient = selection.Client;
+        SelectedPointFilter = PointFilters.First(filter => filter.Direction == selection.Direction);
+    }
+
+    [RelayCommand]
     private void RemovePoint()
     {
         if (!CanEditPoints)
@@ -277,7 +306,8 @@ public sealed partial class ClientManagementViewModel : ObservableObject
             await _admin.CreateClientAsync(
                 NewClientCode,
                 NewClientName,
-                systemCode: systemCode);
+                systemCode: systemCode,
+                protocol: NewClientProtocolOption?.Value ?? ClientProtocol.Tcp);
             var code = NewClientCode.Trim();
             NewClientCode = string.Empty;
             NewClientName = string.Empty;
@@ -296,8 +326,8 @@ public sealed partial class ClientManagementViewModel : ObservableObject
         !string.IsNullOrWhiteSpace(NewClientCode) &&
         !string.IsNullOrWhiteSpace(NewClientName);
 
-    [RelayCommand(CanExecute = nameof(CanRenameClient))]
-    private async Task RenameClientAsync()
+    [RelayCommand(CanExecute = nameof(CanSaveClientConfiguration))]
+    private async Task SaveClientConfigurationAsync()
     {
         if (SelectedClient is null)
         {
@@ -306,22 +336,26 @@ public sealed partial class ClientManagementViewModel : ObservableObject
 
         try
         {
-            await _admin.RenameClientAsync(SelectedClient.ClientCode, SelectedClientName);
+            await _admin.UpdateClientAsync(
+                SelectedClient.ClientCode,
+                SelectedClientName,
+                SelectedClientProtocolOption?.Value ?? SelectedClient.Protocol);
             var code = SelectedClient.ClientCode;
             await InitializeAsync();
             SelectedClient = Clients.FirstOrDefault(client => client.ClientCode == code);
-            StatusText = $"已更新客户端 {code} 的名称。";
+            StatusText = $"已保存客户端 {code} 的名称和协议配置。";
         }
         catch (Exception exception)
         {
-            StatusText = $"改名失败：{exception.Message}";
+            StatusText = $"保存失败：{exception.Message}";
         }
     }
 
-    private bool CanRenameClient() =>
+    private bool CanSaveClientConfiguration() =>
         SelectedClient is not null &&
         !string.IsNullOrWhiteSpace(SelectedClientName) &&
-        !string.Equals(SelectedClientName.Trim(), SelectedClient.ClientName, StringComparison.Ordinal);
+        (!string.Equals(SelectedClientName.Trim(), SelectedClient.ClientName, StringComparison.Ordinal) ||
+         (SelectedClientProtocolOption?.Value ?? SelectedClient.Protocol) != SelectedClient.Protocol);
 
     public async Task DeleteSelectedClientAsync()
     {
@@ -350,15 +384,30 @@ public sealed partial class ClientManagementViewModel : ObservableObject
     public async Task ExportCsvAsync(
         Stream stream,
         bool outputOnly,
+        CancellationToken cancellationToken = default) =>
+        await ExportCsvAsync(
+            stream,
+            outputOnly ? PointDirection.Input : null,
+            cancellationToken);
+
+    public async Task ExportCsvAsync(
+        Stream stream,
+        PointDirection? direction,
         CancellationToken cancellationToken = default)
     {
+        if (SelectedClient is null)
+        {
+            StatusText = "请先选择客户端。";
+            return;
+        }
+
         await using var writer = new StreamWriter(
             stream,
             new UTF8Encoding(encoderShouldEmitUTF8Identifier: true),
             leaveOpen: true);
         await writer.WriteLineAsync(
             "pointId,pointName,dataType,unit,direction,address,sourceInputPointId,deadband,group");
-        foreach (var point in Points.Where(point => !outputOnly || point.Direction == PointDirection.Output))
+        foreach (var point in Points.Where(point => direction is null || point.Direction == direction))
         {
             await writer.WriteLineAsync(string.Join(
                 ',',
@@ -373,7 +422,12 @@ public sealed partial class ClientManagementViewModel : ObservableObject
                 Escape(point.Group)));
         }
         await writer.FlushAsync(cancellationToken);
-        StatusText = outputOnly ? "输出测点已导出。" : "点表已导出。";
+        StatusText = direction switch
+        {
+            PointDirection.Input => $"{SelectedClient.ClientCode} 的用户输出测点已导出。",
+            PointDirection.Output => $"{SelectedClient.ClientCode} 的用户输入测点已导出。",
+            _ => $"{SelectedClient.ClientCode} 的点表已导出。"
+        };
     }
 
     public async Task ExportGasMasterAsync(
@@ -417,8 +471,9 @@ public sealed partial class ClientManagementViewModel : ObservableObject
             cancellationToken);
         await InitializeAsync(cancellationToken);
         StatusText =
-            $"燃气总表导入完成：{result.ClientCount} 个客户端，{result.InputCount} 个 INPUT，" +
-            $"{result.OutputCount} 个 OUTPUT，{result.RouteCount} 条路由。" +
+            $"燃气总表导入完成：{result.ClientCount} 个客户端，" +
+            $"用户输出数据 {result.InputCount} 个，用户输入数据 {result.OutputCount} 个，" +
+            $"{result.RouteCount} 条数据路由。" +
             (result.Warnings.Count == 0 ? string.Empty : $"警告：{string.Join("；", result.Warnings)}");
     }
 
@@ -520,7 +575,7 @@ public sealed partial class ClientManagementViewModel : ObservableObject
             if (parsedDirectionValue == PointDirection.Output &&
                 string.IsNullOrWhiteSpace(sourceInputPointId))
             {
-                errors.Add($"第 {lineNumber} 行 OUTPUT 测点必须填写 sourceInputPointId。");
+                errors.Add($"第 {lineNumber} 行用户输入数据必须填写 sourceInputPointId。");
                 continue;
             }
 
@@ -600,6 +655,7 @@ public sealed partial class ClientManagementViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(ClientCountText));
         OnPropertyChanged(nameof(HasNoClients));
+        OnPropertyChanged(nameof(HasSelectedClient));
         OnPropertyChanged(nameof(SelectedClientStateText));
         OnPropertyChanged(nameof(ShowPoints));
         OnPropertyChanged(nameof(ShowNoClientState));
@@ -789,6 +845,7 @@ public sealed partial class ClientOption : ObservableObject
     [ObservableProperty] private bool _desiredRunning;
     [ObservableProperty] private ClientConnectionState _communicationState;
     [ObservableProperty] private string _clientName;
+    [ObservableProperty] private ClientProtocol _protocol;
 
     public ClientOption(
         string clientCode,
@@ -796,6 +853,7 @@ public sealed partial class ClientOption : ObservableObject
         bool online,
         bool desiredRunning,
         ClientConnectionState communicationState,
+        ClientProtocol protocol,
         IReadOnlyList<PointDefinition> points)
     {
         ClientCode = clientCode;
@@ -803,12 +861,26 @@ public sealed partial class ClientOption : ObservableObject
         Online = online;
         DesiredRunning = desiredRunning;
         CommunicationState = communicationState;
+        Protocol = protocol;
         Points = points;
     }
 
     public string ClientCode { get; }
     public IReadOnlyList<PointDefinition> Points { get; }
     public string Display => $"{ClientName}  ({ClientCode})";
+    public int InputPointCount => Points.Count(point => point.Direction == PointDirection.Output);
+    public int OutputPointCount => Points.Count(point => point.Direction == PointDirection.Input);
+    public PointGroupSelection InputGroup =>
+        new(this, PointDirection.Output, $"用户输入数据 {InputPointCount}");
+    public PointGroupSelection OutputGroup =>
+        new(this, PointDirection.Input, $"用户输出数据 {OutputPointCount}");
+    public string ProtocolDisplay => Protocol switch
+    {
+        ClientProtocol.Tcp => "TCP",
+        ClientProtocol.OpcUaClient => "OPC UA 客户端",
+        ClientProtocol.OpcUaServer => "OPC UA 服务端",
+        _ => Protocol.ToString()
+    };
     public string CommunicationText => CommunicationState switch
     {
         ClientConnectionState.Connected => "通讯正常",
@@ -821,7 +893,19 @@ public sealed partial class ClientOption : ObservableObject
         OnPropertyChanged(nameof(CommunicationText));
     partial void OnOnlineChanged(bool value) =>
         OnPropertyChanged(nameof(CommunicationText));
+    partial void OnProtocolChanged(ClientProtocol value) =>
+        OnPropertyChanged(nameof(ProtocolDisplay));
 }
+
+public sealed record ProtocolOption(ClientProtocol Value, string DisplayName)
+{
+    public override string ToString() => DisplayName;
+}
+
+public sealed record PointGroupSelection(
+    ClientOption Client,
+    PointDirection Direction,
+    string Display);
 
 public sealed record SystemOption(
     string SystemCode,
@@ -847,7 +931,7 @@ public sealed partial class EditablePointRow : ObservableObject
     [ObservableProperty] private string _group = "默认";
 
     public IReadOnlyList<PointDataType> DataTypeOptions { get; } = Enum.GetValues<PointDataType>();
-    public string DirectionDisplay => Direction == PointDirection.Input ? "输入" : "输出";
+    public string DirectionDisplay => Direction == PointDirection.Input ? "输出" : "输入";
     public IReadOnlyList<PointDirectionOption> DirectionOptions { get; } =
         PointDirectionOption.CreateAll();
     public PointDirectionOption? SelectedDirection
@@ -899,9 +983,11 @@ public sealed partial class EditablePointRow : ObservableObject
 
 public sealed record PointDirectionOption(PointDirection Value, string Display)
 {
+    public override string ToString() => Display;
+
     public static IReadOnlyList<PointDirectionOption> CreateAll() =>
     [
-        new(PointDirection.Input, "输入（数据进入软件）"),
-        new(PointDirection.Output, "输出（软件分发数据）")
+        new(PointDirection.Input, "用户输出（本用户向外发送）"),
+        new(PointDirection.Output, "用户输入（本用户接收）")
     ];
 }

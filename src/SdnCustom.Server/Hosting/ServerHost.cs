@@ -145,7 +145,8 @@ public static class ServerHost
                 request.ClientCode,
                 request.ClientName,
                 cancellationToken,
-                request.SystemCode);
+                request.SystemCode,
+                request.Protocol);
             return Results.Created($"/api/clients/{request.ClientCode}", request);
         });
         app.MapPost("/api/systems/import-gas", async (
@@ -174,7 +175,24 @@ public static class ServerHost
             IAdminFacade admin,
             CancellationToken cancellationToken) =>
         {
-            await admin.RenameClientAsync(clientCode, request.ClientName, cancellationToken);
+            var protocol = request.Protocol;
+            if (protocol is null)
+            {
+                protocol = (await admin.GetSnapshotAsync(cancellationToken))
+                    .Clients.SingleOrDefault(client => client.ClientCode == clientCode)
+                    ?.Protocol;
+            }
+
+            if (protocol is null)
+            {
+                return Results.NotFound();
+            }
+
+            await admin.UpdateClientAsync(
+                clientCode,
+                request.ClientName,
+                protocol.Value,
+                cancellationToken);
             return Results.NoContent();
         });
         app.MapDelete("/api/clients/{clientCode}", async (

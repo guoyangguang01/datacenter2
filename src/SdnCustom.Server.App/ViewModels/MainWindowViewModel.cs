@@ -17,6 +17,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private DateTimeOffset? _logViewClearedAt;
     private string? _lastSelectedClientCode;
     private string? _lastSelectedPointKey;
+    private IReadOnlyList<AdminRouteView> _routes = [];
     private int _historyQueryGeneration;
 
     [ObservableProperty] private ClientRowViewModel? _selectedClient;
@@ -40,8 +41,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     public ObservableCollection<ClientRowViewModel> Clients { get; } = [];
     public ObservableCollection<PointRowViewModel> Points { get; } = [];
+    public ObservableCollection<PointRowViewModel> HistoryPoints { get; } = [];
     public ObservableCollection<PointRowViewModel> OutputPoints { get; } = [];
     public ObservableCollection<PointRowViewModel> InputPoints { get; } = [];
+    public ObservableCollection<PointRowViewModel> EmittedPoints { get; } = [];
     public ObservableCollection<ServerLogEntry> Logs { get; } = [];
     public ObservableCollection<HistoryPoint> History { get; } = [];
     public string SimulationButtonText => IsSimulationRunning ? "停止模拟" : "开始模拟";
@@ -128,6 +131,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
                 ? null
                 : $"{SelectedPoint.ClientCode}:{SelectedPoint.Direction}:{SelectedPoint.PointId}";
             var snapshot = await _admin.GetSnapshotAsync(cancellationToken);
+            _routes = snapshot.Routes ?? [];
             Clients.Clear();
             foreach (var client in snapshot.Clients)
             {
@@ -160,7 +164,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
                                 ?? snapshot.Systems?.FirstOrDefault();
             SystemSummary = currentSystem is null
                 ? "未分组客户端"
-                : $"{currentSystem.SystemName} · {currentSystem.ClientCount} 客户端 · {currentSystem.RouteCount} 条输出路由";
+                : $"{currentSystem.SystemName} · {currentSystem.ClientCount} 客户端 · {currentSystem.RouteCount} 条数据路由";
             StatusText = $"系统监视器：{OnlineClients} 个客户端在线 / {TotalPoints} 个测点";
             NotifyCommandStates();
         }
@@ -352,6 +356,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private bool CanQueryHistory() =>
         SelectedClient is not null &&
         SelectedPoint is not null &&
+        string.Equals(SelectedPoint.ClientCode, SelectedClient.ClientCode, StringComparison.Ordinal) &&
         !IsHistoryQuerying &&
         DateTimeOffset.TryParse(HistoryFrom, out var from) &&
         DateTimeOffset.TryParse(HistoryTo, out var to) &&
@@ -490,8 +495,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private void RefreshPoints()
     {
         Points.Clear();
+        HistoryPoints.Clear();
         OutputPoints.Clear();
         InputPoints.Clear();
+        EmittedPoints.Clear();
         if (SelectedClient is null)
         {
             return;
@@ -516,14 +523,65 @@ public sealed partial class MainWindowViewModel : ObservableObject
                 value?.Quality,
                 value is null ? null : UnixTime.FromNanoseconds(value.TimestampUnixNanoseconds));
             Points.Add(row);
+            HistoryPoints.Add(row);
             if (point.Direction == PointDirection.Input)
             {
-                InputPoints.Add(row);
+                EmittedPoints.Add(row);
             }
             else
             {
                 OutputPoints.Add(row);
             }
+        }
+
+        var seenSources = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var route in _routes.Where(route =>
+                     string.Equals(route.TargetClientCode, SelectedClient.ClientCode, StringComparison.Ordinal)))
+        {
+            var sourceKey = $"{route.SourceClientCode}:{route.SourcePointId}";
+            if (!seenSources.Add(sourceKey))
+            {
+                continue;
+            }
+
+            var sourceClient = Clients.FirstOrDefault(client =>
+                string.Equals(client.ClientCode, route.SourceClientCode, StringComparison.Ordinal));
+            var sourcePoint = sourceClient?.Points.FirstOrDefault(point =>
+                point.PointId == route.SourcePointId &&
+                point.Direction == PointDirection.Input);
+            var value = sourceClient?.LatestValues.FirstOrDefault(candidate =>
+                candidate.PointId == route.SourcePointId &&
+                candidate.Direction == PointDirection.Input);
+            var row = new PointRowViewModel(
+                sourceClient?.ClientName ?? route.SourceClientCode,
+                route.SourceClientCode,
+                route.SourcePointId,
+                sourcePoint?.PointName ?? route.SourcePointName,
+                PointDirection.Input,
+                sourcePoint?.DataType ?? PointDataType.Float64,
+                sourcePoint?.Unit ?? string.Empty,
+                sourcePoint?.Address ?? string.Empty,
+                "输入来源",
+                value?.Value,
+                value?.Quality,
+                value is null ? null : UnixTime.FromNanoseconds(value.TimestampUnixNanoseconds));
+            InputPoints.Add(row);
+            if (!Points.Any(point =>
+                    point.ClientCode == row.ClientCode &&
+                    point.Direction == row.Direction &&
+                    point.PointId == row.PointId))
+            {
+                Points.Add(row);
+            }
+        }
+
+        if (SelectedPoint is null ||
+            !HistoryPoints.Any(point =>
+                point.ClientCode == SelectedPoint.ClientCode &&
+                point.Direction == SelectedPoint.Direction &&
+                point.PointId == SelectedPoint.PointId))
+        {
+            SelectedPoint = HistoryPoints.FirstOrDefault();
         }
     }
 
@@ -561,6 +619,7 @@ public sealed class ClientRowViewModel(AdminClientView client)
     public string DisplayName => $"{client.ClientName}  ({client.ClientCode})";
     public IReadOnlyList<PointDefinition> Points => client.Points;
     public IReadOnlyList<AdminPointValue> LatestValues => client.LatestValues;
+    public override string ToString() => DisplayName;
 }
 
 public sealed record PointRowViewModel(
@@ -580,5 +639,8 @@ public sealed record PointRowViewModel(
     public string ValueText => Value?.ToString() ?? "--";
     public string QualityText => Quality?.ToString() ?? "--";
     public string TimestampText => Timestamp?.ToLocalTime().ToString("HH:mm:ss.fff") ?? "--";
-    public override string ToString() => $"{ClientCode} · {PointId} · {PointName}";
+    public string DirectionText => Direction == PointDirection.Input ? "用户输出" : "用户输入";
+    public string HistoryDisplay => ToString() ?? string.Empty;
+    public override string ToString() =>
+        $"{ClientCode} · {PointId} · {DirectionText} · {PointName}";
 }

@@ -656,7 +656,7 @@ public sealed class AgentSupervisor : IAsyncDisposable
             AppVersion = typeof(AgentSupervisor).Assembly.GetName().Version?.ToString() ?? "1.0.0",
             InstanceId = Guid.NewGuid().ToString("N"),
             Protocol = ContractMapper.ToContract(configuration.Device.Protocol),
-            EndpointDisplay = configuration.Device.Protocol == ClientProtocol.CustomTcp
+            EndpointDisplay = configuration.Device.Protocol == ClientProtocol.Tcp
                 ? $"{configuration.Device.Host}:{configuration.Device.Port}"
                 : configuration.Device.OpcUaEndpoint,
             CatalogRevision = ComputeCatalogRevision(configuration.Points)

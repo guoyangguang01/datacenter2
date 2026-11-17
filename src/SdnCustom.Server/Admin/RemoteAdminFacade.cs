@@ -89,23 +89,25 @@ public sealed class RemoteAdminFacade : IAdminFacade
         string clientCode,
         string clientName,
         CancellationToken cancellationToken = default,
-        string? systemCode = null)
+        string? systemCode = null,
+        ClientProtocol protocol = ClientProtocol.Tcp)
     {
         using var response = await _httpClient.PostAsJsonAsync(
             "api/clients",
-            new CreateClientRequest(clientCode, clientName, systemCode),
+            new CreateClientRequest(clientCode, clientName, systemCode, protocol),
             cancellationToken).ConfigureAwait(false);
         await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task RenameClientAsync(
+    public async Task UpdateClientAsync(
         string clientCode,
         string clientName,
+        ClientProtocol protocol,
         CancellationToken cancellationToken = default)
     {
         using var response = await _httpClient.PutAsJsonAsync(
             $"api/clients/{Uri.EscapeDataString(clientCode)}",
-            new UpdateClientRequest(clientName),
+            new UpdateClientRequest(clientName, protocol),
             cancellationToken).ConfigureAwait(false);
         await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
     }

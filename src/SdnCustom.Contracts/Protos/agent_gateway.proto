@@ -10,7 +10,7 @@ service AgentGateway {
 
 enum DeviceProtocol {
   DEVICE_PROTOCOL_UNSPECIFIED = 0;
-  CUSTOM_TCP = 1;
+  TCP = 1;
   OPC_UA_CLIENT = 2;
   OPC_UA_SERVER = 3;
 }

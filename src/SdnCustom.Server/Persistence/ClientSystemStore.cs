@@ -37,10 +37,12 @@ public interface IClientSystemStore
         string clientCode,
         string clientName,
         CancellationToken cancellationToken = default,
-        string systemCode = "DEFAULT");
-    Task<ClientSystemRecord> RenameAsync(
+        string systemCode = "DEFAULT",
+        ClientProtocol protocol = ClientProtocol.Tcp);
+    Task<ClientSystemRecord> UpdateAsync(
         string clientCode,
         string clientName,
+        ClientProtocol? protocol = null,
         CancellationToken cancellationToken = default);
     Task DeleteAsync(string clientCode, CancellationToken cancellationToken = default);
     Task<ClientSystemRecord> RegisterAsync(
@@ -88,7 +90,8 @@ public sealed class ClientSystemStore(IDbContextFactory<ServerDbContext> context
         string clientCode,
         string clientName,
         CancellationToken cancellationToken = default,
-        string systemCode = "DEFAULT")
+        string systemCode = "DEFAULT",
+        ClientProtocol protocol = ClientProtocol.Tcp)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(clientCode);
         ArgumentException.ThrowIfNullOrWhiteSpace(clientName);
@@ -123,6 +126,7 @@ public sealed class ClientSystemStore(IDbContextFactory<ServerDbContext> context
             SystemCode = normalizedSystemCode,
             Authorized = true,
             PointsConfigured = true,
+            Protocol = protocol.ToString(),
             FirstSeen = now,
             LastSeen = now
         };
@@ -131,9 +135,10 @@ public sealed class ClientSystemStore(IDbContextFactory<ServerDbContext> context
         return Map(entity);
     }
 
-    public async Task<ClientSystemRecord> RenameAsync(
+    public async Task<ClientSystemRecord> UpdateAsync(
         string clientCode,
         string clientName,
+        ClientProtocol? protocol = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(clientName);
@@ -145,6 +150,10 @@ public sealed class ClientSystemStore(IDbContextFactory<ServerDbContext> context
             ?? throw new KeyNotFoundException($"客户端未登记：{clientCode}");
 
         entity.ClientName = clientName.Trim();
+        if (protocol is not null)
+        {
+            entity.Protocol = protocol.Value.ToString();
+        }
         entity.LastSeen = DateTimeOffset.UtcNow;
         await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return Map(entity);
@@ -181,7 +190,20 @@ public sealed class ClientSystemStore(IDbContextFactory<ServerDbContext> context
         {
             entity.ClientName = registration.ClientName;
         }
-        entity.Protocol = registration.Protocol.ToString();
+        var configuredProtocol = Enum.TryParse<ClientProtocol>(entity.Protocol, true, out var parsedProtocol)
+            ? parsedProtocol
+            : (ClientProtocol?)null;
+        if (string.IsNullOrWhiteSpace(entity.Protocol) ||
+            string.Equals(entity.Protocol, "CustomTcp", StringComparison.OrdinalIgnoreCase))
+        {
+            entity.Protocol = registration.Protocol.ToString();
+        }
+        else if (configuredProtocol != registration.Protocol)
+        {
+            throw new UnauthorizedAccessException(
+                $"客户端 {registration.ClientCode} 配置协议为 {configuredProtocol}，" +
+                $"但客户端使用 {registration.Protocol}。请先在用户管理中统一协议配置。");
+        }
         entity.EndpointDisplay = registration.EndpointDisplay;
         entity.AppVersion = registration.AppVersion;
         entity.LastSeen = DateTimeOffset.UtcNow;
@@ -280,7 +302,7 @@ public sealed class ClientSystemStore(IDbContextFactory<ServerDbContext> context
     {
         var protocol = Enum.TryParse<ClientProtocol>(entity.Protocol, true, out var parsed)
             ? parsed
-            : ClientProtocol.CustomTcp;
+            : ClientProtocol.Tcp;
         return new ClientSystemRecord(
             entity.ClientCode,
             entity.ClientName,
